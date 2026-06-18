@@ -322,14 +322,10 @@ class VisualizadorRoles:
 
             # Calcular correctamente la fecha final
             mes_num = int(mes)
-            if mes_num == 12:
-                año_fin = int(año) + 1
-                mes_fin = 1
-            else:
-                año_fin = int(año)
-                mes_fin = mes_num + 1
-
-            fecha_fin = f"{año_fin}-{mes_fin:02d}-01"
+            # Obtener el último día del mes
+            from calendar import monthrange
+            _, ultimo_dia = monthrange(int(año), mes_num)
+            fecha_fin = f"{año}-{mes_num:02d}-{ultimo_dia}"
 
             # Usar el generador para crear el PDF EXACTO
             self.generador.crear_pdf_empleado_bd(ruta_pdf, emp, fecha_inicio, fecha_fin)
@@ -399,14 +395,10 @@ class VisualizadorRoles:
 
             # Calcular correctamente la fecha final
             mes_num = int(mes)
-            if mes_num == 12:
-                año_fin = int(año) + 1
-                mes_fin = 1
-            else:
-                año_fin = int(año)
-                mes_fin = mes_num + 1
-
-            fecha_fin = f"{año_fin}-{mes_fin:02d}-01"
+            # Obtener el último día del mes
+            from calendar import monthrange
+            _, ultimo_dia = monthrange(int(año), mes_num)
+            fecha_fin = f"{año}-{mes_num:02d}-{ultimo_dia}"
 
             self.generador.crear_pdf_empleado_bd(ruta_pdf, emp, fecha_inicio, fecha_fin)
             messagebox.showinfo("Éxito", f"PDF descargado en:\n{ruta_pdf}")
