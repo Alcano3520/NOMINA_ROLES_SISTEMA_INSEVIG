@@ -888,37 +888,37 @@ class GeneradorRolesPagoINSEVIG:
             df_consolidado['CTA_AHO'] = df_consolidado['CTA_AHO_EMP'].fillna('')
             df_consolidado['DEPTO'] = df_consolidado['DEPTO_EMP'].fillna('')      # ✅ DESDE EMPLEADOS
             df_consolidado['SECCION'] = df_consolidado['SECCION_EMP'].fillna('')  # ✅ DESDE EMPLEADOS
-            
+
+            # ✅ CONVERSIÓN A NOMBRES DESCRIPTIVOS (ANTES de usar los datos en la interfaz)
+            print("Convirtiendo códigos a nombres descriptivos (carga batch)...")
+
+            df_dbtablas_fnc = pd.read_sql("SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO = 'FNC' AND CODEMP = '10'", conn)
+            df_dbtablas_dpt = pd.read_sql("SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO = 'DPT' AND CODEMP = '10'", conn)
+            df_dbtablas_sec = pd.read_sql("SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO = 'SEC' AND CODEMP = '10'", conn)
+
+            dic_fnc = dict(zip(df_dbtablas_fnc['CODIGO'].astype(str).str.strip(), df_dbtablas_fnc['NOMBRE']))
+            dic_dpt = dict(zip(df_dbtablas_dpt['CODIGO'].astype(str).str.strip(), df_dbtablas_dpt['NOMBRE']))
+            dic_sec = dict(zip(df_dbtablas_sec['CODIGO'].astype(str).str.strip(), df_dbtablas_sec['NOMBRE']))
+
+            for idx in df_consolidado.index:
+                cargo_codigo = str(df_consolidado.loc[idx, 'CARGO']).strip()
+                df_consolidado.loc[idx, 'CARGO'] = dic_fnc.get(cargo_codigo, cargo_codigo)
+
+                depto_codigo = str(df_consolidado.loc[idx, 'DEPTO']).strip()
+                df_consolidado.loc[idx, 'DEPTO'] = dic_dpt.get(depto_codigo, depto_codigo)
+
+                seccion_codigo = str(df_consolidado.loc[idx, 'SECCION']).strip()
+                df_consolidado.loc[idx, 'SECCION'] = dic_sec.get(seccion_codigo, seccion_codigo)
+
             # Aplicar lógica ANTIQUINC para FONDO_RESERVA
             df_consolidado.loc[df_consolidado['ANTIQUINC_EMP'] == 0, 'FONDO_RESERVA'] = 0.00
-            
+
             # Recalcular totales después de aplicar lógica ANTIQUINC
             for idx in df_consolidado.index:
                 total_ingresos_nuevo = round(sum(df_consolidado.loc[idx, concepto] for concepto in conceptos_ingresos), 2)
                 df_consolidado.loc[idx, 'TOTAL_INGRESOS'] = total_ingresos_nuevo
                 total_egresos = df_consolidado.loc[idx, 'TOTAL_EGRESOS']
                 df_consolidado.loc[idx, 'TOTAL_RECIBIR'] = round(total_ingresos_nuevo - total_egresos, 2)
-            
-            # ✅ CONVERSIÓN A NOMBRES DESCRIPTIVOS
-            print("Convirtiendo códigos a nombres descriptivos (carga batch)...")
-
-            df_dbtablas_fnc = pd.read_sql("SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO = 'FNC' AND CODEMP = '10'", conn)
-            df_dbtablas_dpt = pd.read_sql("SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO = 'DPT' AND CODEMP = '10'", conn)
-            df_dbtablas_sec = pd.read_sql("SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO = 'SEC' AND CODEMP = '10'", conn)
-            
-            dic_fnc = dict(zip(df_dbtablas_fnc['CODIGO'].astype(str).str.strip(), df_dbtablas_fnc['NOMBRE']))
-            dic_dpt = dict(zip(df_dbtablas_dpt['CODIGO'].astype(str).str.strip(), df_dbtablas_dpt['NOMBRE']))
-            dic_sec = dict(zip(df_dbtablas_sec['CODIGO'].astype(str).str.strip(), df_dbtablas_sec['NOMBRE']))
-            
-            for idx in df_consolidado.index:
-                cargo_codigo = str(df_consolidado.loc[idx, 'CARGO']).strip()
-                df_consolidado.loc[idx, 'CARGO'] = dic_fnc.get(cargo_codigo, cargo_codigo)
-                
-                depto_codigo = str(df_consolidado.loc[idx, 'DEPTO']).strip()
-                df_consolidado.loc[idx, 'DEPTO'] = dic_dpt.get(depto_codigo, depto_codigo)
-                
-                seccion_codigo = str(df_consolidado.loc[idx, 'SECCION']).strip()
-                df_consolidado.loc[idx, 'SECCION'] = dic_sec.get(seccion_codigo, seccion_codigo)
             
             conn.close()
             
