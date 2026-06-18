@@ -1,0 +1,18 @@
+
+=======================================================
+  Roles_generador_10  iniciado  2026-06-18 14:47:44
+  Plataforma: Linux
+  Log: /home/alcano/Documentos/mis_proyecto/NOMINA_ROLES_SISTEMA_INSEVIG/rol_debug.log
+=======================================================
+Traceback (most recent call last):
+  File "/home/alcano/Documentos/mis_proyecto/NOMINA_ROLES_SISTEMA_INSEVIG/Roles_generador_VIZUALIZADOR_10.pyw", line 797, in <module>
+    app = GeneradorRolesPagoINSEVIG(root)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/alcano/Documentos/mis_proyecto/NOMINA_ROLES_SISTEMA_INSEVIG/Roles_generador_VIZUALIZADOR_10.pyw", line 122, in __init__
+    self.crear_interfaz()
+  File "/home/alcano/Documentos/mis_proyecto/NOMINA_ROLES_SISTEMA_INSEVIG/Roles_generador_VIZUALIZADOR_10.pyw", line 169, in crear_interfaz
+    self._crear_tab_generador(tab_gen)
+  File "/home/alcano/Documentos/mis_proyecto/NOMINA_ROLES_SISTEMA_INSEVIG/Roles_generador_VIZUALIZADOR_10.pyw", line 204, in _crear_tab_generador
+    ttk.Button(params_frame, text="Seleccionar...", command=self.seleccionar_periodo).grid(row=0, column=2, pady=5)
+                                                            ^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GeneradorRolesPagoINSEVIG' object has no attribute 'seleccionar_periodo'
