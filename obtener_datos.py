@@ -149,27 +149,47 @@ class ObtenerDatos:
 
             # 3. Consolidar movimientos usando la misma lógica que obtener_datos_bd
             conceptos = {}
-            # Mapeo de códigos REALES de CLASE en RPINGDES
+            # Mapeo EXACTO de códigos CLASE desde Roles_generador_9.pyw
             mapeo_conceptos = {
-                100: 'SUELDO', 102: 'BONIFICACION', 115: 'FONDO_RESERVA',
-                104: 'DECIMO_TERCERA', 103: 'DECIMO_CUARTA',
-                106: 'MANIOBRAS', 107: 'REEMBOLSOS',
-                108: 'SOBRETIEMPO_25', 112: 'SOBRETIEMPO_50', 113: 'SOBRETIEMPO_100',
-                114: 'MOVILIZACION',
-                200: 'APORT_IESS', 202: 'PRESTAMOS_QUIROGRAFARIOS',
-                203: 'PRESTAMOS_COMPANIA', 204: 'ANTICIPO_SUELDO',
-                205: 'ANTICIPOS_OTROS', 250: 'ANTICIPOS_SURTIDOS',
-                207: 'APORT_IESS_CONYUGE', 208: 'IMPUESTO_RENTA',
-                209: 'MULTAS', 210: 'PENSION_ALIMENTICIA', 211: 'PRESTAMO_HIPOTECARIO'
+                100: 'SUELDO',
+                102: 'BONIFICACION',
+                104: 'FONDO_RESERVA',
+                107: 'DECIMO_TERCERA',
+                108: 'DECIMO_CUARTA',
+                110: 'MANIOBRAS',
+                111: 'REEMBOLSOS',
+                113: 'SOBRETIEMPO_25',
+                114: 'SOBRETIEMPO_50',
+                115: 'SOBRETIEMPO_100',
+                120: 'MOVILIZACION',
+                200: 'APORT_IESS',
+                201: 'ANTICIPOS_OTROS',
+                202: 'ANTICIPO_SUELDO',
+                203: 'MULTAS',
+                204: 'PRESTAMOS_QUIROGRAFARIOS',
+                205: 'PRESTAMOS_COMPANIA',
+                206: 'PENSION_ALIMENTICIA',
+                207: 'PRESTAMO_HIPOTECARIO',
+                217: 'ANTICIPOS_OTROS',
+                218: 'APORT_IESS_CONYUGE',
+                219: 'IMPUESTO_RENTA',
+                250: 'ANTICIPOS_SURTIDOS',
             }
 
             for idx, row in df_mov.iterrows():
                 clase = int(row['CLASE']) if pd.notna(row['CLASE']) else 0
                 valor = float(row['VALOR']) if pd.notna(row['VALOR']) else 0
+                asentado = row.get('ASENTADO', False)
 
                 if clase not in [105, 126, 199]:  # ignorar ciertos códigos
                     concepto = mapeo_conceptos.get(clase, f'CONCEPTO_{clase}')
-                    conceptos[concepto] = conceptos.get(concepto, 0) + valor
+
+                    # DECIMO_TERCERA/CUARTA solo se incluyen si ASENTADO=true
+                    if concepto in ['DECIMO_TERCERA', 'DECIMO_CUARTA']:
+                        if asentado:
+                            conceptos[concepto] = conceptos.get(concepto, 0) + valor
+                    else:
+                        conceptos[concepto] = conceptos.get(concepto, 0) + valor
 
             # 4. Obtener DIAS para SUELDO
             dias = 30.0
