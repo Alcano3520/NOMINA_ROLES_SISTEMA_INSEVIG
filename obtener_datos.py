@@ -149,15 +149,16 @@ class ObtenerDatos:
 
             # 3. Consolidar movimientos usando la misma lógica que obtener_datos_bd
             conceptos = {}
+            # Mapeo de códigos REALES de CLASE en RPINGDES
             mapeo_conceptos = {
-                101: 'SUELDO', 102: 'BONIFICACION', 103: 'FONDO_RESERVA',
-                104: 'DECIMO_TERCERA', 109: 'DECIMO_CUARTA',
+                100: 'SUELDO', 102: 'BONIFICACION', 115: 'FONDO_RESERVA',
+                104: 'DECIMO_TERCERA', 103: 'DECIMO_CUARTA',
                 106: 'MANIOBRAS', 107: 'REEMBOLSOS',
                 108: 'SOBRETIEMPO_25', 112: 'SOBRETIEMPO_50', 113: 'SOBRETIEMPO_100',
                 114: 'MOVILIZACION',
-                201: 'APORT_IESS', 202: 'PRESTAMOS_QUIROGRAFARIOS',
+                200: 'APORT_IESS', 202: 'PRESTAMOS_QUIROGRAFARIOS',
                 203: 'PRESTAMOS_COMPANIA', 204: 'ANTICIPO_SUELDO',
-                205: 'ANTICIPOS_OTROS', 206: 'ANTICIPOS_SURTIDOS',
+                205: 'ANTICIPOS_OTROS', 250: 'ANTICIPOS_SURTIDOS',
                 207: 'APORT_IESS_CONYUGE', 208: 'IMPUESTO_RENTA',
                 209: 'MULTAS', 210: 'PENSION_ALIMENTICIA', 211: 'PRESTAMO_HIPOTECARIO'
             }
