@@ -155,6 +155,11 @@ class VisualizadorRoles:
                 df['APELLIDOS_NOMBRES'] = (df['APELLIDOS'].fillna('').astype(str) + ' ' +
                                           df['NOMBRES'].fillna('').astype(str)).str.strip()
 
+                # Convertir códigos de DEPTO a nombres descriptivos
+                df_dpt = pd.read_sql("SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO='DPT' AND CODEMP='10'", conn)
+                dic_dpt = dict(zip(df_dpt['CODIGO'].astype(str).str.strip(), df_dpt['NOMBRE']))
+                df['DEPTO'] = df['DEPTO'].astype(str).str.strip().map(lambda x: dic_dpt.get(x, x))
+
             conn.close()
             return df if df is not None else pd.DataFrame()
 
