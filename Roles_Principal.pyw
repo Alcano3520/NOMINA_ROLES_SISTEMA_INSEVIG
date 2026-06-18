@@ -18,7 +18,7 @@ import calendar
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
-from PIL import Image
+from PIL import Image, ImageTk
 import tempfile
 import warnings
 
