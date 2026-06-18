@@ -115,27 +115,35 @@ class ObtenerDatos:
             año, mes = periodo.split('-')
             fecha_inicio = f'{año}-{mes}-01'
             if mes == '12':
-                fecha_fin = f'{int(año)+1}-01-01'
+                año_fin = int(año) + 1
+                mes_fin = 1
             else:
-                fecha_fin = f'{año}-{int(mes)+1:02d}-01'
+                año_fin = int(año)
+                mes_fin = int(mes) + 1
+            fecha_fin = f'{año_fin}-{mes_fin:02d}-01'
 
             # RPINGDES
+            # Usar CAST para comparar como DATE (sin hora) o usar CONVERT
             query_mov = f"""
             SELECT *
             FROM [insevig].[dbo].[RPINGDES]
             WHERE {self.sql_filter} AND [EMPLEADO] = ?
-                  AND [FECHA_VEN] IS NOT NULL AND [FECHA_VEN] >= ? AND [FECHA_VEN] < ?
+                  AND [FECHA_VEN] IS NOT NULL
+                  AND CAST([FECHA_VEN] AS DATE) >= CAST(? AS DATE)
+                  AND CAST([FECHA_VEN] AS DATE) < CAST(? AS DATE)
             """
             df_mov = pd.read_sql(query_mov, conn, params=[empleado_code, fecha_inicio, fecha_fin])
 
             # Si no hay en RPINGDES, buscar en RPHISTOR
-            if df_mov.empty:
+            if df_mov is None or df_mov.empty:
                 print("  → Buscando en RPHISTOR (períodos cerrados)...")
                 query_hist = f"""
                 SELECT *
                 FROM [insevig].[dbo].[RPHISTOR]
                 WHERE {self.sql_filter} AND [EMPLEADO] = ?
-                      AND [FECHA_VEN] IS NOT NULL AND [FECHA_VEN] >= ? AND [FECHA_VEN] < ?
+                      AND [FECHA_VEN] IS NOT NULL
+                      AND CAST([FECHA_VEN] AS DATE) >= CAST(? AS DATE)
+                      AND CAST([FECHA_VEN] AS DATE) < CAST(? AS DATE)
                 """
                 df_mov = pd.read_sql(query_hist, conn, params=[empleado_code, fecha_inicio, fecha_fin])
 
