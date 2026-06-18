@@ -139,7 +139,7 @@ class VisualizadorRoles:
             conn = pyodbc.connect(conn_str)
 
             # Buscar empleados que coincidan con el filtro
-            query = f"""
+            query = """
             SELECT TOP 100 [EMPLEADO], [APELLIDOS], [NOMBRES], [CEDULA], [CARGO], [DEPTO], [SECCION]
             FROM [insevig].[dbo].[RPEMPLEA]
             WHERE CODEMP='10' AND CODSUC='10' AND [ESTADO]='ACT'
@@ -151,16 +151,18 @@ class VisualizadorRoles:
             df = pd.read_sql(query, conn, params=[filtro_sql, filtro_sql, filtro_sql])
 
             # Crear nombres consolidados
-            if not df.empty:
+            if df is not None and not df.empty:
                 df['APELLIDOS_NOMBRES'] = (df['APELLIDOS'].fillna('').astype(str) + ' ' +
                                           df['NOMBRES'].fillna('').astype(str)).str.strip()
 
             conn.close()
-            return df
+            return df if df is not None else pd.DataFrame()
 
         except Exception as e:
-            print(f"Error en búsqueda: {e}")
-            return None
+            print(f"❌ Error en búsqueda: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
 
     def _mostrar_resultados(self, resultados, periodo):
         """Mostrar lista de resultados para que el usuario seleccione"""
