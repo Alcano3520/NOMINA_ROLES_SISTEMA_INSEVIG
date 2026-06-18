@@ -253,8 +253,9 @@ class VisualizadorRoles:
 
             # Cargar datos COMPLETOS del empleado seleccionado (incluye movimientos)
             self.status.config(text="⏳ Cargando rol del empleado...", fg='#cc6600')
+            # Pasar EMPLEADO (código) en lugar de CEDULA para búsqueda directa
             threading.Thread(target=self._cargar_y_mostrar_empleado,
-                           args=(periodo, emp_row['CEDULA']), daemon=True).start()
+                           args=(periodo, emp_row['EMPLEADO']), daemon=True).start()
             win.destroy()
 
         listbox.bind("<Double-Button-1>", seleccionar_doble)
@@ -281,14 +282,11 @@ class VisualizadorRoles:
 
         self.status.config(text=f"✓ {len(resultados)} resultados encontrados", fg='#28a745')
 
-    def _cargar_y_mostrar_empleado(self, periodo, cedula):
+    def _cargar_y_mostrar_empleado(self, periodo, empleado_code):
         """Cargar datos COMPLETOS del empleado (incluye movimientos) - RÁPIDO"""
         try:
-            # Limpiar la cédula: puede venir como float 1207868553.0
-            # Convertir a int y luego a string para eliminar el .0
-            cedula_limpia = str(int(float(str(cedula))))
-
-            emp = self.obtener_datos.obtener_datos_empleado_rapido(periodo, cedula_limpia)
+            # Buscar por EMPLEADO (código) que es más directo que por CEDULA
+            emp = self.obtener_datos.obtener_datos_empleado_rapido(periodo, str(empleado_code))
 
             if emp is None:
                 self.root.after(0, lambda: messagebox.showerror("Error", "No se encontraron datos del empleado"))

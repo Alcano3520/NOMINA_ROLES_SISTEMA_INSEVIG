@@ -46,26 +46,60 @@ class ObtenerDatos:
             print("⚡ Búsqueda rápida de empleado...")
             conn = self._get_connection()
 
-            # 1. Buscar el empleado por cédula o nombre
-            try:
-                cedula_num = int(cedula_o_nombre)
+            # 1. Buscar el empleado por EMPLEADO, CEDULA o nombre
+            # Primero intenta por EMPLEADO (código corto como '1012')
+            if len(str(cedula_o_nombre)) <= 6:
+                # Probablemente es un EMPLEADO
                 query_emp = f"""
                 SELECT [EMPLEADO], [APELLIDOS], [NOMBRES], [CEDULA], [SUELDO],
                        [CARGO], [DEPTO], [SECCION]
                 FROM [insevig].[dbo].[RPEMPLEA]
-                WHERE {self.sql_filter} AND [ESTADO]='ACT' AND [CEDULA] = ?
+                WHERE {self.sql_filter} AND [ESTADO]='ACT' AND [EMPLEADO] = ?
                 """
-                df_emp = pd.read_sql(query_emp, conn, params=[cedula_num])
-            except:
-                query_emp = f"""
-                SELECT [EMPLEADO], [APELLIDOS], [NOMBRES], [CEDULA], [SUELDO],
-                       [CARGO], [DEPTO], [SECCION]
-                FROM [insevig].[dbo].[RPEMPLEA]
-                WHERE {self.sql_filter} AND [ESTADO]='ACT' AND
-                      ([NOMBRES] LIKE ? OR [APELLIDOS] LIKE ?)
-                """
-                filtro = f'%{cedula_o_nombre}%'
-                df_emp = pd.read_sql(query_emp, conn, params=[filtro, filtro])
+                df_emp = pd.read_sql(query_emp, conn, params=[str(cedula_o_nombre)])
+
+                # Si no encuentra por EMPLEADO, intenta por CEDULA o nombre
+                if df_emp is None or df_emp.empty:
+                    try:
+                        cedula_num = int(cedula_o_nombre)
+                        query_emp = f"""
+                        SELECT [EMPLEADO], [APELLIDOS], [NOMBRES], [CEDULA], [SUELDO],
+                               [CARGO], [DEPTO], [SECCION]
+                        FROM [insevig].[dbo].[RPEMPLEA]
+                        WHERE {self.sql_filter} AND [ESTADO]='ACT' AND [CEDULA] = ?
+                        """
+                        df_emp = pd.read_sql(query_emp, conn, params=[cedula_num])
+                    except:
+                        query_emp = f"""
+                        SELECT [EMPLEADO], [APELLIDOS], [NOMBRES], [CEDULA], [SUELDO],
+                               [CARGO], [DEPTO], [SECCION]
+                        FROM [insevig].[dbo].[RPEMPLEA]
+                        WHERE {self.sql_filter} AND [ESTADO]='ACT' AND
+                              ([NOMBRES] LIKE ? OR [APELLIDOS] LIKE ?)
+                        """
+                        filtro = f'%{cedula_o_nombre}%'
+                        df_emp = pd.read_sql(query_emp, conn, params=[filtro, filtro])
+            else:
+                # Probablemente es una CEDULA o nombre
+                try:
+                    cedula_num = int(cedula_o_nombre)
+                    query_emp = f"""
+                    SELECT [EMPLEADO], [APELLIDOS], [NOMBRES], [CEDULA], [SUELDO],
+                           [CARGO], [DEPTO], [SECCION]
+                    FROM [insevig].[dbo].[RPEMPLEA]
+                    WHERE {self.sql_filter} AND [ESTADO]='ACT' AND [CEDULA] = ?
+                    """
+                    df_emp = pd.read_sql(query_emp, conn, params=[cedula_num])
+                except:
+                    query_emp = f"""
+                    SELECT [EMPLEADO], [APELLIDOS], [NOMBRES], [CEDULA], [SUELDO],
+                           [CARGO], [DEPTO], [SECCION]
+                    FROM [insevig].[dbo].[RPEMPLEA]
+                    WHERE {self.sql_filter} AND [ESTADO]='ACT' AND
+                          ([NOMBRES] LIKE ? OR [APELLIDOS] LIKE ? OR [CEDULA] LIKE ?)
+                    """
+                    filtro = f'%{cedula_o_nombre}%'
+                    df_emp = pd.read_sql(query_emp, conn, params=[filtro, filtro, filtro])
 
             if df_emp.empty:
                 print("❌ Empleado no encontrado")
