@@ -1720,7 +1720,11 @@ class RolesPrincipal:
         # Pestaña 2: Generador
         tab2 = ttk.Frame(self.notebook)
         self.notebook.add(tab2, text="📊 Generador")
-        self.generador = GeneradorRolesPagoINSEVIG(tab2)
+        try:
+            self.generador = GeneradorRolesPagoINSEVIG(tab2)
+        except Exception as e:
+            print(f"Error creando generador en pestaña: {e}")
+            tk.Label(tab2, text=f"Error: {e}", fg="red").pack()
 
 
 if __name__ == '__main__':
