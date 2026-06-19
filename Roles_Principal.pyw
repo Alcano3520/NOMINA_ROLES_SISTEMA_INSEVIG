@@ -10,9 +10,15 @@ import calendar
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
-from PIL import Image
+from PIL import Image, ImageTk
 import tempfile
 import warnings
+
+try:
+    import fitz
+    HAS_PDF_SUPPORT = True
+except ImportError:
+    HAS_PDF_SUPPORT = False
 
 warnings.filterwarnings('ignore', message='.*SQLAlchemy.*')
 
@@ -1701,6 +1707,9 @@ class RolesPrincipal:
         self.root = root
         self.root.title("Roles de Pago - INSEVIG")
         self.root.geometry("1000x800")
+        self.color_primary = "#1a4d8f"
+        self.color_secondary = "#ffd700"
+        self.color_bg = "#f0f0f0"
 
         # Notebook
         self.notebook = ttk.Notebook(self.root)
@@ -1711,14 +1720,51 @@ class RolesPrincipal:
         self.notebook.add(tab1, text="📋 Visualizador")
         self.visualizador = VisualizadorRoles(tab1)
 
-        # Pestaña 2: Generador
+        # Pestaña 2: Generador (abre en ventana separada)
         tab2 = ttk.Frame(self.notebook)
         self.notebook.add(tab2, text="📊 Generador")
-        try:
-            self.generador = GeneradorRolesPagoINSEVIG(tab2)
-        except Exception as e:
-            print(f"Error creando generador en pestaña: {e}")
-            tk.Label(tab2, text=f"Error: {e}", fg="red").pack()
+        self.generador_window = None
+        self._crear_tab_generador_simple(tab2)
+
+    def _crear_tab_generador_simple(self, parent):
+        """Crear interfaz simple del generador en la pestaña con botón para abrir"""
+        header = tk.Frame(parent, bg=self.color_primary, height=60)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+        tk.Label(header, text="GENERADOR DE ROLES DE PAGO", font=("Arial", 14, "bold"),
+                fg="white", bg=self.color_primary).pack(pady=10)
+        tk.Label(header, text="Sistema de generación en batch", font=("Arial", 9),
+                fg=self.color_secondary, bg=self.color_primary).pack()
+
+        content = tk.Frame(parent, bg=self.color_bg)
+        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        tk.Label(content, text="GENERADOR DE ROLES EN BATCH", font=("Arial", 12, "bold"),
+                fg=self.color_primary, bg=self.color_bg).pack(pady=20)
+
+        desc = """
+• Generar múltiples roles automáticamente
+• Filtrar por período, nombre o cédulas
+• 6 formatos de nombre personalizables
+• Opción 2 roles por hoja
+• Logo automático en B&N
+• Barra de progreso en tiempo real
+        """
+        tk.Label(content, text=desc, font=("Arial", 10), fg="#333333", bg=self.color_bg,
+                justify=tk.LEFT).pack(pady=20)
+
+        tk.Button(content, text="🚀 ABRIR GENERADOR", command=self._abrir_generador,
+                 bg=self.color_primary, fg="white", font=("Arial", 13, "bold"),
+                 padx=50, pady=20, relief=tk.RAISED, bd=3, cursor="hand2",
+                 activebackground="#0d4d7a").pack(pady=30)
+
+    def _abrir_generador(self):
+        """Abrir generador en ventana separada"""
+        if self.generador_window is not None and self.generador_window.winfo_exists():
+            self.generador_window.lift()
+            return
+        self.generador_window = tk.Toplevel(self.root)
+        GeneradorRolesPagoINSEVIG(self.generador_window)
 
 
 if __name__ == '__main__':
