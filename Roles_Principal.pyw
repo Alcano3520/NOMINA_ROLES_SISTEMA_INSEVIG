@@ -1561,7 +1561,87 @@ class VisualizadorRoles:
             messagebox.showerror("Error", str(e))
 
     def _buscar_bd(self, filtro):
+        """Dispatcher: elegir entre SQL Server o Supabase según selector"""
+        fuente_actual = self.fuente.get() if self.fuente else 'SQL Server'
+
+        if fuente_actual == 'Supabase':
+            return self._buscar_bd_supabase(filtro)
+        else:
+            return self._buscar_bd_sql_server(filtro)
+
+    def _buscar_bd_supabase(self, filtro):
+        """Búsqueda en Supabase"""
         try:
+            from obtener_datos import _get_supabase_client
+            sb = _get_supabase_client()
+
+            print(f"🔍 [SUPABASE] Buscando: {filtro}")
+
+            # Buscar por código de empleado
+            r = sb.table('rpemplea').select('empleado,apellidos,nombres,cedula,cargo,depto,seccion').eq('codemp', '10').eq('empleado', str(filtro)).execute()
+
+            if not r.data:
+                # Buscar por nombre
+                r = sb.table('rpemplea').select('empleado,apellidos,nombres,cedula,cargo,depto,seccion').eq('codemp', '10').ilike('nombres', f'%{filtro}%').execute()
+
+            if not r.data:
+                # Buscar por apellido
+                r = sb.table('rpemplea').select('empleado,apellidos,nombres,cedula,cargo,depto,seccion').eq('codemp', '10').ilike('apellidos', f'%{filtro}%').execute()
+
+            if not r.data:
+                # Buscar por cédula
+                try:
+                    cedula_num = float(filtro)
+                    r = sb.table('rpemplea').select('empleado,apellidos,nombres,cedula,cargo,depto,seccion').eq('codemp', '10').eq('cedula', cedula_num).execute()
+                except (ValueError, TypeError):
+                    pass
+
+            if not r.data or not r.data:
+                print(f"✗ Sin resultados en Supabase")
+                return None
+
+            print(f"✓ Encontrados {len(r.data)} registros en Supabase")
+
+            # Convertir a DataFrame
+            df = pd.DataFrame(r.data)
+            if not df.empty:
+                df['APELLIDOS_NOMBRES'] = (df['apellidos'].fillna('').astype(str) + ' ' +
+                                          df['nombres'].fillna('').astype(str)).str.strip()
+                # Renombrar columnas a mayúsculas para consistencia
+                df = df.rename(columns={
+                    'empleado': 'EMPLEADO',
+                    'apellidos': 'APELLIDOS',
+                    'nombres': 'NOMBRES',
+                    'cedula': 'CEDULA',
+                    'cargo': 'CARGO',
+                    'depto': 'DEPTO',
+                    'seccion': 'SECCION'
+                })
+
+                # Obtener nombres descriptivos de cargo y depto
+                r_fnc = sb.table('dbtablas').select('codigo,nombre').eq('tipo', 'FNC').eq('codemp', '10').execute()
+                r_dpt = sb.table('dbtablas').select('codigo,nombre').eq('tipo', 'DPT').eq('codemp', '10').execute()
+
+                dic_fnc = {str(r.get('codigo', '')).strip(): r.get('nombre', '') for r in (r_fnc.data or [])}
+                dic_dpt = {str(r.get('codigo', '')).strip(): r.get('nombre', '') for r in (r_dpt.data or [])}
+
+                df['CARGO'] = df['CARGO'].apply(lambda x: dic_fnc.get(str(x).strip(), str(x)))
+                df['DEPTO'] = df['DEPTO'].apply(lambda x: dic_dpt.get(str(x).strip(), str(x)))
+
+                return df
+
+            return None
+
+        except Exception as e:
+            print(f"✗ Error Supabase: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _buscar_bd_sql_server(self, filtro):
+        """Búsqueda en SQL Server (original)"""
+        try:
+            print(f"🔍 [SQL SERVER] Buscando: {filtro}")
             conn = pyodbc.connect(
                 'DRIVER={ODBC Driver 17 for SQL Server};'
                 'SERVER=192.168.2.115;DATABASE=insevig;UID=sa;PWD=puntosoft123*;'
