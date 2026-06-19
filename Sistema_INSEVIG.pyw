@@ -258,7 +258,25 @@ class DashboardProfesional:
             messagebox.showerror("Error", f"Error abriendo Roles de Pago:\n{str(e)}")
 
     def _abrir_empleados(self):
-        messagebox.showinfo("Empleados", "Abriendo Gestión de Empleados...")
+        """Abre SISTEMA_GESTION_EMPLEADOS_10.pyw como ventana separada"""
+        try:
+            # Cargar e integrar SISTEMA_GESTION_EMPLEADOS_10
+            ruta_empleados = os.path.join(os.path.dirname(__file__), "SISTEMA_GESTION_EMPLEADOS_10.pyw")
+            if os.path.exists(ruta_empleados):
+                loader = importlib.machinery.SourceFileLoader("empleados_mod", ruta_empleados)
+                empleados_mod = loader.load_module()
+
+                # Crear ventana separada para Empleados
+                ventana_empleados = tk.Toplevel(self.root)
+                ventana_empleados.title("Gestión de Empleados - INSEVIG")
+                ventana_empleados.geometry("1200x700")
+
+                # Crear aplicación de empleados en la nueva ventana
+                app_empleados = empleados_mod.SistemaGestionEmpleados10(ventana_empleados)
+            else:
+                messagebox.showerror("Error", f"No se encontró SISTEMA_GESTION_EMPLEADOS_10.pyw en {ruta_empleados}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error abriendo Gestión de Empleados:\n{str(e)}")
 
     def _abrir_reportes(self):
         messagebox.showinfo("Reportes", "Abriendo Reportes...")
