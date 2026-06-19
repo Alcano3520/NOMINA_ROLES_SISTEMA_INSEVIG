@@ -11,6 +11,10 @@ import sys
 import os
 import subprocess
 import importlib.machinery
+import threading
+
+# Agregar shared/ al path para importar detect_db
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'shared'))
 
 # ════════════════════════════════════════════════════════════════════════════════
 # COLORES
@@ -115,6 +119,7 @@ class LoginProfesional:
         password = self.entry_password.get().strip()
 
         if usuario == "admin" and password == "admin":
+            # Detectar disponibilidad de BD automáticamente
             self.root.destroy()
             root_dash = tk.Tk()
             DashboardProfesional(root_dash, usuario)
@@ -139,7 +144,21 @@ class DashboardProfesional:
         y = (self.root.winfo_screenheight() // 2) - 400
         self.root.geometry(f"1400x800+{x}+{y}")
 
+        # Detectar BD disponible en background
+        self.db_disponible = self._detectar_bd_disponible()
+
         self._crear_interfaz()
+
+    def _detectar_bd_disponible(self):
+        """Detecta automáticamente SQL Server o Supabase"""
+        try:
+            from detect_db import obtener_fuente_recomendada
+            fuente = obtener_fuente_recomendada()
+            print(f"Base de datos detectada: {fuente}")
+            return fuente
+        except Exception as e:
+            print(f"Error detectando BD: {e}")
+            return 'SQL Server'  # Default
 
     def _crear_interfaz(self):
         # ════ HEADER ════
