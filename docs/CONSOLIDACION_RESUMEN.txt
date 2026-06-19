@@ -1,0 +1,168 @@
+════════════════════════════════════════════════════════════════════════════
+CONSOLIDACIÓN: Roles_VISUALIZADOR.pyw + Roles_generador_VIZUALIZADOR_10.pyw
+════════════════════════════════════════════════════════════════════════════
+
+ARCHIVOS ORIGEN
+---------------
+1. Roles_VISUALIZADOR.pyw (417 líneas)
+   - Búsqueda individual de empleado
+   - Visualización PDF en canvas
+   - Descarga rápida
+
+2. Roles_generador_VIZUALIZADOR_10.pyw (1462 líneas)
+   - Generación batch de PDFs
+   - Filtros complejos
+   - Múltiples opciones de formato
+   - Barra de progreso
+
+ARCHIVO RESULTADO
+-----------------
+Roles_Principal.pyw (1345 líneas)
+✓ Completamente funcional
+✓ Sintaxis validada
+✓ Compilable a EXE
+
+ESTRUCTURA DEL NUEVO ARCHIVO
+-----------------------------
+
+1. IMPORTS (unificados)
+   - pyodbc, pandas, tkinter, etc.
+   - Sin duplicados
+
+2. CLASE ObtenerDatos (nuevo, mejorado)
+   - Extrae lógica del módulo obtener_datos.py
+   - Método: obtener_datos_empleado_rapido()
+   - Búsqueda rápida sin cargar todo el período
+
+3. CLASE GeneradorPDFs (nuevo, consolidada)
+   - Combina métodos de GeneradorRolesPagoINSEVIG
+   - obtener_datos_bd() - para batch
+   - crear_pdf_empleado_bd() - rol simple
+   - crear_pdf_empleado_doble() - 2 roles por hoja
+   - dibujar_rol_en_posicion() - núcleo de PDF
+   - Métodos auxiliares: _format_cedula, _safe_get_bd, etc.
+
+4. CLASE RolesPrincipal (nueva, contenedora)
+   - Ventana principal con Notebook (pestañas)
+   - Pestaña 1: Visualizador (búsqueda + preview)
+   - Pestaña 2: Generador (batch + configuración)
+   - Métodos _crear_visualizador() y _crear_generador()
+   - Gestiona variables separadas: vis_* y gen_*
+
+ELIMINACIÓN DE DUPLICADOS
+--------------------------
+
+IMPORTS
+  ❌ exec() para cargar generador
+  ❌ Imports de __main__
+
+FUNCIONES COMPARTIDAS
+  ❌ obtener_datos_empleado_rapido() - ahora en ObtenerDatos
+  ❌ crear_pdf_empleado_bd() - ahora en GeneradorPDFs
+  ❌ _format_cedula() - ahora privado en GeneradorPDFs
+  ❌ _safe_get_bd() - ahora privado en GeneradorPDFs
+  ❌ _calculate_overtime_bd() - ahora privado en GeneradorPDFs
+
+VARIABLES DE ESTADO
+  ✓ vis_* para Visualizador
+  ✓ gen_* para Generador
+  (No hay conflictos ni contaminación de namespace)
+
+MEJORAS REALIZADAS
+------------------
+
+1. Organización modular
+   - ObtenerDatos: gestiona búsquedas y consolidación
+   - GeneradorPDFs: crea PDFs y maneja BD
+   - RolesPrincipal: controla la interfaz
+
+2. Eliminación de código muerto
+   - Se removió código de importación dinámica
+   - Se removió lógica duplicada de conexión
+
+3. Variables limpias
+   - Visualizador: vis_periodo_var, vis_buscar_var, vis_datos_actual, etc.
+   - Generador: gen_periodo_var, gen_filtro_var, gen_cedulas_text, etc.
+   - Generador PDF: color_primary, color_secondary (compartidas)
+
+4. Threading mejorado
+   - Búsqueda en thread separado (visualizador)
+   - Generación en thread separado (batch)
+   - self.root.after() para actualizaciones de UI
+
+5. Error handling
+   - Try/except en todas las operaciones de BD
+   - Mensajes informativos con messagebox
+   - Logging en consola
+
+MAPEO DE FUNCIONALIDADES
+------------------------
+
+VISUALIZADOR
+  from Roles_VISUALIZADOR.pyw → _crear_visualizador()
+    - Período (StringVar)
+    - Búsqueda (StringVar)
+    - Canvas para PDF
+    - Botones: Buscar, Descargar
+    - Status bar
+  
+  _vis_buscar() → Validación y threading
+  _vis_buscar_thread() → Búsqueda con ObtenerDatos
+  _vis_mostrar() → Generación con GeneradorPDFs
+  _vis_mostrar_pdf_como_imagen() → Visualización PyMuPDF
+  _vis_descargar() → Guardado a disco
+
+GENERADOR
+  from Roles_generador_VIZUALIZADOR_10.pyw → _crear_generador()
+    - Período, Filtro, Formato
+    - Opciones: 2 roles/hoja, Logo
+    - Cédulas específicas (Text widget)
+    - Barra de progreso
+    - Status labels
+  
+  _gen_seleccionar_periodo() → Diálogo modal
+  _gen_seleccionar_carpeta() → Diálogo filedialog
+  _gen_toggle_logo() → Control de logo
+  _gen_seleccionar_logo() → Diálogo de archivo
+  _gen_iniciar() → Validación y threading
+  _gen_ejecutar() → Procesamiento batch
+  _gen_nombre_archivo() → Formato personalizable
+
+COMPATIBILIDAD MANTENIDA
+------------------------
+
+✓ Base de datos: MISMA conexión y credenciales
+✓ Tablas: RPEMPLEA, RPINGDES, RPHISTOR, DBTABLAS
+✓ Filtro: CODEMP='10' AND CODSUC='10'
+✓ Mapeo de conceptos: IDÉNTICO (CLASE -> concepto)
+✓ Cálculos: IDÉNTICOS para ingresos/egresos
+✓ Colores: IDÉNTICOS (#1a4d8f, #ffd700, etc.)
+✓ Fuentes: Segoe UI, Arial, Times-Roman
+✓ Formato de PDF: IDÉNTICO (A4, márgenes, tablas)
+
+DIFERENCIAS MEJORATIVAS
+-----------------------
+
+1. Buscar empleados rápidamente (visualizador)
+   - Antes: VisualizadorRoles instanciaba GeneradorRolesPagoINSEVIG (pesado)
+   - Ahora: Usa ObtenerDatos.obtener_datos_empleado_rapido() (ligero)
+
+2. Compartir instancias
+   - Antes: Dos procesos separados (dos Python)
+   - Ahora: Un solo proceso con dos pestañas (1 Python)
+
+3. Interfaz unificada
+   - Antes: Dos ventanas separadas
+   - Ahora: Notebook con pestañas (más intuitivo)
+
+4. Reducción de dependencias
+   - Antes: Roles_VISUALIZADOR dependía de Roles_generador
+   - Ahora: Las clases son independientes
+
+TAMAÑO
+------
+Original (combinado): ~1879 líneas
+Nuevo (Roles_Principal): ~1345 líneas
+Reducción: ~28% por consolidación y eliminación de duplicados
+
+════════════════════════════════════════════════════════════════════════════
