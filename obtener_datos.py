@@ -325,14 +325,14 @@ class ObtenerDatos:
                 mes_fin = int(mes) + 1
             fecha_fin = f'{año_fin}-{mes_fin:02d}-01'
 
-            # Intentar primero rpingdesres (período abierto)
-            r = sb.table('rpingdesres').select('*').eq('codemp', '10').eq('empleado', str(empleado_code)).gte('fecha_ven', fecha_inicio).lt('fecha_ven', fecha_fin).execute()
+            # Intentar primero rpingdesres (período abierto - sin codemp filter)
+            r = sb.table('rpingdesres').select('*').eq('empleado', str(empleado_code)).gte('fecha_ven', fecha_inicio).lt('fecha_ven', fecha_fin).execute()
             df_mov = pd.DataFrame(r.data) if r.data else pd.DataFrame()
 
-            # Si no hay en rpingdesres, buscar en rphistor_temp (histórico)
+            # Si no hay en rpingdesres, buscar en rphistor_temp (histórico - sin codemp filter)
             if df_mov.empty:
                 print("  → Buscando en rphistor_temp (períodos cerrados)...")
-                r = sb.table('rphistor_temp').select('*').eq('codemp', '10').eq('empleado', str(empleado_code)).gte('fecha_ven', fecha_inicio).lt('fecha_ven', fecha_fin).execute()
+                r = sb.table('rphistor_temp').select('*').eq('empleado', str(empleado_code)).gte('fecha_ven', fecha_inicio).lt('fecha_ven', fecha_fin).execute()
                 df_mov = pd.DataFrame(r.data) if r.data else pd.DataFrame()
 
             # 3. Consolidar movimientos
