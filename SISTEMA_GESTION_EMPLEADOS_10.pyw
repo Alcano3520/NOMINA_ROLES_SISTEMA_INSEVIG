@@ -9,7 +9,7 @@ Compatible Linux/Windows.
 import os, sys, threading, webbrowser, shutil, tempfile, calendar, logging
 from pathlib import Path
 from datetime import datetime
-6
+
 # Setup logging (archivo + terminal)
 import sys
 logging.basicConfig(
