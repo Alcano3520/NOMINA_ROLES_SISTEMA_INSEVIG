@@ -447,29 +447,38 @@ class ConsultorPrestamos:
             for item in tree_resultados.get_children():
                 tree_resultados.delete(item)
             
-            # Buscar empleados
-            lbl_estado.config(text="🔍 Buscando empleados...", foreground="#3498db")
-            ventana_buscador.update()
-            
-            df_resultados = self.buscar_empleados_por_nombre(apellidos, nombres)
-            
-            if df_resultados.empty:
-                lbl_estado.config(text="❌ No se encontraron empleados con esos criterios", foreground="#e74c3c")
-                messagebox.showinfo("Sin resultados", "No se encontraron empleados que coincidan con los criterios de búsqueda")
-                return
-            
-            # Mostrar resultados
-            for index, row in df_resultados.iterrows():
-                tree_resultados.insert("", "end", values=(
-                    row["EMPLEADO"],
-                    row["APELLIDOS"],
-                    row["NOMBRES"], 
-                    self.formatear_cedula(row["CEDULA"]),
-                    row["CARGO"] if pd.notna(row["CARGO"]) else ""
-                ))
-            
-            total_encontrados = len(df_resultados)
-            lbl_estado.config(text=f"✅ Se encontraron {total_encontrados} empleado(s)", foreground="#27ae60")
+            try:
+                # Buscar empleados
+                lbl_estado.config(text="🔍 Buscando empleados...", foreground="#3498db")
+                ventana_buscador.update()
+
+                df_resultados = self.buscar_empleados_por_nombre(apellidos, nombres)
+
+                if df_resultados.empty:
+                    try:
+                        lbl_estado.config(text="❌ No se encontraron empleados con esos criterios", foreground="#e74c3c")
+                    except tk.TclError:
+                        pass  # Ventana cerrada
+                    messagebox.showinfo("Sin resultados", "No se encontraron empleados que coincidan con los criterios de búsqueda")
+                    return
+
+                # Mostrar resultados
+                for index, row in df_resultados.iterrows():
+                    tree_resultados.insert("", "end", values=(
+                        row["EMPLEADO"],
+                        row["APELLIDOS"],
+                        row["NOMBRES"],
+                        self.formatear_cedula(row["CEDULA"]),
+                        row["CARGO"] if pd.notna(row["CARGO"]) else ""
+                    ))
+
+                total_encontrados = len(df_resultados)
+                try:
+                    lbl_estado.config(text=f"✅ Se encontraron {total_encontrados} empleado(s)", foreground="#27ae60")
+                except tk.TclError:
+                    pass  # Ventana cerrada
+            except Exception as e:
+                print(f"Error en búsqueda: {e}")
         
         def limpiar_busqueda():
             entry_apellidos.delete(0, tk.END)
