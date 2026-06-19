@@ -93,26 +93,44 @@ class GeneradorRolesPagoINSEVIG:
         style.configure('Primary.TButton', font=('Segoe UI', 11, 'bold'), padding=10)
         style.map('Primary.TButton', background=[('active', self.color_primary)])
 
-        # Crear canvas y scrollbar para hacer la interfaz scrolleable
-        canvas = tk.Canvas(self.root, bg=self.color_bg, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        scrollable_frame.configure(style='TFrame')
+        # SI está embebido en un Frame, usar scroll directo
+        if self.is_embedded:
+            canvas = tk.Canvas(self.root, bg=self.color_bg, highlightthickness=0)
+            scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+            scrollable_frame.configure(style='TFrame')
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
 
-        # Empaquetar canvas y scrollbar
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
 
-        # Ahora usamos scrollable_frame en lugar de frame
-        frame = scrollable_frame
+            frame = scrollable_frame
+        else:
+            # SI es ventana Tk, usar canvas+scroll
+            canvas = tk.Canvas(self.root, bg=self.color_bg, highlightthickness=0)
+            scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+            scrollable_frame.configure(style='TFrame')
+
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            frame = scrollable_frame
 
         # Header con logo y título
         header_frame = tk.Frame(frame, bg=self.color_primary, height=80)
@@ -1720,51 +1738,10 @@ class RolesPrincipal:
         self.notebook.add(tab1, text="📋 Visualizador")
         self.visualizador = VisualizadorRoles(tab1)
 
-        # Pestaña 2: Generador (abre en ventana separada)
+        # Pestaña 2: Generador (integrado directamente)
         tab2 = ttk.Frame(self.notebook)
         self.notebook.add(tab2, text="📊 Generador")
-        self.generador_window = None
-        self._crear_tab_generador_simple(tab2)
-
-    def _crear_tab_generador_simple(self, parent):
-        """Crear interfaz simple del generador en la pestaña con botón para abrir"""
-        header = tk.Frame(parent, bg=self.color_primary, height=60)
-        header.pack(fill=tk.X)
-        header.pack_propagate(False)
-        tk.Label(header, text="GENERADOR DE ROLES DE PAGO", font=("Arial", 14, "bold"),
-                fg="white", bg=self.color_primary).pack(pady=10)
-        tk.Label(header, text="Sistema de generación en batch", font=("Arial", 9),
-                fg=self.color_secondary, bg=self.color_primary).pack()
-
-        content = tk.Frame(parent, bg=self.color_bg)
-        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-
-        tk.Label(content, text="GENERADOR DE ROLES EN BATCH", font=("Arial", 12, "bold"),
-                fg=self.color_primary, bg=self.color_bg).pack(pady=20)
-
-        desc = """
-• Generar múltiples roles automáticamente
-• Filtrar por período, nombre o cédulas
-• 6 formatos de nombre personalizables
-• Opción 2 roles por hoja
-• Logo automático en B&N
-• Barra de progreso en tiempo real
-        """
-        tk.Label(content, text=desc, font=("Arial", 10), fg="#333333", bg=self.color_bg,
-                justify=tk.LEFT).pack(pady=20)
-
-        tk.Button(content, text="🚀 ABRIR GENERADOR", command=self._abrir_generador,
-                 bg=self.color_primary, fg="white", font=("Arial", 13, "bold"),
-                 padx=50, pady=20, relief=tk.RAISED, bd=3, cursor="hand2",
-                 activebackground="#0d4d7a").pack(pady=30)
-
-    def _abrir_generador(self):
-        """Abrir generador en ventana separada"""
-        if self.generador_window is not None and self.generador_window.winfo_exists():
-            self.generador_window.lift()
-            return
-        self.generador_window = tk.Toplevel(self.root)
-        GeneradorRolesPagoINSEVIG(self.generador_window)
+        self.generador = GeneradorRolesPagoINSEVIG(tab2)
 
 
 if __name__ == '__main__':
