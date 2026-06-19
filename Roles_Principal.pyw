@@ -36,7 +36,10 @@ warnings.filterwarnings('ignore', message='.*SQLAlchemy.*')
 
 # Importar la clase del generador
 import importlib.util
-spec = importlib.util.spec_from_file_location("generador_roles", "Roles_generador_VIZUALIZADOR_10.pyw")
+generador_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Roles_generador_VIZUALIZADOR_10.pyw")
+spec = importlib.util.spec_from_file_location("generador_roles", generador_path)
+if spec is None:
+    raise ImportError(f"No se pudo cargar el generador desde: {generador_path}")
 generador_module = importlib.util.module_from_spec(spec)
 sys.modules['generador_roles'] = generador_module
 spec.loader.exec_module(generador_module)
