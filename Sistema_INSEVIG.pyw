@@ -356,8 +356,7 @@ class DashboardProfesional:
         """Abre módulo de Observaciones como aplicación separada"""
         try:
             import subprocess, sys, os
-            # Usar versión simplificada compatible con Linux
-            ruta_observaciones = os.path.join(os.path.dirname(__file__), 'observaciones', 'OBSERVACIONES_SIMPLE.pyw')
+            ruta_observaciones = os.path.join(os.path.dirname(__file__), 'observaciones', 'TOTAL_OSERVACIONES_4_0.pyw')
             if os.path.exists(ruta_observaciones):
                 subprocess.Popen([sys.executable, ruta_observaciones])
             else:
