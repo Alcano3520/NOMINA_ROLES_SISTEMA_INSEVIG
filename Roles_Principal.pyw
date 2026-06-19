@@ -1489,15 +1489,16 @@ class GeneradorRolesPagoINSEVIG:
 from obtener_datos import ObtenerDatos
 
 class VisualizadorRoles:
-    def __init__(self, parent):
+    def __init__(self, parent, fuente=None):
         self.parent = parent
         self.color_primary = "#1a4d8f"
         self.color_secondary = "#ffd700"
         self.color_bg = "#f0f0f0"
-        
+        self.fuente = fuente
+
         self.obtener_datos = ObtenerDatos()
         self.vis_datos_actual = None
-        
+
         self._crear_interfaz()
     
     def _crear_interfaz(self):
@@ -1642,7 +1643,14 @@ class VisualizadorRoles:
 
     def _vis_cargar(self, periodo, emp_code):
         try:
-            emp = self.obtener_datos.obtener_datos_empleado_rapido(periodo, str(emp_code))
+            fuente_actual = self.fuente.get() if self.fuente else 'SQL Server'
+
+            # Elegir método según la fuente
+            if fuente_actual == 'Supabase':
+                emp = self.obtener_datos.obtener_datos_empleado_supabase(periodo, str(emp_code))
+            else:
+                emp = self.obtener_datos.obtener_datos_empleado_rapido(periodo, str(emp_code))
+
             if emp is None:
                 messagebox.showerror("Error", "No hay datos")
                 return
@@ -1721,13 +1729,26 @@ class VisualizadorRoles:
 # ════════════════════════════════════════════════════════════════════════════════
 
 class RolesPrincipal:
-    def __init__(self, root):
+    def __init__(self, root, fuente='SQL Server'):
         self.root = root
         self.root.title("Roles de Pago - INSEVIG")
         self.root.geometry("1000x800")
         self.color_primary = "#1a4d8f"
         self.color_secondary = "#ffd700"
         self.color_bg = "#f0f0f0"
+        self.fuente = tk.StringVar(value=fuente)
+        self.obtener_datos = ObtenerDatos()
+
+        # Header con selector
+        header = tk.Frame(self.root, bg=self.color_primary, height=50)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+
+        tk.Label(header, text="Seleccionar Fuente:", font=("Arial", 10, "bold"),
+                fg="white", bg=self.color_primary).pack(side=tk.LEFT, padx=15, pady=10)
+
+        ttk.Combobox(header, textvariable=self.fuente, values=['SQL Server', 'Supabase'],
+                    state='readonly', width=15).pack(side=tk.LEFT, padx=5, pady=10)
 
         # Notebook
         self.notebook = ttk.Notebook(self.root)
@@ -1736,7 +1757,7 @@ class RolesPrincipal:
         # Pestaña 1: Visualizador
         tab1 = ttk.Frame(self.notebook)
         self.notebook.add(tab1, text="📋 Visualizador")
-        self.visualizador = VisualizadorRoles(tab1)
+        self.visualizador = VisualizadorRoles(tab1, fuente=self.fuente)
 
         # Pestaña 2: Generador (acceso directo con botón)
         tab2 = ttk.Frame(self.notebook)
