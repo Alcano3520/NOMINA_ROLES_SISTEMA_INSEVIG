@@ -1552,13 +1552,27 @@ class VisualizadorRoles:
 
     def _vis_buscar_thread(self, periodo, filtro):
         try:
+            print(f"🔍 Iniciando búsqueda: {filtro} en {periodo}")
             resultados = self._buscar_bd(filtro)
-            if resultados is None or resultados.empty:
-                messagebox.showinfo("Sin resultados", f"No encontrado: {filtro}")
+
+            if resultados is None:
+                print(f"✗ Búsqueda retornó None")
+                self.root.after(0, lambda: messagebox.showinfo("Sin resultados", f"No encontrado: {filtro}"))
                 return
-            self._vis_mostrar_lista(resultados, periodo)
+
+            if resultados.empty:
+                print(f"✗ Búsqueda retornó DataFrame vacío")
+                self.root.after(0, lambda: messagebox.showinfo("Sin resultados", f"No encontrado: {filtro}"))
+                return
+
+            print(f"✓ Encontrados {len(resultados)} resultados")
+            self.root.after(0, lambda: self._vis_mostrar_lista(resultados, periodo))
+
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            print(f"✗ Error en búsqueda: {e}")
+            import traceback
+            traceback.print_exc()
+            self.root.after(0, lambda: messagebox.showerror("Error en búsqueda", f"{str(e)}\n\nRevisa la consola para más detalles"))
 
     def _buscar_bd(self, filtro):
         """Dispatcher: elegir entre SQL Server o Supabase según selector"""
@@ -1673,51 +1687,79 @@ class VisualizadorRoles:
         win = tk.Toplevel(self.parent)
         win.title("Seleccionar Empleado")
         win.geometry("900x500")
+        win.transient(self.parent)  # Modal
 
         header = tk.Frame(win, bg=self.color_primary, height=50)
         header.pack(fill=tk.X)
         header.pack_propagate(False)
-        tk.Label(header, text="RESULTADOS",font=("Arial", 12, "bold"), fg="white", bg=self.color_primary).pack(pady=5)
+        tk.Label(header, text=f"RESULTADOS ({len(resultados)} encontrado(s))",
+                font=("Arial", 12, "bold"), fg="white", bg=self.color_primary).pack(pady=5)
 
         main = tk.Frame(win, bg="#f5f5f5")
         main.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
 
+        # Lista
         list_frame = tk.Frame(main, bg="white", relief=tk.SUNKEN, bd=1)
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 10))
 
         scroll = ttk.Scrollbar(list_frame)
         scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         listbox = tk.Listbox(list_frame, yscrollcommand=scroll.set, font=("Courier", 9),
-                            selectmode=tk.SINGLE, bg="white", bd=0, highlightthickness=0)
+                            selectmode=tk.SINGLE, bg="white", bd=0, highlightthickness=0,
+                            activestyle='none', highlightcolor=self.color_primary)
         listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.config(command=listbox.yview)
 
         items = []
         for idx, (i, emp) in enumerate(resultados.iterrows()):
-            cedula = str(emp['CEDULA']).split('.')[0] if '.' in str(emp['CEDULA']) else str(emp['CEDULA'])
-            texto = f"{cedula:<15} {emp['APELLIDOS_NOMBRES']:<50} {emp.get('DEPTO', 'N/A')}"
-            listbox.insert(tk.END, texto)
-            if idx % 2 == 0:
-                listbox.itemconfig(tk.END, bg="#f9f9f9")
-            items.append((i, emp))
+            try:
+                cedula = str(emp.get('CEDULA', '')).split('.')[0] if '.' in str(emp.get('CEDULA', '')) else str(emp.get('CEDULA', ''))
+                nombres = emp.get('APELLIDOS_NOMBRES', emp.get('NOMBRES', 'N/A'))
+                depto = emp.get('DEPTO', 'N/A')
+                texto = f"{cedula:<15} {nombres:<50} {depto}"
+                listbox.insert(tk.END, texto)
+                if idx % 2 == 0:
+                    listbox.itemconfig(tk.END, bg="#f9f9f9")
+                items.append((i, emp))
+            except Exception as e:
+                print(f"Error al agregar empleado {idx}: {e}")
 
         if items:
             listbox.selection_set(0)
+            listbox.see(0)
 
         def seleccionar(event=None):
-            sel = listbox.curselection()
-            if not sel:
-                messagebox.showwarning("Advertencia", "Selecciona un empleado")
-                return
-            emp_row = items[sel[0]][1]
-            self.vis_status.config(text="⏳ Cargando...", fg='#cc6600')
-            threading.Thread(target=self._vis_cargar, args=(periodo, emp_row['EMPLEADO']), daemon=True).start()
-            win.destroy()
+            try:
+                sel = listbox.curselection()
+                if not sel:
+                    messagebox.showwarning("Advertencia", "Selecciona un empleado")
+                    return
+                emp_row = items[sel[0]][1]
+                emp_code = emp_row.get('EMPLEADO') or emp_row.get('empleado')
+                print(f"✓ Seleccionado: {emp_code}")
+                self.vis_status.config(text="⏳ Cargando...", fg='#cc6600')
+                threading.Thread(target=self._vis_cargar, args=(periodo, emp_code), daemon=True).start()
+                win.destroy()
+            except Exception as e:
+                print(f"Error al seleccionar: {e}")
+                messagebox.showerror("Error", f"Error al seleccionar empleado: {str(e)}")
+
+        # Botones
+        btn_frame = tk.Frame(main, bg="#f5f5f5")
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+
+        tk.Button(btn_frame, text="✓ VER", command=seleccionar, bg=self.color_primary,
+                 fg="white", font=("Arial", 10, "bold"), padx=30, pady=8,
+                 relief=tk.RAISED, cursor='hand2').pack(side=tk.LEFT, padx=5)
+
+        tk.Button(btn_frame, text="✕ CANCELAR", command=win.destroy, bg="#cc3333",
+                 fg="white", font=("Arial", 10), padx=30, pady=8,
+                 relief=tk.RAISED, cursor='hand2').pack(side=tk.LEFT, padx=5)
 
         listbox.bind("<Double-Button-1>", seleccionar)
-        tk.Button(main, text="✓ VER", command=seleccionar, bg=self.color_primary,
-                 fg="white", font=("Arial", 10, "bold"), padx=20, pady=8).pack(side=tk.LEFT, padx=5, pady=10)
+        listbox.bind("<Return>", seleccionar)
+        listbox.focus()
 
         self.vis_status.config(text=f"✓ {len(resultados)} resultados", fg='#28a745')
 
