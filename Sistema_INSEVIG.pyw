@@ -237,7 +237,25 @@ class DashboardProfesional:
             col += 1
 
     def _abrir_roles(self):
-        messagebox.showinfo("Roles", "Abriendo Roles de Pago...")
+        """Abre Roles_Principal.pyw como ventana separada"""
+        try:
+            # Cargar e integrar Roles_Principal
+            ruta_roles = os.path.join(os.path.dirname(__file__), "Roles_Principal.pyw")
+            if os.path.exists(ruta_roles):
+                loader = importlib.machinery.SourceFileLoader("roles_mod", ruta_roles)
+                roles_mod = loader.load_module()
+
+                # Crear ventana separada para Roles
+                ventana_roles = tk.Toplevel(self.root)
+                ventana_roles.title("Roles de Pago - INSEVIG")
+                ventana_roles.geometry("1000x800")
+
+                # Crear aplicación de roles en la nueva ventana
+                app_roles = roles_mod.RolesPrincipal(ventana_roles)
+            else:
+                messagebox.showerror("Error", f"No se encontró Roles_Principal.pyw en {ruta_roles}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error abriendo Roles de Pago:\n{str(e)}")
 
     def _abrir_empleados(self):
         messagebox.showinfo("Empleados", "Abriendo Gestión de Empleados...")
