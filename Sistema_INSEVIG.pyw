@@ -1,240 +1,246 @@
 #!/usr/bin/env python3
 """
-SISTEMA INTEGRADO INSEVIG
-Login + Dashboard + Aplicaciones
+SISTEMA INTEGRADO INSEVIG - VERSIÓN PROFESIONAL
+Diseño corporativo con menú lateral
 """
 
 import tkinter as tk
 from tkinter import messagebox, ttk
+from datetime import datetime
 import sys
 import os
-from datetime import datetime
+import subprocess
+import importlib.machinery
 
 # ════════════════════════════════════════════════════════════════════════════════
-# COLORES CORPORATIVOS
+# COLORES
 # ════════════════════════════════════════════════════════════════════════════════
 
-COLOR_PRIMARY = "#1a4d8f"      # Azul corporativo
-COLOR_SECONDARY = "#ffd700"     # Amarillo/dorado
-COLOR_BG = "#f0f0f0"           # Fondo gris claro
-COLOR_WHITE = "#ffffff"         # Blanco
-COLOR_DARK = "#0d1b2a"         # Azul oscuro
+COLOR_SIDEBAR = "#0d1b2a"
+COLOR_PRIMARY = "#1a4d8f"
+COLOR_SECONDARY = "#ffd700"
+COLOR_BG = "#f5f7fa"
+COLOR_WHITE = "#ffffff"
+COLOR_TEXT = "#333333"
+COLOR_HOVER = "#2a5caa"
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# VENTANA DE LOGIN
+# LOGIN - VERSIÓN PROFESIONAL
 # ════════════════════════════════════════════════════════════════════════════════
 
-class VentanaLogin:
+class LoginProfesional:
     def __init__(self, root):
         self.root = root
-        self.root.title("INSEVIG - Sistema de Nómina")
-        self.root.geometry("500x600")
-        self.root.configure(bg=COLOR_PRIMARY)
+        self.root.title("INSEVIG - Acceso al Sistema")
+        self.root.geometry("900x600")
+        self.root.configure(bg=COLOR_SIDEBAR)
+        self.root.resizable(False, False)
 
-        # Centrar ventana
-        self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (500 // 2)
-        y = (self.root.winfo_screenheight() // 2) - (600 // 2)
-        self.root.geometry(f"500x600+{x}+{y}")
+        x = (self.root.winfo_screenwidth() // 2) - 450
+        y = (self.root.winfo_screenheight() // 2) - 300
+        self.root.geometry(f"900x600+{x}+{y}")
 
-        self.usuario_logueado = None
         self._crear_interfaz()
 
     def _crear_interfaz(self):
-        # Frame central
-        frame_central = tk.Frame(self.root, bg=COLOR_PRIMARY)
-        frame_central.pack(fill=tk.BOTH, expand=True, padx=30, pady=30)
+        # ════ LADO IZQUIERDO - BRANDED ════
+        left = tk.Frame(self.root, bg=COLOR_PRIMARY, width=400)
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left.pack_propagate(False)
 
-        # Logo/Título
-        tk.Label(frame_central, text="INSEVIG", font=("Arial", 28, "bold"),
-                fg=COLOR_SECONDARY, bg=COLOR_PRIMARY).pack(pady=20)
+        # Logo
+        logo_frame = tk.Frame(left, bg=COLOR_PRIMARY)
+        logo_frame.pack(pady=60)
 
-        tk.Label(frame_central, text="CIA. LTDA.", font=("Arial", 12),
+        tk.Label(logo_frame, text="INSEVIG", font=("Arial", 32, "bold"),
+                fg=COLOR_SECONDARY, bg=COLOR_PRIMARY).pack()
+
+        tk.Label(logo_frame, text="CIA. LTDA.", font=("Arial", 14),
                 fg=COLOR_WHITE, bg=COLOR_PRIMARY).pack()
 
-        tk.Label(frame_central, text="Sistema de Gestión de Nómina",
-                font=("Arial", 10, "italic"), fg=COLOR_WHITE,
-                bg=COLOR_PRIMARY).pack(pady=(0, 30))
+        # Descripción
+        desc_frame = tk.Frame(left, bg=COLOR_PRIMARY)
+        desc_frame.pack(fill=tk.BOTH, expand=True, padx=30)
 
-        # Línea separadora
-        tk.Frame(frame_central, bg=COLOR_SECONDARY, height=2).pack(fill=tk.X, pady=20)
+        tk.Label(desc_frame, text="Sistema Integrado de\nGestión de Nómina",
+                font=("Arial", 18, "bold"), fg=COLOR_WHITE, bg=COLOR_PRIMARY,
+                justify=tk.CENTER).pack(pady=40)
+
+        tk.Label(desc_frame, text="Administración eficiente de\nrecursos humanos y nómina",
+                font=("Arial", 11), fg="#cccccc", bg=COLOR_PRIMARY,
+                justify=tk.CENTER).pack()
+
+        # ════ LADO DERECHO - LOGIN ════
+        right = tk.Frame(self.root, bg=COLOR_WHITE)
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        login_frame = tk.Frame(right, bg=COLOR_WHITE)
+        login_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=40)
+
+        tk.Label(login_frame, text="INICIAR SESIÓN", font=("Arial", 18, "bold"),
+                fg=COLOR_SIDEBAR, bg=COLOR_WHITE).pack(anchor="w", pady=(0, 30))
 
         # Usuario
-        tk.Label(frame_central, text="Usuario:", font=("Arial", 11, "bold"),
-                fg=COLOR_WHITE, bg=COLOR_PRIMARY).pack(anchor="w", pady=(10, 5))
+        tk.Label(login_frame, text="Usuario", font=("Arial", 10, "bold"),
+                fg=COLOR_TEXT, bg=COLOR_WHITE).pack(anchor="w", pady=(10, 3))
 
-        self.entry_usuario = tk.Entry(frame_central, font=("Arial", 11), width=30)
-        self.entry_usuario.pack(pady=(0, 15), ipady=8)
-        self.entry_usuario.focus()
+        self.entry_usuario = tk.Entry(login_frame, font=("Arial", 11),
+                                      bg="#f5f5f5", bd=1, relief=tk.SOLID)
+        self.entry_usuario.pack(fill=tk.X, ipady=10, pady=(0, 20))
 
         # Contraseña
-        tk.Label(frame_central, text="Contraseña:", font=("Arial", 11, "bold"),
-                fg=COLOR_WHITE, bg=COLOR_PRIMARY).pack(anchor="w", pady=(10, 5))
+        tk.Label(login_frame, text="Contraseña", font=("Arial", 10, "bold"),
+                fg=COLOR_TEXT, bg=COLOR_WHITE).pack(anchor="w", pady=(10, 3))
 
-        self.entry_password = tk.Entry(frame_central, font=("Arial", 11),
-                                      width=30, show="•")
-        self.entry_password.pack(pady=(0, 30), ipady=8)
-        self.entry_password.bind("<Return>", lambda e: self._intentar_login())
+        self.entry_password = tk.Entry(login_frame, font=("Arial", 11),
+                                       bg="#f5f5f5", bd=1, relief=tk.SOLID, show="•")
+        self.entry_password.pack(fill=tk.X, ipady=10, pady=(0, 30))
 
-        # Botón de login
-        tk.Button(frame_central, text="ENTRAR AL SISTEMA", command=self._intentar_login,
-                 bg=COLOR_SECONDARY, fg=COLOR_PRIMARY, font=("Arial", 12, "bold"),
-                 relief=tk.FLAT, padx=40, pady=12, cursor="hand2",
-                 activebackground="#e6c200", activeforeground=COLOR_PRIMARY).pack(pady=20)
+        # Botón login
+        tk.Button(login_frame, text="ACCEDER", command=self._login,
+                 bg=COLOR_PRIMARY, fg=COLOR_WHITE, font=("Arial", 11, "bold"),
+                 relief=tk.FLAT, bd=0, pady=12, cursor="hand2",
+                 activebackground=COLOR_HOVER).pack(fill=tk.X, pady=(0, 20))
 
-        # Info al pie
-        tk.Label(frame_central, text="Usuario: admin | Contraseña: admin",
-                font=("Arial", 8), fg="#cccccc", bg=COLOR_PRIMARY).pack(side=tk.BOTTOM, pady=10)
+        # Credenciales
+        tk.Label(login_frame, text="Usuario de prueba: admin | Contraseña: admin",
+                font=("Arial", 8), fg="#999999", bg=COLOR_WHITE).pack(side=tk.BOTTOM)
 
-    def _intentar_login(self):
+        self.entry_usuario.focus()
+        self.entry_password.bind("<Return>", lambda e: self._login())
+
+    def _login(self):
         usuario = self.entry_usuario.get().strip()
         password = self.entry_password.get().strip()
 
-        if not usuario or not password:
-            messagebox.showwarning("Advertencia", "Ingrese usuario y contraseña")
-            return
-
-        # Verificación simple (en producción usar BD)
         if usuario == "admin" and password == "admin":
-            self.usuario_logueado = usuario
             self.root.destroy()
-            # Abrir dashboard
-            root_dashboard = tk.Tk()
-            Dashboard(root_dashboard, usuario)
-            root_dashboard.mainloop()
+            root_dash = tk.Tk()
+            DashboardProfesional(root_dash, usuario)
+            root_dash.mainloop()
         else:
             messagebox.showerror("Error", "Usuario o contraseña incorrectos")
             self.entry_password.delete(0, tk.END)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# DASHBOARD PRINCIPAL
+# DASHBOARD - VERSIÓN PROFESIONAL
 # ════════════════════════════════════════════════════════════════════════════════
 
-class Dashboard:
+class DashboardProfesional:
     def __init__(self, root, usuario):
         self.root = root
         self.usuario = usuario
-        self.root.title("INSEVIG - Dashboard")
-        self.root.geometry("1200x700")
+        self.root.title("INSEVIG - Panel de Control")
+        self.root.geometry("1400x800")
 
-        # Centrar ventana
-        self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (1200 // 2)
-        y = (self.root.winfo_screenheight() // 2) - (700 // 2)
-        self.root.geometry(f"1200x700+{x}+{y}")
+        x = (self.root.winfo_screenwidth() // 2) - 700
+        y = (self.root.winfo_screenheight() // 2) - 400
+        self.root.geometry(f"1400x800+{x}+{y}")
 
         self._crear_interfaz()
 
     def _crear_interfaz(self):
-        # ════ BANNER SUPERIOR ════
-        banner = tk.Frame(self.root, bg=COLOR_PRIMARY, height=80)
-        banner.pack(fill=tk.X)
-        banner.pack_propagate(False)
+        # ════ HEADER ════
+        header = tk.Frame(self.root, bg=COLOR_PRIMARY, height=70)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
 
-        # Logo y título
-        frame_izq = tk.Frame(banner, bg=COLOR_PRIMARY)
-        frame_izq.pack(side=tk.LEFT, padx=20, pady=10)
+        tk.Label(header, text="INSEVIG - Sistema Integrado",
+                font=("Arial", 16, "bold"), fg=COLOR_SECONDARY,
+                bg=COLOR_PRIMARY).pack(side=tk.LEFT, padx=20, pady=15)
 
-        tk.Label(frame_izq, text="INSEVIG", font=("Arial", 16, "bold"),
-                fg=COLOR_SECONDARY, bg=COLOR_PRIMARY).pack()
-        tk.Label(frame_izq, text="Sistema Integrado de Nómina",
-                font=("Arial", 9), fg=COLOR_WHITE, bg=COLOR_PRIMARY).pack()
+        info_frame = tk.Frame(header, bg=COLOR_PRIMARY)
+        info_frame.pack(side=tk.RIGHT, padx=20, pady=15)
 
-        # Información del usuario
-        frame_der = tk.Frame(banner, bg=COLOR_PRIMARY)
-        frame_der.pack(side=tk.RIGHT, padx=20, pady=10)
-
-        tk.Label(frame_der, text=f"👤 {self.usuario.upper()}",
-                font=("Arial", 10, "bold"), fg=COLOR_SECONDARY,
-                bg=COLOR_PRIMARY).pack(anchor="e")
-
-        hora_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
-        tk.Label(frame_der, text=f"📅 {hora_actual}",
-                font=("Arial", 9), fg=COLOR_WHITE,
-                bg=COLOR_PRIMARY).pack(anchor="e")
+        tk.Label(info_frame, text=f"👤 {self.usuario.upper()} | 📅 {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+                font=("Arial", 10), fg=COLOR_WHITE,
+                bg=COLOR_PRIMARY).pack()
 
         # ════ CONTENIDO PRINCIPAL ════
-        content = tk.Frame(self.root, bg=COLOR_BG)
-        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        main_content = tk.Frame(self.root, bg=COLOR_BG)
+        main_content.pack(fill=tk.BOTH, expand=True)
 
-        # Título
-        tk.Label(content, text="APLICACIONES DISPONIBLES",
-                font=("Arial", 14, "bold"), fg=COLOR_PRIMARY,
-                bg=COLOR_BG).pack(anchor="w", pady=(0, 20))
+        # ════ MENÚ LATERAL ════
+        sidebar = tk.Frame(main_content, bg=COLOR_SIDEBAR, width=250)
+        sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        sidebar.pack_propagate(False)
 
-        # Grid de aplicaciones
-        apps_frame = tk.Frame(content, bg=COLOR_BG)
-        apps_frame.pack(fill=tk.BOTH, expand=True)
+        # Título menú
+        tk.Label(sidebar, text="MENÚ", font=("Arial", 12, "bold"),
+                fg=COLOR_SECONDARY, bg=COLOR_SIDEBAR).pack(anchor="w", padx=15, pady=20)
 
-        aplicaciones = [
-            {
-                "nombre": "📋 Roles de Pago",
-                "descripcion": "Visualizar y generar roles en batch",
-                "comando": self._abrir_roles,
-                "color": "#1a4d8f"
-            },
-            {
-                "nombre": "👥 Gestión de Empleados",
-                "descripcion": "Administrar datos de empleados",
-                "comando": self._abrir_empleados,
-                "color": "#0066cc"
-            },
-            {
-                "nombre": "📊 Reportes",
-                "descripcion": "Reportes y estadísticas de nómina",
-                "comando": self._abrir_reportes,
-                "color": "#003d99"
-            },
-            {
-                "nombre": "⚙️ Configuración",
-                "descripcion": "Parámetros del sistema",
-                "comando": self._abrir_config,
-                "color": "#002966"
-            },
+        # Opciones menú
+        opciones = [
+            ("📋 Roles de Pago", self._abrir_roles),
+            ("👥 Gestión Empleados", self._abrir_empleados),
+            ("📊 Reportes", self._abrir_reportes),
+            ("⚙️ Configuración", self._abrir_config),
+        ]
+
+        for opcion, comando in opciones:
+            btn = tk.Button(sidebar, text=opcion, command=comando,
+                          bg=COLOR_SIDEBAR, fg=COLOR_WHITE, font=("Arial", 10),
+                          relief=tk.FLAT, anchor="w", padx=15, pady=15,
+                          activebackground=COLOR_HOVER, activeforeground=COLOR_SECONDARY,
+                          cursor="hand2", bd=0)
+            btn.pack(fill=tk.X, padx=5, pady=3)
+
+        # Separador
+        tk.Frame(sidebar, bg=COLOR_PRIMARY, height=1).pack(fill=tk.X, padx=10, pady=20)
+
+        # Botón salir
+        tk.Button(sidebar, text="🚪 Salir", command=self.root.quit,
+                 bg="#cc3333", fg=COLOR_WHITE, font=("Arial", 10, "bold"),
+                 relief=tk.FLAT, padx=15, pady=15, activebackground="#bb2222",
+                 activeforeground=COLOR_WHITE, cursor="hand2", bd=0).pack(fill=tk.X, padx=5, pady=3, side=tk.BOTTOM)
+
+        # ════ CONTENIDO ════
+        content = tk.Frame(main_content, bg=COLOR_BG)
+        content.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=30, pady=30)
+
+        # Bienvenida
+        tk.Label(content, text=f"Bienvenido, {self.usuario}",
+                font=("Arial", 20, "bold"), fg=COLOR_SIDEBAR,
+                bg=COLOR_BG).pack(anchor="w", pady=(0, 10))
+
+        tk.Label(content, text="Selecciona una opción del menú para continuar",
+                font=("Arial", 11), fg="#666666",
+                bg=COLOR_BG).pack(anchor="w", pady=(0, 30))
+
+        # Tarjetas informativas
+        info_frame = tk.Frame(content, bg=COLOR_BG)
+        info_frame.pack(fill=tk.BOTH, expand=True)
+
+        stats = [
+            ("📋 Roles", "Generar y visualizar\nnóminas mensuales", "125"),
+            ("👥 Empleados", "Gestión del personal\nactivo", "450"),
+            ("📊 Reportes", "Reportes y análisis\nde nómina", "28"),
         ]
 
         col = 0
-        row = 0
-        for app in aplicaciones:
-            self._crear_tarjeta_app(apps_frame, app, row, col)
+        for titulo, desc, num in stats:
+            card = tk.Frame(info_frame, bg=COLOR_WHITE, relief=tk.FLAT, bd=0)
+            card.grid(row=0, column=col, padx=10, pady=10, sticky="nsew", ipadx=20, ipady=20)
+            info_frame.grid_columnconfigure(col, weight=1)
+
+            tk.Label(card, text=titulo, font=("Arial", 12, "bold"),
+                    fg=COLOR_PRIMARY, bg=COLOR_WHITE).pack(anchor="w")
+
+            tk.Label(card, text=desc, font=("Arial", 9),
+                    fg="#666666", bg=COLOR_WHITE, justify=tk.LEFT).pack(anchor="w", pady=(5, 10))
+
+            tk.Label(card, text=num, font=("Arial", 24, "bold"),
+                    fg=COLOR_SECONDARY, bg=COLOR_WHITE).pack(anchor="w")
+
             col += 1
-            if col >= 2:
-                col = 0
-                row += 1
-
-        # ════ BOTÓN SALIR ════
-        tk.Button(self.root, text="SALIR", command=self._salir,
-                 bg="#ff6b6b", fg=COLOR_WHITE, font=("Arial", 10, "bold"),
-                 relief=tk.FLAT, padx=20, pady=8, cursor="hand2").pack(side=tk.BOTTOM, pady=15)
-
-    def _crear_tarjeta_app(self, parent, app, row, col):
-        """Crear tarjeta de aplicación clickeable"""
-        card = tk.Frame(parent, bg=app["color"], relief=tk.RAISED, bd=2)
-        card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew", ipady=20, ipadx=20)
-
-        parent.grid_rowconfigure(row, weight=1)
-        parent.grid_columnconfigure(col, weight=1)
-
-        tk.Label(card, text=app["nombre"], font=("Arial", 12, "bold"),
-                fg=COLOR_WHITE, bg=app["color"]).pack(pady=(0, 10))
-
-        tk.Label(card, text=app["descripcion"], font=("Arial", 9),
-                fg="#e0e0e0", bg=app["color"], wraplength=200, justify=tk.CENTER).pack()
-
-        # Bind click
-        card.bind("<Button-1>", lambda e: app["comando"]())
-        for child in card.winfo_children():
-            child.bind("<Button-1>", lambda e: app["comando"]())
 
     def _abrir_roles(self):
-        messagebox.showinfo("Roles", "Abriendo Generador de Roles...")
-        # Aquí se abrirá Roles_Principal.pyw
+        messagebox.showinfo("Roles", "Abriendo Roles de Pago...")
 
     def _abrir_empleados(self):
         messagebox.showinfo("Empleados", "Abriendo Gestión de Empleados...")
-        # Aquí se abrirá SISTEMA_GESTION_EMPLEADOS_10.pyw
 
     def _abrir_reportes(self):
         messagebox.showinfo("Reportes", "Abriendo Reportes...")
@@ -242,15 +248,8 @@ class Dashboard:
     def _abrir_config(self):
         messagebox.showinfo("Configuración", "Abriendo Configuración...")
 
-    def _salir(self):
-        self.root.destroy()
-
-
-# ════════════════════════════════════════════════════════════════════════════════
-# PUNTO DE ENTRADA
-# ════════════════════════════════════════════════════════════════════════════════
 
 if __name__ == '__main__':
     root = tk.Tk()
-    login = VentanaLogin(root)
+    LoginProfesional(root)
     root.mainloop()
