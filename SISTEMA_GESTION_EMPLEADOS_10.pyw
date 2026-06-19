@@ -164,8 +164,14 @@ class SistemaGestionEmpleados10:
     # ── Estilo ──────────────────────────────────────────────────────
     def _configurar_estilo(self):
         s = ttk.Style()
-        s.theme_use('clam')
+        s.theme_use('alt')  # Tema alt soporta mejor dark mode
         s.configure('.', font=FONT_DEFAULT, background=COL_BG, foreground=COL_TEXT)
+
+        # Configurar tk widgets (no ttk)
+        self.root.option_add('*background', COL_BG)
+        self.root.option_add('*foreground', COL_TEXT)
+        self.root.option_add('*Entry*background', COL_ENTRY_BG)
+        self.root.option_add('*Entry*foreground', COL_WHITE)
 
         s.configure('Treeview', background=COL_CARD, fieldbackground=COL_CARD,
                     foreground=COL_TEXT, rowheight=30, font=FONT_DEFAULT)
