@@ -1491,6 +1491,7 @@ from obtener_datos import ObtenerDatos
 class VisualizadorRoles:
     def __init__(self, parent, fuente=None):
         self.parent = parent
+        self.root = parent  # Compatibilidad con código que usa self.root
         self.color_primary = "#1a4d8f"
         self.color_secondary = "#ffd700"
         self.color_bg = "#f0f0f0"
