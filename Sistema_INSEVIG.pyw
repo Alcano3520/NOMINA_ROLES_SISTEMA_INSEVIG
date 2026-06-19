@@ -283,7 +283,7 @@ class DashboardProfesional:
         """Abre Roles_Principal.pyw como ventana secundaria sin icono separado"""
         try:
             # Cargar e integrar Roles_Principal
-            ruta_roles = os.path.join(os.path.dirname(__file__), "Roles_Principal.pyw")
+            ruta_roles = os.path.join(os.path.dirname(__file__), "roles", "Roles_Principal.pyw")
             if os.path.exists(ruta_roles):
                 loader = importlib.machinery.SourceFileLoader("roles_mod", ruta_roles)
                 roles_mod = loader.load_module()
@@ -312,7 +312,7 @@ class DashboardProfesional:
         """Abre SISTEMA_GESTION_EMPLEADOS_10.pyw como ventana secundaria sin icono separado"""
         try:
             # Cargar e integrar SISTEMA_GESTION_EMPLEADOS_10
-            ruta_empleados = os.path.join(os.path.dirname(__file__), "SISTEMA_GESTION_EMPLEADOS_10.pyw")
+            ruta_empleados = os.path.join(os.path.dirname(__file__), "empleados", "SISTEMA_GESTION_EMPLEADOS_10.pyw")
             if os.path.exists(ruta_empleados):
                 loader = importlib.machinery.SourceFileLoader("empleados_mod", ruta_empleados)
                 empleados_mod = loader.load_module()
