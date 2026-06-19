@@ -322,42 +322,26 @@ class DashboardProfesional:
         messagebox.showinfo("Reportes", "Abriendo Reportes...")
 
     def _abrir_prestamos(self):
-        """Abre módulo de Préstamos como ventana secundaria"""
+        """Abre módulo de Préstamos como aplicación separada"""
         try:
-            import sys, os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'prestamos'))
-            from HISTORIAL_PRESTAMOS_10 import ConsultorPrestamos
-
-            ventana_prestamos = tk.Toplevel(self.root)
-            ventana_prestamos.title("Gestión de Préstamos - INSEVIG")
-            ventana_prestamos.geometry("1200x700")
-            ventana_prestamos.transient(self.root)
-
-            x = (self.root.winfo_screenwidth() // 2) - 600
-            y = (self.root.winfo_screenheight() // 2) - 350
-            ventana_prestamos.geometry(f"1200x700+{x}+{y}")
-
-            app_prestamos = ConsultorPrestamos(ventana_prestamos)
+            import subprocess, sys, os
+            ruta_prestamos = os.path.join(os.path.dirname(__file__), 'prestamos', 'HISTORIAL_PRESTAMOS_10.pyw')
+            if os.path.exists(ruta_prestamos):
+                subprocess.Popen([sys.executable, ruta_prestamos])
+            else:
+                messagebox.showerror("Error", f"Archivo no encontrado: {ruta_prestamos}")
         except Exception as e:
             messagebox.showerror("Error", f"Error abriendo Préstamos:\n{str(e)}")
 
     def _abrir_observaciones(self):
-        """Abre módulo de Observaciones como ventana secundaria"""
+        """Abre módulo de Observaciones como aplicación separada"""
         try:
-            import sys, os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'observaciones'))
-            from TOTAL_OSERVACIONES_4_0 import VisorEmpleados
-
-            ventana_observaciones = tk.Toplevel(self.root)
-            ventana_observaciones.title("Observaciones de Empleados - INSEVIG")
-            ventana_observaciones.geometry("1200x700")
-            ventana_observaciones.transient(self.root)
-
-            x = (self.root.winfo_screenwidth() // 2) - 600
-            y = (self.root.winfo_screenheight() // 2) - 350
-            ventana_observaciones.geometry(f"1200x700+{x}+{y}")
-
-            app_observaciones = VisorEmpleados(ventana_observaciones)
+            import subprocess, sys, os
+            ruta_observaciones = os.path.join(os.path.dirname(__file__), 'observaciones', 'TOTAL_OSERVACIONES_4_0.pyw')
+            if os.path.exists(ruta_observaciones):
+                subprocess.Popen([sys.executable, ruta_observaciones])
+            else:
+                messagebox.showerror("Error", f"Archivo no encontrado: {ruta_observaciones}")
         except Exception as e:
             messagebox.showerror("Error", f"Error abriendo Observaciones:\n{str(e)}")
 
