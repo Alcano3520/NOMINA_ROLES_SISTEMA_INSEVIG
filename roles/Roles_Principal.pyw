@@ -1489,9 +1489,10 @@ class GeneradorRolesPagoINSEVIG:
 from obtener_datos import ObtenerDatos
 
 class VisualizadorRoles:
-    def __init__(self, parent, fuente=None):
+    def __init__(self, parent, fuente=None, parent_app=None):
         self.parent = parent
         self.root = parent  # Compatibilidad con código que usa self.root
+        self.parent_app = parent_app  # Referencia a RolesPrincipal
         self.color_primary = "#1a4d8f"
         self.color_secondary = "#ffd700"
         self.color_bg = "#f0f0f0"
@@ -1526,6 +1527,7 @@ class VisualizadorRoles:
 
         ttk.Button(ctrl, text="🔍 Buscar", command=self._vis_buscar).grid(row=0, column=4, padx=5, pady=5)
         ttk.Button(ctrl, text="💾 Descargar", command=self._vis_descargar).grid(row=0, column=5, padx=5, pady=5)
+        ttk.Button(ctrl, text="🚀 Generador", command=self._abrir_generador).grid(row=0, column=6, padx=5, pady=5)
 
         self.vis_status = tk.Label(ctrl, text="Ingrese período y nombre", fg='#666666')
         self.vis_status.grid(row=1, column=0, columnspan=6, sticky="w", padx=5)
@@ -1846,6 +1848,14 @@ class VisualizadorRoles:
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
+    def _abrir_generador(self):
+        """Abre el generador de roles en ventana separada"""
+        if self.parent_app:
+            self.parent_app._abrir_generador()
+        else:
+            win = tk.Toplevel(self.root)
+            GeneradorRolesPagoINSEVIG(win)
+
 
 # ════════════════════════════════════════════════════════════════════════════════
 # APLICACIÓN PRINCIPAL CON PESTAÑAS
@@ -1873,32 +1883,14 @@ class RolesPrincipal:
         ttk.Combobox(header, textvariable=self.fuente, values=['SQL Server', 'Supabase'],
                     state='readonly', width=15).pack(side=tk.LEFT, padx=5, pady=10)
 
-        # Notebook
+        # Notebook - Solo una pestaña: Visualizador
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        # Pestaña 1: Visualizador
+        # Pestaña: Visualizador
         tab1 = ttk.Frame(self.notebook)
-        self.notebook.add(tab1, text="📋 Visualizador")
-        self.visualizador = VisualizadorRoles(tab1, fuente=self.fuente)
-
-        # Pestaña 2: Generador (acceso directo con botón)
-        tab2 = ttk.Frame(self.notebook)
-        self.notebook.add(tab2, text="📊 Generador")
-
-        gen_frame = tk.Frame(tab2, bg=self.color_bg)
-        gen_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-
-        tk.Label(gen_frame, text="GENERADOR DE ROLES", font=("Arial", 14, "bold"),
-                fg=self.color_primary, bg=self.color_bg).pack(pady=20)
-
-        tk.Label(gen_frame, text="Haz clic en el botón para abrir el generador de roles en batch",
-                font=("Arial", 10), fg="#666666", bg=self.color_bg).pack(pady=10)
-
-        tk.Button(gen_frame, text="🚀 ABRIR GENERADOR", command=self._abrir_generador,
-                 bg=self.color_primary, fg="white", font=("Arial", 12, "bold"),
-                 padx=30, pady=15, relief=tk.RAISED, bd=2, cursor="hand2",
-                 activebackground="#0d4d7a").pack(pady=30)
+        self.notebook.add(tab1, text="📋 Visualizador de Roles")
+        self.visualizador = VisualizadorRoles(tab1, fuente=self.fuente, parent_app=self)
 
         self.generador_window = None
 
