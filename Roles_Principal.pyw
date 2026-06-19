@@ -1738,10 +1738,33 @@ class RolesPrincipal:
         self.notebook.add(tab1, text="📋 Visualizador")
         self.visualizador = VisualizadorRoles(tab1)
 
-        # Pestaña 2: Generador (integrado directamente)
+        # Pestaña 2: Generador (acceso directo con botón)
         tab2 = ttk.Frame(self.notebook)
         self.notebook.add(tab2, text="📊 Generador")
-        self.generador = GeneradorRolesPagoINSEVIG(tab2)
+
+        gen_frame = tk.Frame(tab2, bg=self.color_bg)
+        gen_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        tk.Label(gen_frame, text="GENERADOR DE ROLES", font=("Arial", 14, "bold"),
+                fg=self.color_primary, bg=self.color_bg).pack(pady=20)
+
+        tk.Label(gen_frame, text="Haz clic en el botón para abrir el generador de roles en batch",
+                font=("Arial", 10), fg="#666666", bg=self.color_bg).pack(pady=10)
+
+        tk.Button(gen_frame, text="🚀 ABRIR GENERADOR", command=self._abrir_generador,
+                 bg=self.color_primary, fg="white", font=("Arial", 12, "bold"),
+                 padx=30, pady=15, relief=tk.RAISED, bd=2, cursor="hand2",
+                 activebackground="#0d4d7a").pack(pady=30)
+
+        self.generador_window = None
+
+    def _abrir_generador(self):
+        """Abrir generador como ventana separada"""
+        if self.generador_window is not None and self.generador_window.winfo_exists():
+            self.generador_window.lift()
+            return
+        self.generador_window = tk.Toplevel(self.root)
+        GeneradorRolesPagoINSEVIG(self.generador_window)
 
 
 if __name__ == '__main__':
