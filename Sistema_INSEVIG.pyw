@@ -237,7 +237,7 @@ class DashboardProfesional:
             col += 1
 
     def _abrir_roles(self):
-        """Abre Roles_Principal.pyw como ventana separada"""
+        """Abre Roles_Principal.pyw como ventana secundaria sin icono separado"""
         try:
             # Cargar e integrar Roles_Principal
             ruta_roles = os.path.join(os.path.dirname(__file__), "Roles_Principal.pyw")
@@ -245,10 +245,18 @@ class DashboardProfesional:
                 loader = importlib.machinery.SourceFileLoader("roles_mod", ruta_roles)
                 roles_mod = loader.load_module()
 
-                # Crear ventana separada para Roles
+                # Crear ventana secundaria (NO aparece en taskbar)
                 ventana_roles = tk.Toplevel(self.root)
                 ventana_roles.title("Roles de Pago - INSEVIG")
                 ventana_roles.geometry("1000x800")
+
+                # Hacer que sea ventana secundaria del dashboard
+                ventana_roles.transient(self.root)
+
+                # Centrar en pantalla
+                x = (self.root.winfo_screenwidth() // 2) - 500
+                y = (self.root.winfo_screenheight() // 2) - 400
+                ventana_roles.geometry(f"1000x800+{x}+{y}")
 
                 # Crear aplicación de roles en la nueva ventana
                 app_roles = roles_mod.RolesPrincipal(ventana_roles)
@@ -258,7 +266,7 @@ class DashboardProfesional:
             messagebox.showerror("Error", f"Error abriendo Roles de Pago:\n{str(e)}")
 
     def _abrir_empleados(self):
-        """Abre SISTEMA_GESTION_EMPLEADOS_10.pyw como ventana separada"""
+        """Abre SISTEMA_GESTION_EMPLEADOS_10.pyw como ventana secundaria sin icono separado"""
         try:
             # Cargar e integrar SISTEMA_GESTION_EMPLEADOS_10
             ruta_empleados = os.path.join(os.path.dirname(__file__), "SISTEMA_GESTION_EMPLEADOS_10.pyw")
@@ -266,10 +274,18 @@ class DashboardProfesional:
                 loader = importlib.machinery.SourceFileLoader("empleados_mod", ruta_empleados)
                 empleados_mod = loader.load_module()
 
-                # Crear ventana separada para Empleados
+                # Crear ventana secundaria (NO aparece en taskbar)
                 ventana_empleados = tk.Toplevel(self.root)
                 ventana_empleados.title("Gestión de Empleados - INSEVIG")
                 ventana_empleados.geometry("1200x700")
+
+                # Hacer que sea ventana secundaria del dashboard
+                ventana_empleados.transient(self.root)
+
+                # Centrar en pantalla
+                x = (self.root.winfo_screenwidth() // 2) - 600
+                y = (self.root.winfo_screenheight() // 2) - 350
+                ventana_empleados.geometry(f"1200x700+{x}+{y}")
 
                 # Crear aplicación de empleados en la nueva ventana
                 app_empleados = empleados_mod.SistemaGestionEmpleados10(ventana_empleados)
