@@ -19,26 +19,27 @@ warnings.filterwarnings('ignore', message='.*SQLAlchemy.*')
 class GeneradorRolesPagoINSEVIG:
     def __init__(self, root):
         self.root = root
-        self.root.title("Generador de Roles de Pago INSEVIG")
-        self.root.geometry("750x720")
+        self.is_embedded = isinstance(root, (ttk.Frame, tk.Frame))  # Detectar si está embebido
 
-        # Configurar icono de la ventana
-        try:
-            # Buscar el icono en la carpeta del programa
-            if hasattr(sys, '_MEIPASS'):
-                # Si es un ejecutable empaquetado
-                icon_path = os.path.join(sys._MEIPASS, 'icon.ico')
-            else:
-                # Si es un script .pyw
-                icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
+        # Solo hacer setup de ventana si es Tk (aplicación principal)
+        if not self.is_embedded:
+            self.root.title("Generador de Roles de Pago INSEVIG")
+            self.root.geometry("750x720")
 
-            if os.path.exists(icon_path):
-                self.root.iconbitmap(icon_path)
-                print(f"Icono cargado: {icon_path}")
-            else:
-                print(f"Icono no encontrado en: {icon_path}")
-        except Exception as e:
-            print(f"No se pudo cargar el icono: {e}")
+            # Configurar icono de la ventana
+            try:
+                if hasattr(sys, '_MEIPASS'):
+                    icon_path = os.path.join(sys._MEIPASS, 'icon.ico')
+                else:
+                    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
+
+                if os.path.exists(icon_path):
+                    self.root.iconbitmap(icon_path)
+                    print(f"Icono cargado: {icon_path}")
+                else:
+                    print(f"Icono no encontrado en: {icon_path}")
+            except Exception as e:
+                print(f"No se pudo cargar el icono: {e}")
 
         # Configurar colores corporativos
         self.color_primary = "#1a4d8f"  # Azul corporativo
@@ -46,8 +47,9 @@ class GeneradorRolesPagoINSEVIG:
         self.color_bg = "#f0f0f0"  # Fondo gris claro
         self.color_white = "#ffffff"
 
-        # Configurar estilo de la ventana
-        self.root.configure(bg=self.color_bg)
+        # Configurar estilo de la ventana (solo si es Tk)
+        if not self.is_embedded:
+            self.root.configure(bg=self.color_bg)
         
         self.carpeta_base = tk.StringVar()
         self.periodo_seleccionado = tk.StringVar()
@@ -1715,53 +1717,10 @@ class RolesPrincipal:
         self.notebook.add(tab1, text="📋 Visualizador")
         self.visualizador = VisualizadorRoles(tab1)
 
-        # Pestaña 2: Generador (botón para abrir)
+        # Pestaña 2: Generador
         tab2 = ttk.Frame(self.notebook)
         self.notebook.add(tab2, text="📊 Generador")
-        self._crear_generador_tab(tab2)
-
-        self.generador_window = None
-
-    def _crear_generador_tab(self, parent):
-        """Crear interfaz integrada para generador en la pestaña"""
-        header = tk.Frame(parent, bg="#1a4d8f", height=60)
-        header.pack(fill=tk.X)
-        header.pack_propagate(False)
-        tk.Label(header, text="GENERADOR DE ROLES DE PAGO",
-                font=("Arial", 14, "bold"), fg="white", bg="#1a4d8f").pack(pady=10)
-        tk.Label(header, text="Haz clic en 'ABRIR' para generar roles en batch",
-                font=("Arial", 9), fg="#ffd700", bg="#1a4d8f").pack()
-
-        content = tk.Frame(parent, bg="#f0f0f0")
-        content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-
-        tk.Label(content, text="GENERADOR DE ROLES EN BATCH",
-                font=("Arial", 12, "bold"), fg="#1a4d8f", bg="#f0f0f0").pack(pady=20)
-
-        desc_text = """
-• Generar múltiples roles automáticamente
-• Filtrar por período, nombre o cédulas específicas
-• 6 formatos de nombre personalizables
-• Opción de 2 roles por hoja (ahorro de papel)
-• Logo automático en blanco y negro
-• Barra de progreso en tiempo real
-        """
-        tk.Label(content, text=desc_text, font=("Arial", 10), fg="#333333", bg="#f0f0f0",
-                justify=tk.LEFT).pack(pady=20)
-
-        tk.Button(content, text="🚀 ABRIR GENERADOR",
-                 command=self._abrir_generador,
-                 bg="#1a4d8f", fg="white", font=("Arial", 13, "bold"),
-                 padx=50, pady=20, relief=tk.RAISED, bd=3,
-                 cursor="hand2", activebackground="#0d4d7a").pack(pady=30)
-
-    def _abrir_generador(self):
-        """Abrir generador en ventana separada"""
-        if self.generador_window is not None and self.generador_window.winfo_exists():
-            self.generador_window.lift()
-            return
-        self.generador_window = tk.Toplevel(self.root)
-        GeneradorRolesPagoINSEVIG(self.generador_window)
+        self.generador = GeneradorRolesPagoINSEVIG(tab2)
 
 
 if __name__ == '__main__':
