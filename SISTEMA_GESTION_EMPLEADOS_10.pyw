@@ -234,7 +234,7 @@ class SistemaGestionEmpleados10:
         self._build_notebook(right)
 
         # Barra de botones inferior
-        btn_bar = tk.Frame(self.root, bg=COL_WHITE, height=44)
+        btn_bar = tk.Frame(self.root, bg=COL_CARD, height=44)
         btn_bar.pack(fill='x')
         btn_bar.pack_propagate(False)
 
@@ -742,16 +742,16 @@ class SistemaGestionEmpleados10:
         self._chk_rol = tk.Checkbutton(check_frame, text="Incluir en el Rol",
                                        variable=tk.BooleanVar(),
                                        font=FONT_LABEL,
-                                       bg=COL_WHITE, fg=COL_TEXT,
-                                       selectcolor=COL_ACCENT, activebackground=COL_WHITE,
+                                       bg=COL_BG, fg=COL_TEXT,
+                                       selectcolor=COL_ACCENT, activebackground=COL_BG,
                                        command=lambda: self._toggle_check('INCL_ROL'))
         self._chk_rol.pack(side='left', padx=(0, 24))
         self._check_widgets['INCL_ROL'] = self._chk_rol
         self._chk_ban = tk.Checkbutton(check_frame, text="Acreditar",
                                        variable=tk.BooleanVar(),
                                        font=FONT_LABEL,
-                                       bg=COL_WHITE, fg=COL_TEXT,
-                                       selectcolor=COL_ACCENT, activebackground=COL_WHITE,
+                                       bg=COL_BG, fg=COL_TEXT,
+                                       selectcolor=COL_ACCENT, activebackground=COL_BG,
                                        command=lambda: self._toggle_check('INCL_BAN'))
         self._chk_ban.pack(side='left')
         self._check_widgets['INCL_BAN'] = self._chk_ban
@@ -820,7 +820,7 @@ class SistemaGestionEmpleados10:
                                     'Record Policial', 'Libreta Militar']):
             bx = ttk.LabelFrame(cf, text=nombre, padding=10)
             bx.grid(row=0, column=i, padx=6, pady=6, sticky='n')
-            cv = tk.Canvas(bx, width=120, height=90, bg=COL_WHITE,
+            cv = tk.Canvas(bx, width=120, height=90, bg=COL_CARD,
                            highlightbackground=COL_BORDER, highlightthickness=2)
             cv.pack(pady=6)
             cv.create_text(60, 45, text="Archivo", font=FONT_DEFAULT, fill=COL_GRAY)
@@ -2648,7 +2648,7 @@ class ObservacionesMasivasFrame:
 
         # Área de resultado
         tk.Label(parent, text="Estado:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w', padx=10, pady=(10, 0))
-        self._resultado_t1 = tk.Text(parent, height=10, width=80, font=FONT_SMALL, bg=COL_WHITE)
+        self._resultado_t1 = tk.Text(parent, height=10, width=80, font=FONT_SMALL, bg=COL_ENTRY_BG, fg=COL_WHITE)
         self._resultado_t1.pack(fill='both', expand=True, padx=10, pady=(6, 10))
 
     def _build_tab2(self, parent):
@@ -2673,7 +2673,7 @@ class ObservacionesMasivasFrame:
         self._btn_aplicar_obs.pack(side='left')
 
         tk.Label(t2_content, text="Resumen:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w', pady=(6, 4))
-        self._resultado_t2 = tk.Text(t2_content, height=18, width=90, font=FONT_SMALL, bg=COL_WHITE)
+        self._resultado_t2 = tk.Text(t2_content, height=18, width=90, font=FONT_SMALL, bg=COL_ENTRY_BG, fg=COL_WHITE)
         self._resultado_t2.pack(fill='both', expand=True)
 
     def _descargar_plantilla(self):
