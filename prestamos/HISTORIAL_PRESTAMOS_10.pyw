@@ -1750,7 +1750,7 @@ class ConsultorPrestamos:
     # Config por defecto — funciona sin ia_config.json externo
     _IA_CONFIG_DEFAULT = {
         "proveedor": "openrouter",
-        "api_key":   "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",
+        "api_key":   "<OPENROUTER_API_KEY>",  # Cargar desde config/ia_config.json
         "modelo":    "openai/gpt-oss-20b:free",
         "ollama_url": "http://localhost:11434",
     }
