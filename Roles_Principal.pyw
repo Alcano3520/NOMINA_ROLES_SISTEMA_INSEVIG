@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ROLES DE PAGO - INSEVIG
-Sistema integrado: Visualizador + Generador en pestañas
+Visualizador + Generador
 """
 
 import sys
@@ -31,12 +31,9 @@ import warnings
 
 warnings.filterwarnings('ignore', message='.*SQLAlchemy.*')
 
-# Importar el generador cargando el archivo como módulo
-ruta_generador = os.path.join(os.path.dirname(__file__), 'Roles_generador_VIZUALIZADOR_10.pyw')
-import importlib.util
+# Importar generador
 import importlib.machinery
-
-loader = importlib.machinery.SourceFileLoader("gen_mod", ruta_generador)
+loader = importlib.machinery.SourceFileLoader("gen_mod", os.path.join(os.path.dirname(__file__), 'Roles_generador_VIZUALIZADOR_10.pyw'))
 gen_mod = loader.load_module()
 GeneradorRolesPagoINSEVIG = gen_mod.GeneradorRolesPagoINSEVIG
 
@@ -50,7 +47,7 @@ class RolesPrincipal:
         self.color_secondary = "#ffd700"
         self.color_bg = "#f0f0f0"
 
-        # Notebook (pestañas)
+        # Notebook
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
@@ -59,14 +56,15 @@ class RolesPrincipal:
         self.notebook.add(tab1, text="📋 Visualizador")
         self._crear_visualizador(tab1)
 
-        # Pestaña 2: Generador (como Frame, no Toplevel)
+        # Pestaña 2: Generador (botón para abrir)
         tab2 = ttk.Frame(self.notebook)
         self.notebook.add(tab2, text="📊 Generador")
-        self._crear_generador(tab2)
+        self._crear_tab_generador(tab2)
 
         # Instancias
         self.obtener_datos = ObtenerDatos()
         self.vis_datos_actual = None
+        self.generador_window = None
 
     def _crear_visualizador(self, parent):
         """Crear visualizador en pestaña 1"""
@@ -290,14 +288,38 @@ class RolesPrincipal:
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
-    def _crear_generador(self, parent):
-        """Integrar generador en pestaña 2"""
-        # Crear instancia del generador pero dirigir su interfaz a esta pestaña
-        self.generador = GeneradorRolesPagoINSEVIG(tk.Frame(parent))
-        # Mover los widgets del generador a esta pestaña
-        for widget in self.generador.root.winfo_children():
-            widget.master = parent
-        self.generador.root.pack(fill=tk.BOTH, expand=True)
+    def _crear_tab_generador(self, parent):
+        """Pestaña 2: Botón para abrir Generador"""
+        
+        frame = tk.Frame(parent, bg=self.color_bg)
+        frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # Header
+        header = tk.Label(frame, text="GENERADOR DE ROLES - BATCH",
+                         font=("Arial", 14, "bold"), fg=self.color_primary, bg=self.color_bg)
+        header.pack(pady=20)
+
+        desc = tk.Label(frame, text="Haz clic en el botón para abrir el generador de roles en batch",
+                       font=("Arial", 10), fg="#666666", bg=self.color_bg)
+        desc.pack(pady=10)
+
+        # Botón
+        tk.Button(frame, text="🚀 ABRIR GENERADOR",
+                 command=self._abrir_generador,
+                 bg=self.color_primary, fg="white",
+                 font=("Arial", 12, "bold"),
+                 padx=40, pady=15,
+                 relief=tk.RAISED, bd=2,
+                 cursor="hand2").pack(pady=30)
+
+    def _abrir_generador(self):
+        """Abrir generador en ventana separada"""
+        if self.generador_window is not None and self.generador_window.winfo_exists():
+            self.generador_window.lift()
+            return
+        
+        self.generador_window = tk.Toplevel(self.root)
+        generador = GeneradorRolesPagoINSEVIG(self.generador_window)
 
 
 if __name__ == '__main__':
