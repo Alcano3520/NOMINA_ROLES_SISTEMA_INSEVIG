@@ -34,6 +34,19 @@ from obtener_datos import ObtenerDatos
 
 warnings.filterwarnings('ignore', message='.*SQLAlchemy.*')
 
+# Importar el generador original para usar su formato profesional de PDF
+try:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("generador_roles", "Roles_generador_VIZUALIZADOR_10.pyw")
+    generador_module = importlib.util.module_from_spec(spec)
+    sys.modules['generador_roles'] = generador_module
+    spec.loader.exec_module(generador_module)
+    GeneradorRolesPagoINSEVIG = generador_module.GeneradorRolesPagoINSEVIG
+    USAR_GENERADOR_ORIGINAL = True
+except:
+    USAR_GENERADOR_ORIGINAL = False
+    GeneradorRolesPagoINSEVIG = None
+
 class RolesPrincipal:
     """Aplicación principal con pestañas: Visualizador + Generador"""
 
@@ -518,11 +531,22 @@ class RolesPrincipal:
     # ═════════════════════════════════════════════════════════════════
 
     def _generar_pdf(self, ruta_pdf, emp, fecha_inicio, fecha_fin):
-        """Generar PDF simple de rol"""
-        # Implementación simplificada - usar el generador del archivo original
-        # Para no duplicar código extenso de ReportLab
+        """Generar PDF de rol usando el generador profesional original"""
         try:
-            # Crear PDF simple con los datos
+            # Usar el generador original si está disponible (tiene el formato profesional)
+            if USAR_GENERADOR_ORIGINAL and GeneradorRolesPagoINSEVIG:
+                try:
+                    # Crear instancia del generador
+                    generador = GeneradorRolesPagoINSEVIG(tk.Tk())
+                    generador.root.withdraw()  # Ocultar ventana Tk
+
+                    # Usar su método profesional de generación PDF
+                    generador.crear_pdf_empleado_bd(ruta_pdf, emp, fecha_inicio, fecha_fin)
+                    return
+                except Exception as e:
+                    print(f"Usando generador original falló, usando formato básico: {e}")
+
+            # Fallback: crear PDF simple si el generador original no funciona
             from reportlab.pdfgen import canvas as rl_canvas
             from reportlab.lib.pagesizes import A4
 
@@ -530,26 +554,32 @@ class RolesPrincipal:
             width, height = A4
 
             # Título
-            c.setFont("Helvetica-Bold", 14)
-            c.drawString(100, height - 50, "ROLES DE PAGO")
+            c.setFont("Times-Bold", 14)
+            c.drawCentredString(width/2, height - 50, "SOBRES DE PAGOS")
+            c.drawCentredString(width/2, height - 65, "INSEVIG CIA.LTDA.")
 
             # Datos del empleado
-            c.setFont("Helvetica", 10)
+            c.setFont("Times-Roman", 11)
             y = height - 100
-            c.drawString(100, y, f"Empleado: {emp.get('APELLIDOS_NOMBRES', 'N/A')}")
-            y -= 20
-            c.drawString(100, y, f"Cédula: {emp.get('CEDULA', 'N/A')}")
-            y -= 20
-            c.drawString(100, y, f"Período: {fecha_inicio} a {fecha_fin}")
+            cedula = str(emp.get('CEDULA', '')).split('.')[0]
+            c.drawString(50, y, f"Cedula empleado: {cedula}")
+            y -= 15
+            c.drawString(50, y, f"Nombre del Empleado: {emp.get('APELLIDOS_NOMBRES', 'N/A')}")
+            y -= 15
+            c.drawString(50, y, f"Periodo de pago: Desde {fecha_inicio} Hasta {fecha_fin}")
+            y -= 15
+            c.drawString(50, y, f"Departamento: {emp.get('DEPTO', 'N/A')}     Cargo: {emp.get('CARGO', 'N/A')}")
 
-            # Concepto
-            y -= 40
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(100, y, "CONCEPTO")
-            c.drawString(300, y, "VALOR")
+            # Tabla
+            y -= 30
+            c.setFont("Times-Italic", 10)
+            c.drawString(50, y, "Concepto")
+            c.drawString(250, y, "Ingresos")
+            c.drawString(350, y, "Descuentos")
+            c.drawString(450, y, "Neto a Recibir")
 
-            y -= 20
-            c.setFont("Helvetica", 9)
+            y -= 15
+            c.setFont("Times-Roman", 10)
 
             # Ingresos
             ing_fields = ['SUELDO', 'BONIFICACION', 'FONDO_RESERVA', 'DECIMO_TERCERA',
@@ -560,17 +590,12 @@ class RolesPrincipal:
             for campo in ing_fields:
                 valor = emp.get(campo, 0)
                 if valor > 0:
-                    c.drawString(100, y, campo)
-                    c.drawString(300, y, f"${valor:,.2f}")
+                    c.drawString(50, y, campo)
+                    c.drawRightString(330, y, f"{valor:.2f}")
                     total_ing += valor
-                    y -= 15
-
-            y -= 10
-            c.drawString(100, y, "TOTAL INGRESOS")
-            c.drawString(300, y, f"${total_ing:,.2f}")
+                    y -= 12
 
             # Egresos
-            y -= 30
             egr_fields = ['APORT_IESS', 'ANTICIPO_SUELDO', 'PRESTAMOS_QUIROGRAFARIOS',
                          'PRESTAMOS_COMPANIA', 'ANTICIPOS_OTROS', 'ANTICIPOS_SURTIDOS',
                          'APORT_IESS_CONYUGE', 'IMPUESTO_RENTA', 'MULTAS',
@@ -580,20 +605,18 @@ class RolesPrincipal:
             for campo in egr_fields:
                 valor = emp.get(campo, 0)
                 if valor > 0:
-                    c.drawString(100, y, campo)
-                    c.drawString(300, y, f"${valor:,.2f}")
+                    c.drawString(50, y, campo)
+                    c.drawRightString(430, y, f"{valor:.2f}")
                     total_egr += valor
-                    y -= 15
+                    y -= 12
 
-            y -= 10
-            c.drawString(100, y, "TOTAL EGRESOS")
-            c.drawString(300, y, f"${total_egr:,.2f}")
-
-            # Total a recibir
-            y -= 20
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(100, y, "NETO A RECIBIR")
-            c.drawString(300, y, f"${total_ing - total_egr:,.2f}")
+            # Totales
+            y -= 15
+            c.setFont("Times-Roman", 12)
+            c.drawString(50, y, "Total a Pagar ===========>")
+            c.drawRightString(330, y, f"{total_ing:.2f}")
+            c.drawRightString(430, y, f"{total_egr:.2f}")
+            c.drawRightString(530, y, f"{total_ing - total_egr:.2f}")
 
             c.save()
 
