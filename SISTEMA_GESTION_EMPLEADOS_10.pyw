@@ -105,8 +105,8 @@ class ToolTip:
         self.tip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
-        lbl = tk.Label(tw, text=self.text, font=FONT_SMALL, bg='#FFFFDC',
-                       fg=COL_TEXT, wraplength=300, justify='left',
+        lbl = tk.Label(tw, text=self.text, font=FONT_SMALL, bg=COL_CARD,
+                       fg=COL_ACCENT, wraplength=300, justify='left',
                        padx=8, pady=4, relief='solid', borderwidth=1)
         lbl.pack()
 
@@ -167,11 +167,18 @@ class SistemaGestionEmpleados10:
         s.theme_use('alt')  # Tema alt soporta mejor dark mode
         s.configure('.', font=FONT_DEFAULT, background=COL_BG, foreground=COL_TEXT)
 
-        # Configurar tk widgets (no ttk)
+        # Configurar tk widgets (no ttk) - GLOBAL
         self.root.option_add('*background', COL_BG)
         self.root.option_add('*foreground', COL_TEXT)
-        self.root.option_add('*Entry*background', COL_ENTRY_BG)
-        self.root.option_add('*Entry*foreground', COL_WHITE)
+        self.root.option_add('*Entry.background', COL_ENTRY_BG)
+        self.root.option_add('*Entry.foreground', COL_TEXT)
+        self.root.option_add('*Text.background', COL_ENTRY_BG)
+        self.root.option_add('*Text.foreground', COL_TEXT)
+        self.root.option_add('*Frame.background', COL_BG)
+        self.root.option_add('*Label.background', COL_BG)
+        self.root.option_add('*Label.foreground', COL_TEXT)
+        self.root.option_add('*Button.background', COL_CARD)
+        self.root.option_add('*Button.foreground', COL_TEXT)
 
         s.configure('Treeview', background=COL_CARD, fieldbackground=COL_CARD,
                     foreground=COL_TEXT, rowheight=30, font=FONT_DEFAULT)
@@ -1886,16 +1893,16 @@ class EdicionMasivaFrame:
                  font=('Segoe UI', 14, 'bold'), fg=COL_HEADER, bg=COL_BG).pack(pady=(0, 8))
 
         # Instrucciones
-        info = tk.Frame(main, bg='#E8F4F8', relief='solid', borderwidth=1)
+        info = tk.Frame(main, bg=COL_CARD, relief='solid', borderwidth=1)
         info.pack(fill='x', padx=8, pady=(0, 8))
-        tk.Label(info, text="ℹ️  INSTRUCCIONES:", font=FONT_LABEL, fg=COL_HEADER, bg='#E8F4F8').pack(anchor='w', padx=6, pady=(4, 2))
+        tk.Label(info, text="ℹ️  INSTRUCCIONES:", font=FONT_LABEL, fg=COL_ACCENT, bg=COL_CARD).pack(anchor='w', padx=6, pady=(4, 2))
         txt_info = ("1. Selecciona los campos que quieres modificar en la pestaña 'Descargar'\n"
                    "2. Descarga la plantilla Excel con los datos actuales\n"
                    "3. Edita los valores en Excel (solo las celdas que cambiarán)\n"
                    "4. Sube el archivo en la pestaña 'Cargar y Aplicar'\n"
                    "5. Valida los cambios (muestra un resumen)\n"
                    "6. Aplica los cambios a la base de datos")
-        tk.Label(info, text=txt_info, font=FONT_SMALL, fg=COL_TEXT, bg='#E8F4F8',
+        tk.Label(info, text=txt_info, font=FONT_SMALL, fg=COL_TEXT, bg=COL_CARD,
                 justify='left').pack(anchor='w', padx=6, pady=(2, 4))
 
         nb = ttk.Notebook(main)
