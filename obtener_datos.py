@@ -291,12 +291,20 @@ class ObtenerDatos:
             print("⚡ [SUPABASE] Búsqueda rápida de empleado...")
             sb = _get_supabase_client()
 
-            # 1. Buscar el empleado en rpemplea
+            # 1. Buscar por nombre o apellido
             r = sb.table('rpemplea').select('*').eq('codemp', '10').ilike('nombres', f'%{cedula_o_nombre}%').limit(1).execute()
 
             if not r.data:
-                # Intentar por cédula
-                r = sb.table('rpemplea').select('*').eq('codemp', '10').ilike('cedula', f'%{cedula_o_nombre}%').limit(1).execute()
+                # Intentar por apellido
+                r = sb.table('rpemplea').select('*').eq('codemp', '10').ilike('apellidos', f'%{cedula_o_nombre}%').limit(1).execute()
+
+            if not r.data:
+                # Intentar por cédula (convertir a número)
+                try:
+                    cedula_num = float(cedula_o_nombre)
+                    r = sb.table('rpemplea').select('*').eq('codemp', '10').eq('cedula', cedula_num).limit(1).execute()
+                except (ValueError, TypeError):
+                    pass
 
             if not r.data:
                 print("❌ Empleado no encontrado en Supabase")
