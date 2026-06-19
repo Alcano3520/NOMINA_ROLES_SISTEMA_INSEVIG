@@ -196,6 +196,7 @@ class DashboardProfesional:
             ("👥 Gestión Empleados", self._abrir_empleados),
             ("💰 Préstamos", self._abrir_prestamos),
             ("📝 Observaciones", self._abrir_observaciones),
+            ("📥 Registrar Egresos/Ingresos", self._abrir_registrador),
             ("📊 Reportes", self._abrir_reportes),
             ("⚙️ Configuración", self._abrir_config),
         ]
@@ -338,7 +339,16 @@ class DashboardProfesional:
             messagebox.showerror("Error", f"Error abriendo Gestión de Empleados:\n{str(e)}")
 
     def _abrir_reportes(self):
-        messagebox.showinfo("Reportes", "Abriendo Reportes...")
+        """Abre módulo de Reportes como aplicación separada"""
+        try:
+            import subprocess, sys, os
+            ruta_reportes = os.path.join(os.path.dirname(__file__), 'reportes', 'reporte_nomina_GUI.pyw')
+            if os.path.exists(ruta_reportes):
+                subprocess.Popen([sys.executable, ruta_reportes])
+            else:
+                messagebox.showerror("Error", f"Archivo no encontrado: {ruta_reportes}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error abriendo Reportes:\n{str(e)}")
 
     def _abrir_prestamos(self):
         """Abre módulo de Préstamos como aplicación separada"""
@@ -363,6 +373,18 @@ class DashboardProfesional:
                 messagebox.showerror("Error", f"Archivo no encontrado: {ruta_observaciones}")
         except Exception as e:
             messagebox.showerror("Error", f"Error abriendo Observaciones:\n{str(e)}")
+
+    def _abrir_registrador(self):
+        """Abre módulo de Registrador de Egresos/Ingresos como aplicación separada"""
+        try:
+            import subprocess, sys, os
+            ruta_registrador = os.path.join(os.path.dirname(__file__), 'registrdor_vizulizador_egresosingresos', 'REGISTRAR_PRESTAMOS_UNIFICADO.pyw')
+            if os.path.exists(ruta_registrador):
+                subprocess.Popen([sys.executable, ruta_registrador])
+            else:
+                messagebox.showerror("Error", f"Archivo no encontrado: {ruta_registrador}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error abriendo Registrador:\n{str(e)}")
 
     def _abrir_config(self):
         messagebox.showinfo("Configuración", "Abriendo Configuración...")
