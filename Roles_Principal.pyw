@@ -1458,12 +1458,6 @@ class GeneradorRolesPagoINSEVIG:
                 self.safe_get_bd(row, 'SOBRETIEMPO_100'))
 
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = GeneradorRolesPagoINSEVIG(root)
-    root.mainloop()
-
-
 # ════════════════════════════════════════════════════════════════════════════════
 # VISUALIZADOR INTEGRADO
 # ════════════════════════════════════════════════════════════════════════════════
