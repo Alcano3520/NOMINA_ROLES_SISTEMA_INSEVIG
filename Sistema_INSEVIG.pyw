@@ -205,9 +205,31 @@ class DashboardProfesional:
                 font=("Arial", 20, "bold"), fg=COLOR_SIDEBAR,
                 bg=COLOR_BG).pack(anchor="w", pady=(0, 10))
 
-        tk.Label(content, text="Selecciona una opción del menú para continuar",
+        tk.Label(content, text="Selecciona una opción del menú o usa los accesos rápidos abajo",
                 font=("Arial", 11), fg="#666666",
                 bg=COLOR_BG).pack(anchor="w", pady=(0, 30))
+
+        # Accesos rápidos
+        quick_frame = tk.Frame(content, bg=COLOR_BG)
+        quick_frame.pack(fill=tk.X, pady=(0, 30))
+
+        tk.Label(quick_frame, text="📱 Accesos Rápidos:", font=("Arial", 10, "bold"),
+                fg=COLOR_SIDEBAR, bg=COLOR_BG).pack(anchor="w", pady=(0, 10))
+
+        btn_frame = tk.Frame(quick_frame, bg=COLOR_BG)
+        btn_frame.pack(fill=tk.X)
+
+        quick_options = [
+            ("📋 Roles", self._abrir_roles),
+            ("👥 Empleados", self._abrir_empleados),
+            ("📊 Reportes", self._abrir_reportes),
+        ]
+
+        for texto, comando in quick_options:
+            tk.Button(btn_frame, text=texto, command=comando,
+                     bg=COLOR_PRIMARY, fg=COLOR_WHITE, font=("Arial", 9),
+                     relief=tk.RAISED, padx=15, pady=8, cursor="hand2",
+                     activebackground=COLOR_HOVER).pack(side=tk.LEFT, padx=5, pady=0)
 
         # Tarjetas informativas
         info_frame = tk.Frame(content, bg=COLOR_BG)
