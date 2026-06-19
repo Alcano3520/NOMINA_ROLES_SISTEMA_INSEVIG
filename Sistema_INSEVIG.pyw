@@ -175,6 +175,8 @@ class DashboardProfesional:
         opciones = [
             ("📋 Roles de Pago", self._abrir_roles),
             ("👥 Gestión Empleados", self._abrir_empleados),
+            ("💰 Préstamos", self._abrir_prestamos),
+            ("📝 Observaciones", self._abrir_observaciones),
             ("📊 Reportes", self._abrir_reportes),
             ("⚙️ Configuración", self._abrir_config),
         ]
@@ -318,6 +320,46 @@ class DashboardProfesional:
 
     def _abrir_reportes(self):
         messagebox.showinfo("Reportes", "Abriendo Reportes...")
+
+    def _abrir_prestamos(self):
+        """Abre módulo de Préstamos como ventana secundaria"""
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'prestamos'))
+            from HISTORIAL_PRESTAMOS_10 import HistorialPrestamos
+
+            ventana_prestamos = tk.Toplevel(self.root)
+            ventana_prestamos.title("Gestión de Préstamos - INSEVIG")
+            ventana_prestamos.geometry("1200x700")
+            ventana_prestamos.transient(self.root)
+
+            x = (self.root.winfo_screenwidth() // 2) - 600
+            y = (self.root.winfo_screenheight() // 2) - 350
+            ventana_prestamos.geometry(f"1200x700+{x}+{y}")
+
+            app_prestamos = HistorialPrestamos(ventana_prestamos)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error abriendo Préstamos:\n{str(e)}")
+
+    def _abrir_observaciones(self):
+        """Abre módulo de Observaciones como ventana secundaria"""
+        try:
+            import sys, os
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'observaciones'))
+            from TOTAL_OSERVACIONES_4 import TotalObservaciones
+
+            ventana_observaciones = tk.Toplevel(self.root)
+            ventana_observaciones.title("Observaciones de Empleados - INSEVIG")
+            ventana_observaciones.geometry("1200x700")
+            ventana_observaciones.transient(self.root)
+
+            x = (self.root.winfo_screenwidth() // 2) - 600
+            y = (self.root.winfo_screenheight() // 2) - 350
+            ventana_observaciones.geometry(f"1200x700+{x}+{y}")
+
+            app_observaciones = TotalObservaciones(ventana_observaciones)
+        except Exception as e:
+            messagebox.showerror("Error", f"Error abriendo Observaciones:\n{str(e)}")
 
     def _abrir_config(self):
         messagebox.showinfo("Configuración", "Abriendo Configuración...")
