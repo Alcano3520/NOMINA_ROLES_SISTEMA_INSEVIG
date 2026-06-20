@@ -200,7 +200,7 @@ class ConsultorPrestamos:
                     'OBSERV': row.get('concepto', ''),  # Campo esperado por obtener_movimientos_completos
                     'TIPO': row.get('tipo', ''),
                     'VALOR': valor,  # IGUAL A SQLite: si ingreso > 0 usa ingreso, else egreso
-                    'ORIGEN': 'SUPABASE',  # Marcar origen
+                    'ORIGEN': 'HISTORICO',  # IGUAL a SQLite: datos vienen del historial migrado
                     'ES_CUADRE': False,
                 })
             return datos_convertidos
