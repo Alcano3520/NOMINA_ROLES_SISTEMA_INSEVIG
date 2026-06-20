@@ -164,26 +164,36 @@ class ConsultorPrestamos:
                 .order('fecha', desc=True)\
                 .execute()
 
-            # Convertir datos de Supabase al formato esperado (clave con mayúscula)
+            # Convertir datos de Supabase al formato esperado por obtener_movimientos_completos()
             datos_convertidos = []
             for row in (result.data or []):
+                # Extraer cédula y nombre de observaciones si están disponibles
+                observaciones = row.get('observaciones', '')
+                cedula = observaciones.split('Cédula: ')[-1].split(' |')[0] if 'Cédula:' in observaciones else ''
+                nombres = observaciones.split('Nombre: ')[-1] if 'Nombre:' in observaciones else ''
+
                 datos_convertidos.append({
+                    'NUMERO': row.get('numero_fila'),  # Campo esperado por obtener_movimientos_completos
                     'NUMERO_FILA': row.get('numero_fila'),
                     'FECHA': row.get('fecha'),
-                    'CEDULA': row.get('observaciones', '').split('Cédula: ')[-1].split(' |')[0] if 'Cédula:' in row.get('observaciones', '') else '',
+                    'CEDULA': cedula,
                     'CODIGO_EMPLEADO': row.get('empleado'),
-                    'NOMBRES': row.get('observaciones', '').split('Nombre: ')[-1] if 'Nombre:' in row.get('observaciones', '') else '',
+                    'NOMBRES': nombres,
                     'INGRESO': row.get('ingreso', 0),
                     'EGRESO': row.get('egreso', 0),
                     'CONCEPTO': row.get('concepto', ''),
+                    'OBSERV': row.get('concepto', ''),  # Campo esperado por obtener_movimientos_completos
                     'TIPO': row.get('tipo', ''),
-                    'VALOR': row.get('egreso', 0) if row.get('egreso', 0) != 0 else row.get('ingreso', 0),
+                    'VALOR': abs(row.get('egreso', 0)) if row.get('egreso', 0) != 0 else abs(row.get('ingreso', 0)),
+                    'ORIGEN': 'SUPABASE',  # Marcar origen
                     'ES_CUADRE': False,
                 })
             return datos_convertidos
 
         except Exception as e:
             print(f"Error obteniendo historial desde Supabase: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def obtener_historial(self, codigo_empleado, solo_cuadre=False):
