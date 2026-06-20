@@ -37,6 +37,13 @@ import tempfile
 import time
 import pandas as pd
 import warnings
+import threading
+
+try:
+    from supabase import create_client
+    HAS_SUPABASE = True
+except ImportError:
+    HAS_SUPABASE = False
 
 # Suprimir warning específico de pandas con pyodbc
 warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*')
@@ -51,21 +58,28 @@ class ConsultorPrestamos:
                 locale.setlocale(locale.LC_ALL, 'Spanish_Spain.1252')
             except:
                 pass
-        
+
         # Parámetros de conexión SQL Server
         self.server = 'SERVER\\server'
         self.database = 'insevig'
         self.username = 'sa'
         self.password = 'puntosoft123*'
-        
+
+        # Supabase credentials
+        self.supabase_url = "https://buzcapcwmksasrtjofae.supabase.co"
+        self.supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1emNhcGN3bWtzYXNydGpvZmFlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTk5NjgzNywiZXhwIjoyMDY1NTcyODM3fQ.gD_Qz6i2WzFqofBclS8BERVN-mALCzhFFS83IsKi1Rg"
+
         # Ruta de la base de datos SQLite
         self.sqlite_path = r"\\server\Respaldo 2017\Base\Saldo_prestamos_driver.db"
-        
+
+        # Selector de fuente
+        self.fuente = tk.StringVar(value="SQLite")  # "SQLite" o "Supabase"
+
         # Lista para almacenar datos completos y sin filtrar
         self.datos_completos = []
         self.todos_los_movimientos_originales = []
         self.empleado_actual = None
-        
+
         self.setup_gui()
     
     def conectar_bd(self):
@@ -124,7 +138,63 @@ class ConsultorPrestamos:
             pass
 
         return ruta_normalizada
-    
+
+    def conectar_supabase(self):
+        """Conecta a Supabase y retorna el cliente"""
+        try:
+            if not HAS_SUPABASE:
+                messagebox.showerror("Error", "Supabase no está instalado.\nEjecuta: pip install supabase")
+                return None
+            client = create_client(self.supabase_url, self.supabase_key)
+            return client
+        except Exception as e:
+            messagebox.showerror("Error de Conexión Supabase", f"No se pudo conectar a Supabase:\n{e}")
+            return None
+
+    def obtener_historial_supabase(self, codigo_empleado):
+        """Obtiene historial de préstamos desde Supabase"""
+        try:
+            client = self.conectar_supabase()
+            if not client:
+                return []
+
+            result = client.table('historial_prestamos_sqlite')\
+                .select('*')\
+                .eq('empleado', str(codigo_empleado))\
+                .order('fecha', desc=True)\
+                .execute()
+
+            # Convertir datos de Supabase al formato esperado (clave con mayúscula)
+            datos_convertidos = []
+            for row in (result.data or []):
+                datos_convertidos.append({
+                    'NUMERO_FILA': row.get('numero_fila'),
+                    'FECHA': row.get('fecha'),
+                    'CEDULA': row.get('observaciones', '').split('Cédula: ')[-1].split(' |')[0] if 'Cédula:' in row.get('observaciones', '') else '',
+                    'CODIGO_EMPLEADO': row.get('empleado'),
+                    'NOMBRES': row.get('observaciones', '').split('Nombre: ')[-1] if 'Nombre:' in row.get('observaciones', '') else '',
+                    'INGRESO': row.get('ingreso', 0),
+                    'EGRESO': row.get('egreso', 0),
+                    'CONCEPTO': row.get('concepto', ''),
+                    'TIPO': row.get('tipo', ''),
+                    'VALOR': row.get('egreso', 0) if row.get('egreso', 0) != 0 else row.get('ingreso', 0),
+                    'ES_CUADRE': False,
+                })
+            return datos_convertidos
+
+        except Exception as e:
+            print(f"Error obteniendo historial desde Supabase: {e}")
+            return []
+
+    def obtener_historial(self, codigo_empleado, solo_cuadre=False):
+        """DISPATCHER: obtiene historial desde SQLite o Supabase según selector"""
+        fuente = self.fuente.get()
+
+        if fuente == "Supabase":
+            return self.obtener_historial_supabase(codigo_empleado)
+        else:
+            return self.obtener_historial_sqlite(codigo_empleado, solo_cuadre)
+
     def exportar_saldos_prestamos_excel(self):
         """
         Exporta los saldos de préstamos a Excel igual que el programa SALDO_PRESTAMOS.pyw
@@ -837,7 +907,7 @@ class ConsultorPrestamos:
         """Obtiene TODOS los movimientos combinando SQL Server (filtrado) y SQLite"""
         movimientos_sistema = self.obtener_movimientos_sistema_filtrados(codigo_empleado)
         if movimientos_sqlite is None:
-            movimientos_sqlite = self.obtener_historial_sqlite(codigo_empleado)
+            movimientos_sqlite = self.obtener_historial(codigo_empleado)
         
         todos_los_movimientos = []
         
@@ -1136,7 +1206,7 @@ class ConsultorPrestamos:
         self.empleado_actual = datos_empleado
         
         # Obtener todos los datos necesarios (una sola llamada a SQLite y RPINGDES)
-        movimientos_sqlite = self.obtener_historial_sqlite(codigo_empleado)
+        movimientos_sqlite = self.obtener_historial(codigo_empleado)
         valores_cuadre = set()
         for mov in movimientos_sqlite:
             if mov.get('ES_CUADRE') and mov['TIPO'] == 'EGRESO':
@@ -2813,6 +2883,14 @@ class ConsultorPrestamos:
 
         fila1 = ttk.Frame(filtros_frame)
         fila1.pack(fill="x", pady=(0, 3))
+
+        # SELECTOR DE FUENTE (SQLite vs Supabase)
+        ttk.Label(fila1, text="Fuente:", font=("Segoe UI", 8, "bold")).pack(side="left", padx=(0, 2))
+        self.combo_fuente = ttk.Combobox(fila1, textvariable=self.fuente,
+                                        values=["SQLite", "Supabase"],
+                                        state="readonly", width=10, font=("Segoe UI", 8, "bold"))
+        self.combo_fuente.pack(side="left", padx=(0, 8))
+        self.combo_fuente.bind("<<ComboboxSelected>>", lambda e: self.aplicar_filtros())
 
         ttk.Label(fila1, text="Tipo:", font=("Segoe UI", 8)).pack(side="left", padx=(0, 2))
         self.combo_tipo = ttk.Combobox(fila1, values=["Todos", "Ingresos", "Egresos"],
