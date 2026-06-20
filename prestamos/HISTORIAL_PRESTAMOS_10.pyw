@@ -172,10 +172,14 @@ class ConsultorPrestamos:
                 cedula = observaciones.split('Cédula: ')[-1].split(' |')[0] if 'Cédula:' in observaciones else ''
                 nombres = observaciones.split('Nombre: ')[-1] if 'Nombre:' in observaciones else ''
 
+                # Normalizar fecha: asegurar formato YYYY-MM-DD (igual que SQLite)
+                fecha_raw = row.get('fecha', '')
+                fecha_normalizada = str(fecha_raw)[:10] if fecha_raw else ''  # Solo YYYY-MM-DD
+
                 datos_convertidos.append({
                     'NUMERO': row.get('numero_fila'),  # Campo esperado por obtener_movimientos_completos
                     'NUMERO_FILA': row.get('numero_fila'),
-                    'FECHA': row.get('fecha'),
+                    'FECHA': fecha_normalizada,  # Formato: YYYY-MM-DD
                     'CEDULA': cedula,
                     'CODIGO_EMPLEADO': row.get('empleado'),
                     'NOMBRES': nombres,
@@ -882,11 +886,13 @@ class ConsultorPrestamos:
             resultados = []
             for row in cursor.fetchall():
                 fecha_convertida = self.convertir_fecha_sqlite(row[0])
+                # Normalizar a string YYYY-MM-DD (igual que Supabase)
+                fecha_str = fecha_convertida.strftime('%Y-%m-%d') if isinstance(fecha_convertida, datetime) else str(fecha_convertida)[:10]
                 es_cuadre = row[4] in ('CUADRE', 'CRUZE')
-                
+
                 if row[1] > 0:  # INGRESO
                     resultados.append({
-                        'FECHA': fecha_convertida,
+                        'FECHA': fecha_str,
                         'VALOR': row[1],
                         'OBSERV': row[3] if row[3] else "",
                         'TIPO': 'INGRESO',
@@ -896,7 +902,7 @@ class ConsultorPrestamos:
                     })
                 elif row[2] > 0:  # EGRESO
                     resultados.append({
-                        'FECHA': fecha_convertida,
+                        'FECHA': fecha_str,
                         'VALOR': row[2],
                         'OBSERV': row[3] if row[3] else "",
                         'TIPO': 'EGRESO',
@@ -1031,15 +1037,18 @@ class ConsultorPrestamos:
         return str(fecha)
 
     def _normalizar_fecha_ordenable(self, fecha):
-        """Convierte cualquier formato de fecha a string YYYY-MM-DD para ordenamiento"""
+        """Convierte cualquier formato de fecha a string YYYY-MM-DD para ordenamiento y display"""
         if isinstance(fecha, datetime):
             return fecha.strftime('%Y-%m-%d')
         elif isinstance(fecha, str):
-            # Si ya es string, devolver como está (asumir formato YYYY-MM-DD de Supabase)
-            return fecha.strip()
+            # Si ya es string, extraer solo YYYY-MM-DD (sin hora)
+            fecha_str = fecha.strip()
+            if ' ' in fecha_str:  # Si tiene hora, eliminarla
+                fecha_str = fecha_str.split(' ')[0]
+            return fecha_str
         else:
-            # Intenta convertir a string
-            return str(fecha)
+            # Intenta convertir a string y extraer fecha
+            return str(fecha)[:10]  # Solo los primeros 10 caracteres (YYYY-MM-DD)
     
     def aplicar_filtros(self):
         """Aplica los filtros seleccionados a los datos"""
@@ -1336,11 +1345,11 @@ class ConsultorPrestamos:
                     'es_cuadre': mov.get('ES_CUADRE', False)
                 })
         
-        # Normalizar fechas y ordenar por fecha
-        # (puede haber mix de datetime.datetime y strings desde SQLite/Supabase)
+        # Normalizar fechas a formato YYYY-MM-DD (puede haber mix de datetime.datetime y strings)
         for mov in todos_los_movimientos:
-            mov['fecha_ordenable'] = self._normalizar_fecha_ordenable(mov['fecha'])
-        todos_los_movimientos.sort(key=lambda x: x['fecha_ordenable'])
+            mov['fecha'] = self._normalizar_fecha_ordenable(mov['fecha'])
+        # Ordenar por fecha (ahora todas son strings YYYY-MM-DD, comparables)
+        todos_los_movimientos.sort(key=lambda x: x['fecha'])
         
         # Convertir a formato para filtros
         movimientos_para_filtros = []
