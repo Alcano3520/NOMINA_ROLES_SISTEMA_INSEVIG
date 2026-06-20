@@ -72,8 +72,8 @@ class ConsultorPrestamos:
         # Ruta de la base de datos SQLite
         self.sqlite_path = r"\\server\Respaldo 2017\Base\Saldo_prestamos_driver.db"
 
-        # Selector de fuente
-        self.fuente = tk.StringVar(value="SQLite")  # "SQLite" o "Supabase"
+        # Selector de fuente (se crea en setup_gui() después de crear la ventana)
+        self.fuente = None
 
         # Lista para almacenar datos completos y sin filtrar
         self.datos_completos = []
@@ -2826,6 +2826,9 @@ class ConsultorPrestamos:
             pyi_splash.close()
         except ImportError:
             pass
+
+        # Crear StringVar para selector (necesita ventana raíz existente)
+        self.fuente = tk.StringVar(value="SQLite")
 
         self.configurar_estilos()
         
