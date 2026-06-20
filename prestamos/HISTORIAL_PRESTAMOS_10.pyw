@@ -1029,6 +1029,17 @@ class ConsultorPrestamos:
         if isinstance(fecha, datetime):
             return fecha.strftime('%d-%b-%Y')
         return str(fecha)
+
+    def _normalizar_fecha_ordenable(self, fecha):
+        """Convierte cualquier formato de fecha a string YYYY-MM-DD para ordenamiento"""
+        if isinstance(fecha, datetime):
+            return fecha.strftime('%Y-%m-%d')
+        elif isinstance(fecha, str):
+            # Si ya es string, devolver como está (asumir formato YYYY-MM-DD de Supabase)
+            return fecha.strip()
+        else:
+            # Intenta convertir a string
+            return str(fecha)
     
     def aplicar_filtros(self):
         """Aplica los filtros seleccionados a los datos"""
@@ -1325,8 +1336,11 @@ class ConsultorPrestamos:
                     'es_cuadre': mov.get('ES_CUADRE', False)
                 })
         
-        # Ordenar por fecha
-        todos_los_movimientos.sort(key=lambda x: x['fecha'])
+        # Normalizar fechas y ordenar por fecha
+        # (puede haber mix de datetime.datetime y strings desde SQLite/Supabase)
+        for mov in todos_los_movimientos:
+            mov['fecha_ordenable'] = self._normalizar_fecha_ordenable(mov['fecha'])
+        todos_los_movimientos.sort(key=lambda x: x['fecha_ordenable'])
         
         # Convertir a formato para filtros
         movimientos_para_filtros = []
