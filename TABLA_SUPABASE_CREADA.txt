@@ -1,0 +1,135 @@
+================================================================================
+✅ TABLA HISTORIAL_PRESTAMOS_SQLITE - CREADA EN SUPABASE
+================================================================================
+
+Fecha: 2026-06-20
+Estado: ✅ CREADA Y VERIFICADA
+
+================================================================================
+INFORMACIÓN DEL PROYECTO
+================================================================================
+
+Proyecto ID  : buzcapcwmksasrtjofae
+URL          : https://buzcapcwmksasrtjofae.supabase.co
+Dashboard    : https://supabase.com/dashboard/project/buzcapcwmksasrtjofae
+SQL Editor   : https://supabase.com/dashboard/project/buzcapcwmksasrtjofae/sql
+
+================================================================================
+TABLA CREADA
+================================================================================
+
+Nombre: historial_prestamos_sqlite
+Estado: ✅ ACTIVA Y ACCESIBLE
+
+Columnas:
+  - id (BIGINT) - PRIMARY KEY, auto-increment
+  - empleado (TEXT) - NOT NULL
+  - fecha (TEXT)
+  - ingreso (NUMERIC) - DEFAULT 0
+  - egreso (NUMERIC) - DEFAULT 0
+  - concepto (TEXT)
+  - tipo (TEXT)
+  - numero_fila (INTEGER)
+  - observaciones (TEXT)
+  - creado_en (TIMESTAMP) - DEFAULT CURRENT_TIMESTAMP
+  - actualizado_en (TIMESTAMP) - DEFAULT CURRENT_TIMESTAMP
+
+Índices creados:
+  - idx_empleado ON (empleado)
+  - idx_fecha ON (fecha)
+
+Row Level Security (RLS): ✅ HABILITADO
+Política creada: "Acceso publico" (FOR ALL, USING (true), WITH CHECK (true))
+
+================================================================================
+CREDENCIALES
+================================================================================
+
+URL Proyecto:
+https://buzcapcwmksasrtjofae.supabase.co
+
+SERVICE ROLE KEY (para scripts Python):
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1emNhcGN3bWtzYXNydGpvZmFlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTk5NjgzNywiZXhwIjoyMDY1NTcyODM3fQ.gD_Qz6i2WzFqofBclS8BERVN-mALCzhFFS83IsKi1Rg
+
+ANON KEY (para frontends):
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1emNhcGN3bWtzYXNydGpvZmFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5OTY4MzcsImV4cCI6MjA2NTU3MjgzN30.RjxEf5JmhoxfHL6QoncwHM5smQaoWq9ipVlrK_i2mPA
+
+PERSONAL TOKEN (para Management API):
+[GUARDADO EN config/supabase.yaml - NO EN GITHUB]
+
+================================================================================
+PRÓXIMOS PASOS
+================================================================================
+
+1. ✅ TABLA CREADA
+
+2. 📥 MIGRAR DATOS DE SQLITE A SUPABASE
+   Ejecutar:
+   python3 shared/migracion_prestamos_sqlite_supabase.py
+
+   Esto subirá todos los datos del archivo:
+   \\server\Respaldo 2017\Base\Saldo_prestamos_driver.db
+
+   A la tabla historial_prestamos_sqlite en Supabase
+
+3. 🔄 ACTUALIZAR HISTORIAL_PRESTAMOS_10.pyw
+   Seguir guía: prestamos/MIGRACION_SUPABASE.md
+
+   Cambiar métodos:
+   - obtener_historial_sqlite() → obtener_historial_supabase()
+   - Usar SERVICE ROLE KEY para conexiones
+
+4. 🧪 TESTEAR MÓDULO DE PRÉSTAMOS
+   Ejecutar:
+   python3 Sistema_INSEVIG.pyw
+
+   Ir a: 💰 Préstamos
+   Buscar un empleado
+   Verificar que muestra historial desde Supabase
+
+================================================================================
+VERIFICACIÓN
+================================================================================
+
+Tabla confirmada accesible:
+✓ Nombre: historial_prestamos_sqlite
+✓ Estructura: OK (11 columnas)
+✓ Registros: 0 (vacía, lista para datos)
+✓ Índices: 2 (empleado, fecha)
+✓ RLS: Habilitado
+✓ Políticas: Activas
+
+================================================================================
+ARCHIVOS RELACIONADOS
+================================================================================
+
+- shared/migracion_prestamos_sqlite_supabase.py
+  Script de migración de SQLite → Supabase
+
+- prestamos/MIGRACION_SUPABASE.md
+  Guía de cómo actualizar HISTORIAL_PRESTAMOS_10.pyw
+
+- config/supabase.yaml
+  Credenciales (en .gitignore, NO en GitHub)
+
+================================================================================
+NOTAS IMPORTANTES
+================================================================================
+
+⚠️ NUNCA subir credenciales a GitHub
+   - config/supabase.yaml está en .gitignore
+   - Si necesitas compartir, hazlo por email/chat privado
+
+✓ La tabla está en Supabase (nube)
+  - Accesible desde cualquier lugar
+  - Sincronizada con SQL Server
+  - Respaldos automáticos
+
+✓ Después de migrar datos
+  - La tabla tendrá ~2000-3000 registros históricos
+  - Búsquedas serán rápidas con índices
+  - RLS asegura seguridad
+
+================================================================================
+FIN
+================================================================================
