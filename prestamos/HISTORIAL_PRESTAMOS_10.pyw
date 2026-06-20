@@ -1042,9 +1042,25 @@ class ConsultorPrestamos:
         return f"${valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     
     def formatear_fecha(self, fecha):
-        """Formatea una fecha"""
+        """Formatea una fecha a formato %d-%b-%Y (ej: 29-Oct-2018)"""
         if isinstance(fecha, datetime):
             return fecha.strftime('%d-%b-%Y')
+
+        # Si es string, intentar convertir desde formato YYYY-MM-DD
+        if isinstance(fecha, str):
+            fecha_str = fecha.strip()
+
+            # Si viene como 'YYYY-MM-DD', convertir a '%d-%b-%Y'
+            if len(fecha_str) == 10 and fecha_str[4] == '-' and fecha_str[7] == '-':
+                try:
+                    fecha_dt = datetime.strptime(fecha_str, '%Y-%m-%d')
+                    return fecha_dt.strftime('%d-%b-%Y')
+                except ValueError:
+                    return fecha_str  # Si no se puede parsear, devolver como está
+
+            # Si ya está en otro formato, devolver como está
+            return fecha_str
+
         return str(fecha)
 
     def _normalizar_fecha_ordenable(self, fecha):
