@@ -1,0 +1,127 @@
+================================================================================
+CREAR TABLA EN SUPABASE - PASO A PASO
+================================================================================
+
+Proyecto: buzcapcwmksasrtjofae
+URL: https://buzcapcwmksasrtjofae.supabase.co
+
+================================================================================
+PASO 1: ABRIR SQL EDITOR
+================================================================================
+
+1. Ve a: https://supabase.com/dashboard/project/buzcapcwmksasrtjofae
+2. En el menú lateral, haz clic en: "SQL Editor"
+3. O directamente: https://supabase.com/dashboard/project/buzcapcwmksasrtjofae/sql
+
+================================================================================
+PASO 2: CREAR NUEVA CONSULTA
+================================================================================
+
+1. Clic en el botón "+ New Query"
+2. Se abrirá una ventana de editor vacía
+
+================================================================================
+PASO 3: COPIAR EL SQL COMPLETO
+================================================================================
+
+Copia TODO esto en el editor:
+
+────────────────────────────────────────────────────────────────────────────
+
+DROP TABLE IF EXISTS historial_prestamos_sqlite CASCADE;
+
+CREATE TABLE historial_prestamos_sqlite (
+    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    empleado TEXT NOT NULL,
+    fecha TEXT,
+    ingreso NUMERIC DEFAULT 0,
+    egreso NUMERIC DEFAULT 0,
+    concepto TEXT,
+    tipo TEXT,
+    numero_fila INTEGER,
+    observaciones TEXT,
+    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_empleado ON historial_prestamos_sqlite(empleado);
+CREATE INDEX idx_fecha ON historial_prestamos_sqlite(fecha);
+
+ALTER TABLE historial_prestamos_sqlite ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Acceso publico" ON historial_prestamos_sqlite
+FOR ALL USING (true) WITH CHECK (true);
+
+────────────────────────────────────────────────────────────────────────────
+
+================================================================================
+PASO 4: EJECUTAR SQL
+================================================================================
+
+1. Una vez pegado el SQL, presiona el botón "RUN" (botón azul triangular ▶️)
+2. O presiona Ctrl+Enter (o Cmd+Enter en Mac)
+
+================================================================================
+PASO 5: VERIFICAR RESULTADO
+================================================================================
+
+Deberías ver en la parte inferior:
+
+✅ "Query executed successfully"
+
+Si ves eso, la tabla se creó correctamente.
+
+================================================================================
+PASO 6: VERIFICAR EN LA LISTA DE TABLAS
+================================================================================
+
+1. En el menú lateral, ve a "Tables"
+2. Deberías ver: "historial_prestamos_sqlite"
+3. Haz clic en ella para ver sus columnas
+
+Columnas que deberías ver:
+  - id (BIGINT)
+  - empleado (TEXT)
+  - fecha (TEXT)
+  - ingreso (NUMERIC)
+  - egreso (NUMERIC)
+  - concepto (TEXT)
+  - tipo (TEXT)
+  - numero_fila (INTEGER)
+  - observaciones (TEXT)
+  - creado_en (TIMESTAMP)
+  - actualizado_en (TIMESTAMP)
+
+================================================================================
+PASO 7: MIGRAR DATOS (DESPUÉS DE CREAR LA TABLA)
+================================================================================
+
+Una vez que la tabla esté creada, ejecuta:
+
+  python3 shared/migracion_prestamos_sqlite_supabase.py
+
+Esto subirá todos los datos de SQLite a Supabase.
+
+================================================================================
+ERRORES COMUNES
+================================================================================
+
+Error: "relation already exists"
+  → Ignora, significa que la tabla ya existe. Continúa con migración.
+
+Error: "syntax error"
+  → Revisa que copiaste TODO el SQL correctamente, sin editar.
+
+Error: "permission denied"
+  → Verifica que iniciaste sesión en Supabase correctamente.
+
+================================================================================
+AYUDA
+================================================================================
+
+Si tienes dudas o problemas:
+  1. Screenshot del error
+  2. URL de tu proyecto Supabase
+  3. Descripción de qué paso falla
+
+================================================================================
