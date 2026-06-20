@@ -176,6 +176,17 @@ class ConsultorPrestamos:
                 fecha_raw = row.get('fecha', '')
                 fecha_normalizada = str(fecha_raw)[:10] if fecha_raw else ''  # Solo YYYY-MM-DD
 
+                # Calcular VALOR igual que SQLite: monto actual (ingreso o egreso)
+                ingreso_val = row.get('ingreso', 0)
+                egreso_val = row.get('egreso', 0)
+
+                if ingreso_val > 0:
+                    valor = float(ingreso_val)
+                elif egreso_val > 0:
+                    valor = float(egreso_val)
+                else:
+                    valor = 0
+
                 datos_convertidos.append({
                     'NUMERO': row.get('numero_fila'),  # Campo esperado por obtener_movimientos_completos
                     'NUMERO_FILA': row.get('numero_fila'),
@@ -183,12 +194,12 @@ class ConsultorPrestamos:
                     'CEDULA': cedula,
                     'CODIGO_EMPLEADO': row.get('empleado'),
                     'NOMBRES': nombres,
-                    'INGRESO': row.get('ingreso', 0),
-                    'EGRESO': row.get('egreso', 0),
+                    'INGRESO': ingreso_val,
+                    'EGRESO': egreso_val,
                     'CONCEPTO': row.get('concepto', ''),
                     'OBSERV': row.get('concepto', ''),  # Campo esperado por obtener_movimientos_completos
                     'TIPO': row.get('tipo', ''),
-                    'VALOR': abs(row.get('egreso', 0)) if row.get('egreso', 0) != 0 else abs(row.get('ingreso', 0)),
+                    'VALOR': valor,  # IGUAL A SQLite: si ingreso > 0 usa ingreso, else egreso
                     'ORIGEN': 'SUPABASE',  # Marcar origen
                     'ES_CUADRE': False,
                 })
