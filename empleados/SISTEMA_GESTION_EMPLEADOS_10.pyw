@@ -253,7 +253,7 @@ class SistemaGestionEmpleados10:
                    ).pack(side='left', padx=4, pady=5)
         ttk.Separator(btn_bar, orient='vertical').pack(side='left', fill='y', padx=10)
         self._lbl_empleado_actual = tk.Label(btn_bar, text="", font=FONT_LABEL,
-                                              fg=COL_TEXT, bg=COL_WHITE, anchor='w')
+                                              fg=COL_TEXT, bg=COL_CARD, anchor='w')
         self._lbl_empleado_actual.pack(side='left', fill='x', expand=True, padx=6)
         ttk.Button(btn_bar, text="SALIR", command=self._on_close).pack(side='right', padx=10, pady=5)
 
@@ -327,7 +327,7 @@ class SistemaGestionEmpleados10:
         for txt, cmd in [('◀◀', self._primer_emp), ('◀', self._anterior_emp),
                          ('▶', self._siguiente_emp), ('▶▶', self._ultimo_emp)]:
             tk.Button(nav, text=txt, font=FONT_HEAD,
-                      command=cmd, bg=COL_WHITE, relief='flat',
+                      command=cmd, bg=COL_CARD, fg=COL_TEXT, relief='flat',
                       padx=6, pady=1).pack(side='left')
 
         cols = ('cod', 'ape', 'nom')
@@ -1988,7 +1988,7 @@ class EdicionMasivaFrame:
         res_frame = ttk.Frame(t2_content)
         res_frame.pack(fill='both', expand=True)
         self._resultado = tk.Text(res_frame, font=('Consolas', 9),
-                                  bg=COL_WHITE, fg='#2C3E50', wrap='word', relief='solid', borderwidth=1)
+                                  bg=COL_ENTRY_BG, fg=COL_TEXT, wrap='word', relief='solid', borderwidth=1)
         self._resultado.pack(side='left', fill='both', expand=True)
         vsb = ttk.Scrollbar(res_frame, orient='vertical', command=self._resultado.yview)
         vsb.pack(side='right', fill='y')
