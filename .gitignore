@@ -1,13 +1,57 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-.DS_Store
-*.log
-app_debug.log
-config/supabase.yaml
+dist/
+build/
+*.egg
+
+# Ejecutables compilados (demasiado grandes para GitHub)
+INSEVIG_DISTRIBUCIÓN/
+dist/
+build/
+INSEVIG.spec
+*.exe
+*.app
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+app_debug.log
+rol_debug.log
+
+# Configuración sensible (NO comprometer)
+config/supabase.yaml
+config/supabase_credentials.txt
+.env
+.env.local
+
+# Base de datos
 *.db
 *.sqlite
+*.sqlite3
 *.db-journal
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+._*
+
+# Respaldos y temporales
+*.bak
+*.backup
+Respaldo*/
+respaldo*/
+*.tmp
+~*
+
+# Archivos de usuario
+empleados/PLANTILLA_*.xlsx
+SACAR_SEC/
+HISTORIAL*PRESTAMOS/
