@@ -34,6 +34,7 @@ def detectar_sql_server():
                     f'Database={database};'
                     f'UID={username};'
                     f'PWD={password};'
+                    f'Encrypt=no;'
                     f'TrustServerCertificate=yes'
                 )
                 conn = pyodbc.connect(conn_str, timeout=3)

@@ -14,6 +14,9 @@ from PIL import Image, ImageTk
 import tempfile
 import warnings
 
+# Agregar shared/ al path para importar módulos
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
+
 try:
     import fitz
     HAS_PDF_SUPPORT = True

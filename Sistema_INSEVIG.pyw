@@ -12,6 +12,7 @@ import os
 import subprocess
 import importlib.machinery
 import threading
+import pandas as pd
 
 # Agregar shared/ al path para importar detect_db
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'shared'))
@@ -160,6 +161,32 @@ class DashboardProfesional:
             print(f"Error detectando BD: {e}")
             return 'SQL Server'  # Default
 
+    def _obtener_estadisticas(self):
+        """Obtiene estadísticas reales de la base de datos"""
+        try:
+            from obtener_datos import ObtenerDatos
+            obtener = ObtenerDatos()
+
+            # Obtener empleados activos
+            try:
+                conn = obtener._get_connection()
+                query = f"""
+                    SELECT COUNT(DISTINCT [EMPLEADO]) as total_empleados
+                    FROM [insevig].[dbo].[RPEMPLEA]
+                    WHERE {obtener.sql_filter} AND [ESTADO]='ACT'
+                """
+                df = pd.read_sql(query, conn)
+                total_empleados = int(df['total_empleados'].iloc[0]) if len(df) > 0 else 0
+                conn.close()
+            except Exception as e:
+                print(f"Error obteniendo empleados: {e}")
+                total_empleados = "N/A"
+
+            return total_empleados
+        except Exception as e:
+            print(f"Error en estadísticas: {e}")
+            return "N/A"
+
     def _crear_interfaz(self):
         # ════ HEADER ════
         header = tk.Frame(self.root, bg=COLOR_PRIMARY, height=70)
@@ -257,10 +284,13 @@ class DashboardProfesional:
         info_frame = tk.Frame(content, bg=COLOR_BG)
         info_frame.pack(fill=tk.BOTH, expand=True)
 
+        # Obtener estadísticas reales
+        total_empleados = self._obtener_estadisticas()
+
         stats = [
-            ("📋 Roles", "Generar y visualizar\nnóminas mensuales", "125"),
-            ("👥 Empleados", "Gestión del personal\nactivo", "450"),
-            ("📊 Reportes", "Reportes y análisis\nde nómina", "28"),
+            ("📋 Roles", "Generar y visualizar\nnóminas mensuales", "∞"),
+            ("👥 Empleados", "Gestión del personal\nactivo", str(total_empleados)),
+            ("📊 Reportes", "Reportes y análisis\nde nómina", "∞"),
         ]
 
         col = 0
