@@ -21,7 +21,7 @@ if errorlevel 1 (
 )
 
 echo [1/4] Verificando dependencias...
-pip install -q pyinstaller pyodbc pandas reportlab pillow pymupdf supabase >nul 2>&1
+pip install -q pyinstaller pyodbc pandas reportlab pillow pymupdf supabase xlrd openpyxl pyperclip >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] No se pudieron instalar las dependencias
     pause
@@ -45,6 +45,9 @@ PyInstaller ^
     --hidden-import=PIL ^
     --hidden-import=fitz ^
     --hidden-import=supabase ^
+    --hidden-import=xlrd ^
+    --hidden-import=openpyxl ^
+    --hidden-import=pyperclip ^
     --add-data "shared;shared" ^
     --add-data "roles;roles" ^
     --add-data "empleados;empleados" ^

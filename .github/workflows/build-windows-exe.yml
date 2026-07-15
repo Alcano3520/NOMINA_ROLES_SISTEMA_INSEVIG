@@ -1,0 +1,71 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Sistema_INSEVIG.pyw"
+      - "icon.ico"
+      - "shared/**"
+      - "roles/**"
+      - "empleados/**"
+      - "prestamos/**"
+      - "reportes/**"
+      - "observaciones/**"
+      - "registrdor_vizulizador_egresosingresos/**"
+      - "envio_roles/**"
+      - "cuadrardor_modificardor/**"
+      - "config/**"
+      - ".github/workflows/build-windows-exe.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller pyodbc pandas reportlab pillow pymupdf supabase xlrd openpyxl pyperclip
+
+      - name: Build with PyInstaller
+        run: >
+          pyinstaller
+          --onedir
+          --windowed
+          --name INSEVIG
+          --icon=icon.ico
+          --hidden-import=pyodbc
+          --hidden-import=pandas
+          --hidden-import=reportlab
+          --hidden-import=PIL
+          --hidden-import=fitz
+          --hidden-import=supabase
+          --hidden-import=xlrd
+          --hidden-import=openpyxl
+          --hidden-import=pyperclip
+          --add-data "shared;shared"
+          --add-data "roles;roles"
+          --add-data "empleados;empleados"
+          --add-data "prestamos;prestamos"
+          --add-data "reportes;reportes"
+          --add-data "observaciones;observaciones"
+          --add-data "registrdor_vizulizador_egresosingresos;registrdor_vizulizador_egresosingresos"
+          --add-data "envio_roles;envio_roles"
+          --add-data "cuadrardor_modificardor;cuadrardor_modificardor"
+          --add-data "config;config"
+          Sistema_INSEVIG.pyw
+
+      - name: Zip build output
+        run: Compress-Archive -Path dist/INSEVIG/* -DestinationPath INSEVIG-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: INSEVIG-windows
+          path: INSEVIG-windows.zip
+          retention-days: 30

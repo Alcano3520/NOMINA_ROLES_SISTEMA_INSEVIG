@@ -569,9 +569,9 @@ def biess_limpiar_cedula(cedula_raw):
     digits = ''.join(c for c in s if c.isdigit())
     if not digits:
         return None
-    if len(digits) >= 10:
+    if len(digits) > 10:
         return digits[:10]
-    return None
+    return digits.zfill(10)
 
 def biess_col_a_indice(col_str):
     """Convierte letra(s) de columna Excel a indice 0-based. 'A'->0, 'AA'->26."""

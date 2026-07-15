@@ -20,6 +20,9 @@ def instalar_dependencias():
         'pillow',
         'pymupdf',  # fitz
         'supabase==2.7.4',
+        'xlrd>=2.0.1',
+        'openpyxl',
+        'pyperclip',
         'pyinstaller>=6.0'
     ]
 
@@ -66,6 +69,9 @@ a = Analysis(
         'PIL',
         'fitz',
         'supabase',
+        'xlrd',
+        'openpyxl',
+        'pyperclip',
     ],
     hookspath=[],
     hooksconfig={{}},
@@ -97,7 +103,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='{proyecto_dir}/icon.ico',
 )
 '''
 
