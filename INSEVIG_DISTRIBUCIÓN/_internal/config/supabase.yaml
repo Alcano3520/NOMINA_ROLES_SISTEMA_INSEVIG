@@ -1,0 +1,14 @@
+# CREDENCIALES SUPABASE - INSEVIG
+# ACTUALIZADO: 2026-06-20
+
+url: "https://buzcapcwmksasrtjofae.supabase.co"
+key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1emNhcGN3bWtzYXNydGpvZmFlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTk5NjgzNywiZXhwIjoyMDY1NTcyODM3fQ.gD_Qz6i2WzFqofBclS8BERVN-mALCzhFFS83IsKi1Rg"
+
+# SERVICE ROLE KEY (clave privada - para scripts/sincronizadores)
+service_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1emNhcGN3bWtzYXNydGpvZmFlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0OTk5NjgzNywiZXhwIjoyMDY1NTcyODM3fQ.gD_Qz6i2WzFqofBclS8BERVN-mALCzhFFS83IsKi1Rg"
+
+# ANON KEY (clave pública - para frontends)
+anon_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1emNhcGN3bWtzYXNydGpvZmFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5OTY4MzcsImV4cCI6MjA2NTU3MjgzN30.RjxEf5JmhoxfHL6QoncwHM5smQaoWq9ipVlrK_i2mPA"
+
+# PERSONAL TOKEN (para Claude Code MCP)
+personal_token: "sbp_090d84f4d291db0827e7350f1c919d6a8ad350d6"

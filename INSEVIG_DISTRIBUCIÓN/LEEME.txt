@@ -1,0 +1,22 @@
+INSEVIG - Sistema de Nomina Integrado
+======================================
+
+INICIO RAPIDO
+=============
+
+Windows:
+  - Doble clic en START.bat
+  - O ejecuta: INSEVIG.exe
+
+Linux / macOS:
+  - Ejecuta: ./INSEVIG.sh
+
+CREDENCIALES
+============
+
+Usuario: admin
+Contraseña: admin
+
+NO REQUIERE INSTALACION - LISTO PARA USAR
+
+Para mas informacion: Ver INSTALACION.md en el repositorio
