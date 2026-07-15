@@ -1,0 +1,49 @@
+name: Build REGISTRAR_PRESTAMOS_UNIFICADO EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.pyw"
+      - "icon.ico"
+      - ".github/workflows/build-registrar-prestamos-exe.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller pyodbc pandas pyperclip xlrd openpyxl
+
+      - name: Build with PyInstaller
+        run: >
+          pyinstaller
+          --onedir
+          --windowed
+          --name REGISTRAR_PRESTAMOS_UNIFICADO
+          --icon=icon.ico
+          --hidden-import=pyodbc
+          --hidden-import=pandas
+          --hidden-import=pyperclip
+          --hidden-import=xlrd
+          --hidden-import=openpyxl
+          --add-data "HISTORIAL PRESTAMOS/src/logo_insevig.ico;."
+          --add-data "HISTORIAL PRESTAMOS/src/logo_insevig.png;."
+          registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.pyw
+
+      - name: Zip build output
+        run: Compress-Archive -Path dist/REGISTRAR_PRESTAMOS_UNIFICADO/* -DestinationPath REGISTRAR_PRESTAMOS_UNIFICADO-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: REGISTRAR_PRESTAMOS_UNIFICADO-windows
+          path: REGISTRAR_PRESTAMOS_UNIFICADO-windows.zip
+          retention-days: 30
