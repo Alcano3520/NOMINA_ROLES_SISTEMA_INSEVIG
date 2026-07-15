@@ -170,11 +170,7 @@ class DashboardProfesional:
             # Obtener empleados activos
             try:
                 conn = obtener._get_connection()
-                query = f"""
-                    SELECT COUNT(DISTINCT [EMPLEADO]) as total_empleados
-                    FROM [insevig].[dbo].[RPEMPLEA]
-                    WHERE {obtener.sql_filter} AND [ESTADO]='ACT'
-                """
+                query = f"SELECT COUNT(DISTINCT [EMPLEADO]) as total_empleados FROM [insevig].[dbo].[RPEMPLEA] WHERE {obtener.sql_filter} AND [ESTADO]='ACT'"
                 df = pd.read_sql(query, conn)
                 total_empleados = int(df['total_empleados'].iloc[0]) if len(df) > 0 else 0
                 conn.close()
