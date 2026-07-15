@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - "registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.pyw"
+      - "registrdor_vizulizador_egresosingresos/logo_insevig.ico"
+      - "registrdor_vizulizador_egresosingresos/logo_insevig.png"
       - "icon.ico"
       - ".github/workflows/build-registrar-prestamos-exe.yml"
 
@@ -35,8 +37,8 @@ jobs:
           --hidden-import=pyperclip
           --hidden-import=xlrd
           --hidden-import=openpyxl
-          --add-data "HISTORIAL PRESTAMOS/src/logo_insevig.ico;."
-          --add-data "HISTORIAL PRESTAMOS/src/logo_insevig.png;."
+          --add-data "registrdor_vizulizador_egresosingresos/logo_insevig.ico;."
+          --add-data "registrdor_vizulizador_egresosingresos/logo_insevig.png;."
           registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.pyw
 
       - name: Zip build output
