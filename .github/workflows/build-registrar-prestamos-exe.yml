@@ -5,9 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.pyw"
-      - "registrdor_vizulizador_egresosingresos/logo_insevig.ico"
-      - "registrdor_vizulizador_egresosingresos/logo_insevig.png"
+      - "registrdor_vizulizador_egresosingresos/**"
       - "icon.ico"
       - ".github/workflows/build-registrar-prestamos-exe.yml"
 
