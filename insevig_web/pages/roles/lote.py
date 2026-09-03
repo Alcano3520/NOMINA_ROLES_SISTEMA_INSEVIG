@@ -28,7 +28,12 @@ def lote() -> rx.Component:
                         spacing="2",
                         wrap="wrap",
                     ),
-                    rx.checkbox("2 roles por hoja", checked=RolesState.dos_por_hoja, on_change=RolesState.toggle_doble),
+                    rx.hstack(
+                        rx.checkbox("2 roles por hoja", checked=RolesState.dos_por_hoja, on_change=RolesState.toggle_doble),
+                        rx.checkbox("Incluir logo", checked=RolesState.con_logo, on_change=RolesState.toggle_logo),
+                        spacing="4",
+                        wrap="wrap",
+                    ),
                     rx.text("Identificaciones (una por línea o separadas por coma):", size="1", weight="bold"),
                     rx.text_area(
                         value=RolesState.lista_texto,

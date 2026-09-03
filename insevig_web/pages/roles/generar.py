@@ -37,7 +37,12 @@ def generar() -> rx.Component:
                         spacing="2",
                         wrap="wrap",
                     ),
-                    rx.checkbox("2 roles por hoja", checked=RolesState.dos_por_hoja, on_change=RolesState.toggle_doble),
+                    rx.hstack(
+                        rx.checkbox("2 roles por hoja", checked=RolesState.dos_por_hoja, on_change=RolesState.toggle_doble),
+                        rx.checkbox("Incluir logo", checked=RolesState.con_logo, on_change=RolesState.toggle_logo),
+                        spacing="4",
+                        wrap="wrap",
+                    ),
                     rx.hstack(
                         primary_button("Generar PDF", on_click=RolesState.generar_individual),
                         rx.cond(
@@ -47,11 +52,22 @@ def generar() -> rx.Component:
                         spacing="2",
                     ),
                     rx.cond(RolesState.error != "", rx.callout(RolesState.error, color_scheme="red", size="1")),
-                    rx.cond(RolesState.pdf_listo, rx.callout("PDF listo para descargar.", color_scheme="green", size="1")),
                     spacing="3",
                     width="100%",
                 ),
                 width="100%",
+            ),
+            rx.cond(
+                RolesState.pdf_preview != "",
+                card(
+                    rx.el.iframe(
+                        src=RolesState.pdf_preview,
+                        width="100%",
+                        height="720px",
+                        style={"border": "1px solid var(--gray-6)", "borderRadius": "6px"},
+                    ),
+                    width="100%",
+                ),
             ),
             spacing="4",
             width="100%",

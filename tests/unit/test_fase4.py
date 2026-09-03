@@ -38,6 +38,17 @@ def test_rol_pago_pdf_parseable_y_con_datos():
     assert "APORT.IESS" in texto
 
 
+def test_fondo_reserva_calculado_aparece_como_ingreso_y_descuento():
+    # Sin FONDO_RESERVA en BD -> el legado lo calcula 8.33% sobre SUELDO+BONIF+MANIOBRAS+ST
+    # y lo muestra como ingreso y como "... EN IESS" en descuentos (neto igual).
+    emp = _emp()
+    emp.conceptos = {"SUELDO": 800.0, "BONIFICACION": 100.0}
+    data = rol_pago_pdf(emp, OpcionesRol())
+    texto = pypdf.PdfReader(io.BytesIO(data)).pages[0].extract_text()
+    assert "FONDOS DE RESERVA 8.33%" in texto
+    assert "EN IESS" in texto  # 900 * 0.0833 = 74.97
+
+
 def test_dos_por_hoja_dibuja_dos():
     data = rol_pago_pdf(_emp(), OpcionesRol(dos_por_hoja=True))
     r = pypdf.PdfReader(io.BytesIO(data))

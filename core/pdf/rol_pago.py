@@ -118,7 +118,20 @@ def _dibujar(c, d: dict, opt: OpcionesRol, width, height, y_offset: float) -> No
         ingresos += overtime
         y -= lh
 
-    fr = g("FONDO_RESERVA")
+    # Fondo de reserva: si RPEMPLEA no lo trae (0), el legado lo calcula sobre
+    # SUELDO+BONIF+MANIOBRAS+SOBRETIEMPOS y lo muestra como ingreso Y como
+    # descuento ("...EN IESS"), dejando el neto igual (fondo depositado al IESS).
+    fr_bd = g("FONDO_RESERVA")
+    fr_en_iess = False
+    if fr_bd == 0:
+        base_fr = (
+            g("SUELDO") + g("BONIFICACION") + g("MANIOBRAS")
+            + g("SOBRETIEMPO_25") + g("SOBRETIEMPO_50") + g("SOBRETIEMPO_100")
+        )
+        fr = round(base_fr * 0.0833, 2)
+        fr_en_iess = fr > 0
+    else:
+        fr = fr_bd
     if fr > 0:
         c.drawString(col_concept, y, "FONDOS DE RESERVA 8.33%")
         c.drawRightString(col_deduct - 10, y, f"{fr:.2f}")
@@ -132,6 +145,12 @@ def _dibujar(c, d: dict, opt: OpcionesRol, width, height, y_offset: float) -> No
             c.drawRightString(col_deduct - 10, y, f"{v:.2f}")
             ingresos += v
             y -= lh
+
+    if fr_en_iess:
+        c.drawString(col_concept, y, "FONDOS DE RESERVA 8.33% EN IESS")
+        c.drawRightString(col_net - 10, y, f"{fr:.2f}")
+        egresos += fr
+        y -= lh
 
     for col, label in _DESCUENTOS:
         v = g(col)

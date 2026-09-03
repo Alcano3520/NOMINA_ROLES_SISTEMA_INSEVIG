@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
+from pathlib import Path
 
 import reflex as rx
 
@@ -17,6 +19,14 @@ from insevig_web.states.datasource_state import DataSourceState
 
 _TERMINALES = {"ok", "error", "cancelado"}
 FORMATOS_LISTA = list(FORMATOS)
+_LOGO = Path(__file__).resolve().parents[2] / "assets" / "logo_insevig.png"
+
+
+def _logo_bytes() -> bytes | None:
+    try:
+        return _LOGO.read_bytes()
+    except OSError:
+        return None
 
 
 def _periodo_actual() -> str:
@@ -33,11 +43,13 @@ class RolesState(rx.State):
     periodo: str = ""
     identificador: str = ""  # para rol individual
     dos_por_hoja: bool = False
+    con_logo: bool = True
     formato: str = "cedula-nombre"
 
     # rol individual
     pdf_listo: bool = False
     _pdf_bytes: bytes = b""
+    pdf_preview: str = ""  # data URI para <iframe>
     error: str = ""
 
     # lote
@@ -72,6 +84,10 @@ class RolesState(rx.State):
     def toggle_doble(self, v: bool):
         self.dos_por_hoja = v
 
+    @rx.event
+    def toggle_logo(self, v: bool):
+        self.con_logo = v
+
     async def _fuente(self) -> str:
         ds = await self.get_state(DataSourceState)
         return ds.fuente_por_modulo.get("roles", FUENTE_SQLSERVER)
@@ -86,22 +102,28 @@ class RolesState(rx.State):
             return
         self.error = ""
         self.pdf_listo = False
+        self.pdf_preview = ""
         fuente = await self._fuente()
         periodo = self.periodo or _periodo_actual()
         desde, hasta = _rango(periodo)
         ident, doble = self.identificador, self.dos_por_hoja
+        logo = _logo_bytes() if self.con_logo else None
 
         def _gen() -> bytes | None:
             emp = datos_empleado(periodo, ident, fuente)
             if emp is None:
                 return None
-            return rol_pago_pdf(emp, OpcionesRol(fecha_desde=desde, fecha_hasta=hasta, dos_por_hoja=doble))
+            return rol_pago_pdf(
+                emp,
+                OpcionesRol(fecha_desde=desde, fecha_hasta=hasta, dos_por_hoja=doble, logo_bytes=logo),
+            )
 
         data = await asyncio.to_thread(_gen)
         if data is None:
             self.error = "Empleado no encontrado para ese período."
             return
         self._pdf_bytes = data
+        self.pdf_preview = "data:application/pdf;base64," + base64.b64encode(data).decode("ascii")
         self.pdf_listo = True
 
     @rx.event
@@ -122,13 +144,16 @@ class RolesState(rx.State):
         periodo = self.periodo or _periodo_actual()
         desde, hasta = _rango(periodo)
         formato, doble = self.formato, self.dos_por_hoja
+        logo = _logo_bytes() if self.con_logo else None
 
         def _fn(ctx):
             from core.pdf.batch import job_lote_roles
 
             job_lote_roles(
                 ctx, periodo, ids, fuente, formato,
-                OpcionesRol(fecha_desde=desde, fecha_hasta=hasta, dos_por_hoja=doble),
+                OpcionesRol(
+                    fecha_desde=desde, fecha_hasta=hasta, dos_por_hoja=doble, logo_bytes=logo
+                ),
             )
 
         self.lote_path = ""
