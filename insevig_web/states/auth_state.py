@@ -44,10 +44,6 @@ class AuthState(rx.State):
             out.update(f"{modulo}:{a}" for a in acciones)
         return sorted(out)
 
-    def can(self, modulo: str, accion: str = "ver") -> bool:
-        """Chequeo NO reactivo (para event handlers). En UI usar `permisos_flat`."""
-        return auth.puede(set(self.roles), modulo, accion)
-
     @rx.event
     def cargar_sesion(self):
         """on_load global: rehidrata el usuario desde la cookie firmada."""

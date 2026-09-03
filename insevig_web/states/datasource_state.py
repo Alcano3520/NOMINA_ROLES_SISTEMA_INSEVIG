@@ -17,9 +17,6 @@ class DataSourceState(rx.State):
     # fuente elegida por módulo; ausente => sqlserver
     fuente_por_modulo: dict[str, str] = {}
 
-    def fuente_de(self, modulo: str) -> str:
-        return self.fuente_por_modulo.get(modulo, FUENTE_SQLSERVER)
-
     @rx.event
     def set_fuente(self, modulo: str, etiqueta: str):
         clave = CLAVE.get(etiqueta, FUENTE_SQLSERVER)

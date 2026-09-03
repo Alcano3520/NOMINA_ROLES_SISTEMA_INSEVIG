@@ -9,9 +9,9 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web import models  # noqa: F401  (registra tablas en SQLModel.metadata)
-from insevig_web.theme import theme
+from insevig_web.theme import global_style
 
-app = rx.App(theme=theme)
+app = rx.App(style=global_style, stylesheets=["/theme.css"])
 
 # Dev: crea las tablas que falten. En prod se usa alembic.
 try:

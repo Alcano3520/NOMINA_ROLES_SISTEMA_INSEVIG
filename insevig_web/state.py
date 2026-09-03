@@ -23,3 +23,7 @@ class AppState(rx.State):
     @rx.event
     def cerrar_sidebar(self):
         self.sidebar_abierto = False
+
+    @rx.event
+    def set_sidebar(self, abierto: bool):
+        self.sidebar_abierto = abierto

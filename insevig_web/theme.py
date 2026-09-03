@@ -20,9 +20,15 @@ BG = "#f5f7fa"
 SIDEBAR_BREAKPOINT = "1024px"
 
 theme = rx.theme(
-    appearance="light",
+    color_mode="light",  # fuerza modo claro (ignora prefers-color-scheme)
     accent_color="blue",
     gray_color="slate",
     radius="medium",
     scaling="100%",
 )
+
+# Estilo global mínimo: fondo claro y sin scroll horizontal del body.
+global_style = {
+    "body": {"background_color": BG, "color": "#1f2937"},
+    ":root": {"color_scheme": "light"},
+}

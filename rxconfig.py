@@ -1,6 +1,7 @@
 import reflex as rx
 
 from core.config import get_settings
+from insevig_web.theme import theme
 
 _s = get_settings()
 
@@ -12,6 +13,6 @@ config = rx.Config(
     plugins=[
         rx.plugins.SitemapPlugin(),
         rx.plugins.TailwindV4Plugin(),
-        rx.plugins.RadixThemesPlugin(),
+        rx.plugins.RadixThemesPlugin(theme=theme),
     ],
 )

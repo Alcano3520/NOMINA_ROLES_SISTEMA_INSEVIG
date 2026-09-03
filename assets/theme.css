@@ -1,0 +1,18 @@
+/* Fuerza modo claro (la app tiene un único look corporativo claro). */
+:root,
+:root .radix-themes,
+.radix-themes {
+  color-scheme: light !important;
+}
+
+html,
+body {
+  background-color: #f5f7fa !important;
+  color: #1f2937;
+}
+
+/* Radix pinta superficies según prefers-color-scheme si el appearance no fuerza;
+   lo fijamos a la escala clara. */
+.radix-themes {
+  --color-background: #ffffff;
+}

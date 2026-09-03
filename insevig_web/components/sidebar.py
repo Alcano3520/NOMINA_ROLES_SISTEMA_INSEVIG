@@ -90,6 +90,6 @@ def sidebar_drawer() -> rx.Component:
             )
         ),
         open=AppState.sidebar_abierto,
-        on_open_change=AppState.set_sidebar_abierto,
+        on_open_change=AppState.set_sidebar,
         direction="left",
     )
