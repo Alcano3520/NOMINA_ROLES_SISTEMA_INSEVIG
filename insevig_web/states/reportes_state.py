@@ -106,11 +106,17 @@ class ReportesState(rx.State):
 
     @rx.event(background=True)
     async def vigilar(self):
-        while True:
-            j = leer_job(self.job_id)
+        for _ in range(3600):  # tope de seguridad (1h)
+            async with self:
+                jid = self.job_id
+            if not jid:
+                return
+            j = leer_job(jid)
             if j is None:
                 return
             async with self:
+                if jid != self.job_id:  # se lanzó otro job
+                    return
                 self.job_status = j.status
                 self.job_progress = j.progress
                 self.job_total = j.total
