@@ -3,8 +3,9 @@
 Reemplaza los ~20 helpers `_get_sql_conn` / `get_sql_conn` copiados en los .pyw
 y las credenciales hardcodeadas de `shared/obtener_datos.py` / `shared/detect_db.py`.
 
-NOTA (Fase 1): añadir un pool acotado (SQLAlchemy Engine + pool_pre_ping) para
-los reportes sobre RPHISTOR (~2.5M filas). Por ahora, conexión por operación.
+- `conexion()` — context manager de una conexión pyodbc (operaciones puntuales).
+- `filas()` — SELECT → list[dict].
+- `get_engine()` — Engine SQLAlchemy con pool (para reportes sobre RPHISTOR ~2.5M).
 
 NOTA (despliegue, ver plan §4a): el hack `OPENSSL_CONF=openssl_legacy.cnf` NO se
 porta — el TLS 1.0 de SQL Server 2008 R2 se resuelve a nivel Windows Server
@@ -16,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Iterator
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from core.config import get_settings
@@ -78,3 +80,32 @@ def filas(query: str, params: tuple = ()) -> list[dict]:
         cur.execute(query, params)
         cols = [c[0] for c in cur.description]
         return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+
+
+def driver_activo() -> str:
+    """Driver ODBC que funciona (lo detecta con una conexión de prueba)."""
+    global _driver_activo
+    if _driver_activo is None:
+        _connect().close()
+    assert _driver_activo is not None
+    return _driver_activo
+
+
+@lru_cache
+def get_engine(write: bool = False):
+    """Engine SQLAlchemy con pool acotado — para lecturas grandes (reportes)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.engine import URL
+
+    s = get_settings()
+    url = URL.create(
+        "mssql+pyodbc",
+        query={"odbc_connect": s.sqlserver_dsn(driver=driver_activo(), write=write)},
+    )
+    return create_engine(
+        url,
+        pool_size=s.sqlserver_pool_size,
+        max_overflow=2,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
