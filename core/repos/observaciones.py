@@ -352,6 +352,57 @@ def historial_observaciones(empleado: str, fuente: str) -> list[dict]:
     return out
 
 
+def reporte_html(empleado: str, nombre: str, obs: list[dict], multas_: list[dict], faltas_: list[dict]) -> str:
+    """HTML imprimible con observaciones + multas + faltas de un empleado
+    (porta `guardar_texto` / generación de reporte del legado)."""
+    import datetime as _dt
+    import html as _h
+
+    def _fila_obs(o: dict) -> str:
+        f = _h.escape(str(o.get("fecha_ven", "")))
+        t = _h.escape(str(o.get("texto", "")))
+        return f"<tr><td>{f}</td><td>{t}</td></tr>"
+
+    def _fila_multa(m: dict) -> str:
+        return (
+            f"<tr><td>{_h.escape(str(m.get('fecha', '')))}</td>"
+            f"<td style='text-align:right'>{m.get('valor', 0):.2f}</td>"
+            f"<td>{_h.escape(str(m.get('concepto', '')))}</td>"
+            f"<td>{_h.escape(str(m.get('observ', '')))}</td></tr>"
+        )
+
+    def _fila_falta(f: dict) -> str:
+        return (
+            f"<tr><td>{_h.escape(str(f.get('periodo', '')))}</td>"
+            f"<td>{f.get('ausencias', 0)}</td><td>{f.get('faltas_justificadas', 0)}</td>"
+            f"<td>{f.get('faltas_injustificadas', 0)}</td><td>{f.get('total', 0)}</td></tr>"
+        )
+
+    ahora = _dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+    t_obs = "".join(_fila_obs(o) for o in obs) or "<tr><td colspan=2>Sin datos</td></tr>"
+    t_mul = "".join(_fila_multa(m) for m in multas_) or "<tr><td colspan=4>Sin datos</td></tr>"
+    t_fal = "".join(_fila_falta(f) for f in faltas_) or "<tr><td colspan=5>Sin datos</td></tr>"
+    nom, emp = _h.escape(nombre), _h.escape(str(empleado))
+    return f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Observaciones — {nom}</title><style>
+ body{{font-family:'Segoe UI',Arial,sans-serif;margin:32px;color:#222}}
+ h1{{font-size:18px}} h2{{font-size:14px;background:#0D1B2A;color:#fff;padding:6px 10px;margin-top:20px}}
+ table{{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px}}
+ th,td{{border:1px solid #bbb;padding:4px 6px;text-align:left}} th{{background:#1a4d8f;color:#fff}}
+ .info{{color:#555;font-size:12px;margin-bottom:12px}}
+</style></head><body>
+<h1>INSEVIG — Observaciones, multas y faltas</h1>
+<div class="info">Empleado: <b>{nom}</b> &nbsp;|&nbsp; Código: {emp} &nbsp;|&nbsp; Generado: {ahora}</div>
+<h2>Observaciones</h2>
+<table><tr><th>Fecha</th><th>Texto</th></tr>{t_obs}</table>
+<h2>Multas (CLASE 203)</h2>
+<table><tr><th>Fecha</th><th>Valor</th><th>Concepto</th><th>Observación</th></tr>{t_mul}</table>
+<h2>Faltas</h2>
+<table><tr><th>Período</th><th>Ausencias</th><th>F. just.</th><th>F. injust.</th><th>Total</th></tr>{t_fal}</table>
+<p style="margin-top:24px;font-size:12px;color:#666">Listo para imprimir (Ctrl+P).</p>
+</body></html>"""
+
+
 def buscar_empleados(texto: str, fuente: str) -> list[dict]:
     """Devuelve [{'empleado','apellidos_nombres','cedula'}] para el selector."""
     texto = texto.strip()

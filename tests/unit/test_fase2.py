@@ -15,6 +15,20 @@ def test_fila_obs_filtra_refers_vacios():
     assert fila.textos == ["texto A", "texto B"]
 
 
+def test_reporte_html_observaciones():
+    from core.repos import observaciones as obs
+
+    html = obs.reporte_html(
+        "1012", "PEREIRA JUAN",
+        [{"fecha_ven": "2026-01-01", "texto": "Atrasos <x>"}],
+        [{"fecha": "2026-02-01", "valor": 10.0, "concepto": "MULTA", "observ": "n"}],
+        [{"periodo": "2026-01", "ausencias": 1, "faltas_justificadas": 0, "faltas_injustificadas": 1, "total": 2}],
+    )
+    assert "<title>Observaciones" in html and "PEREIRA JUAN" in html
+    assert "&lt;x&gt;" in html  # escapado
+    assert "MULTA" in html
+
+
 def test_falta_suma_total():
     f = _falta({"FECHA_VEN": "2026-06-15", "TOTAUS": 8, "TOTFJ": 0, "TOTFI": 4})
     assert f.periodo == "2026-06"

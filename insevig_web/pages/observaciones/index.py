@@ -6,9 +6,47 @@ from insevig_web import theme
 from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.employee_search import employee_search
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import card, page_heading, scroll_x
+from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.observaciones_state import ObservacionesState
+
+
+def _nueva_observacion() -> rx.Component:
+    return rx.cond(
+        AuthState.permisos_flat.contains("observaciones:crear"),
+        card(
+            rx.vstack(
+                rx.heading("Añadir observación", size="3"),
+                rx.hstack(
+                    rx.input(
+                        value=ObservacionesState.nueva_periodo,
+                        on_change=ObservacionesState.set_nueva_periodo,
+                        placeholder="AAAA-MM (por defecto: mes actual)",
+                        width="240px",
+                    ),
+                    spacing="2",
+                ),
+                rx.text_area(
+                    value=ObservacionesState.nueva_texto,
+                    on_change=ObservacionesState.set_nueva_texto,
+                    placeholder="Texto de la observación (se guarda en el primer slot libre del mes)",
+                    rows="3",
+                    width="100%",
+                ),
+                rx.hstack(
+                    primary_button("Guardar observación", on_click=ObservacionesState.guardar_nueva),
+                    rx.cond(
+                        ObservacionesState.nueva_msg != "",
+                        rx.badge(ObservacionesState.nueva_msg),
+                    ),
+                    spacing="2",
+                ),
+                spacing="2",
+                width="100%",
+            ),
+            width="100%",
+        ),
+    )
 
 
 def _tabla(cols: list[str], filas: rx.Var, celdas) -> rx.Component:
@@ -51,8 +89,19 @@ def index() -> rx.Component:
                 ObservacionesState.empleado_sel != "",
                 card(
                     rx.vstack(
-                        rx.heading(
-                            f"{ObservacionesState.empleado_sel} — {ObservacionesState.nombre_sel}", size="4"
+                        rx.hstack(
+                            rx.heading(
+                                f"{ObservacionesState.empleado_sel} — {ObservacionesState.nombre_sel}", size="4"
+                            ),
+                            rx.button(
+                                "Reporte imprimible",
+                                on_click=ObservacionesState.descargar_reporte,
+                                variant="soft",
+                                size="1",
+                            ),
+                            spacing="3",
+                            align="center",
+                            wrap="wrap",
                         ),
                         rx.cond(
                             ObservacionesState.cargando,
@@ -126,6 +175,7 @@ def index() -> rx.Component:
                     width="100%",
                 ),
             ),
+            rx.cond(ObservacionesState.empleado_sel != "", _nueva_observacion()),
             spacing="4",
             width="100%",
         ),

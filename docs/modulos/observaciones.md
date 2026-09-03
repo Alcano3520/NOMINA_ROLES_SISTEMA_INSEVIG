@@ -1,18 +1,25 @@
 # Módulo: observaciones
 
-Estado: **Fase 2 (viewer) / Fase 3 (escritura)**. Detalle en `~/.claude/plans/wise-soaring-turing.md`
-(sección "Mapeo Tkinter → Reflex", entrada "Observaciones").
-
-Pendiente de completar con la plantilla (`docs/modulos/_PLANTILLA.md`) antes de
-encargarlo a un agente.
+Estado: **consulta completa + alta de observaciones + reporte imprimible**.
 
 ## Origen legado
-observaciones/TOTAL_OSERVACIONES_4_0.pyw
+`observaciones/TOTAL_OSERVACIONES_4_0.pyw` (visor de obs/multas/faltas),
+`empleados/agregar_observaciones_masivas.py`.
 
-## Rebanada (recordatorio)
-`core/repos/observaciones.py` · `insevig_web/states/observaciones_state.py` ·
-`insevig_web/pages/observaciones/*.py` · `insevig_web/components/observaciones/*.py` ·
-`tests/unit/test_observaciones_*.py` · este documento.
+## Qué hace
+- Buscar empleado y ver, en pestañas: **Observaciones** (refer1..7 unidos),
+  **Multas** (RPHISTOR CLASE 203), **Faltas** (RPHORTOT actual + RPHORHIS histórico).
+- **Añadir observación** (`observaciones.guardar_observacion`): la escribe en el
+  primer slot refer libre del mes (advisory lock + auditoría); crea fila si los 7
+  están llenos; evita duplicados exactos. Gated en `observaciones:crear`.
+- **Reporte imprimible** (`observaciones.reporte_html`): HTML con obs+multas+faltas
+  para imprimir (Ctrl+P), descargable.
+- Edición inline de los 7 slots de un mes: en el editor de empleados
+  (`observaciones.observaciones_mes / guardar_observaciones_mes`).
 
-## Contratos que consume
-Ver `docs/CONTRATOS.md`. No editar el núcleo congelado.
+## Datos
+Lectura SQL Server o Supabase; escritura solo SQL Server (RPEMPOBSERV).
+
+## Pendiente
+- Carga masiva de observaciones desde Excel (plantilla + Job), como
+  `agregar_observaciones_masivas.py`.
