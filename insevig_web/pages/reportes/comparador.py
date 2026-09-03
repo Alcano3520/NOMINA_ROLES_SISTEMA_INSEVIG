@@ -11,14 +11,14 @@ from insevig_web.states.reportes_state import ReportesState
 
 @rx.page(
     route="/reportes/comparador",
-    title="INSEVIG — Comparador SQL vs Supabase",
+    title="INSEVIG — Verificación de datos",
     on_load=[AuthState.cargar_sesion, ReportesState.on_load],
 )
 def comparador() -> rx.Component:
     return pagina(
         page_heading(
-            "Comparador SQL Server vs Supabase",
-            "Reconstruye el consolidado desde ambas fuentes y lista las diferencias.",
+            "Verificación de datos (administración)",
+            "Recalcula el consolidado de nómina desde los dos orígenes y lista cualquier diferencia.",
         ),
         rx.vstack(
             card(

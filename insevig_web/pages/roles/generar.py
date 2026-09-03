@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button
 from insevig_web.states.auth_state import AuthState
@@ -20,7 +19,6 @@ def generar() -> rx.Component:
         rx.vstack(
             card(
                 rx.vstack(
-                    rx.hstack(rx.text("Fuente:", weight="bold", size="2"), data_source_selector("roles"), spacing="2"),
                     rx.hstack(
                         rx.input(
                             value=RolesState.identificador,

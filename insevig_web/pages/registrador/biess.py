@@ -18,7 +18,7 @@ def biess() -> rx.Component:
     return pagina(
         page_heading(
             "Importar BIESS quirografarios",
-            "Sube el Excel del BIESS. Se autodetectan las columnas de cédula y valor, se emparejan con RPEMPLEA y se postea a RPINGDES (CLASE 204) con vista previa y dedupe.",
+            "Sube el Excel del BIESS. Se detectan las columnas de cédula y valor y se registran los préstamos quirografarios, con vista previa antes de confirmar.",
         ),
         rx.vstack(
             card(
@@ -92,7 +92,7 @@ def biess() -> rx.Component:
                         ),
                         rx.cond(
                             AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                            primary_button("Confirmar y postear a RPINGDES", on_click=RegistradorState.postear),
+                            primary_button("Confirmar y registrar", on_click=RegistradorState.postear),
                         ),
                         rx.cond(RegistradorState.error != "", rx.callout(RegistradorState.error, color_scheme="red", size="1")),
                         rx.cond(RegistradorState.resultado != "", rx.callout(RegistradorState.resultado, color_scheme="green", size="1")),

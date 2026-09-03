@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button
@@ -17,15 +16,10 @@ from insevig_web.states.prestamos_state import PrestamosState
 )
 def saldos() -> rx.Component:
     return pagina(
-        page_heading("Saldos de préstamos", "CLASE 205 consolidado por empleado. Se exporta a Excel."),
+        page_heading("Saldos de préstamos", "Saldo de préstamos de cada empleado. Se exporta a Excel."),
         rx.vstack(
             card(
                 rx.vstack(
-                    rx.hstack(
-                        rx.text("Fuente:", weight="bold", size="2"),
-                        data_source_selector("prestamos"),
-                        spacing="2",
-                    ),
                     primary_button(
                         "Generar Excel de saldos",
                         on_click=PrestamosState.generar_saldos,

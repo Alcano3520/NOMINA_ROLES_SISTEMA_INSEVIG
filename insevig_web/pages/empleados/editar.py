@@ -164,7 +164,7 @@ def editar() -> rx.Component:
     return pagina(
         page_heading(
             rx.cond(_S.es_nuevo, "Nuevo empleado", "Editar empleado " + _S.edit_empleado),
-            "Escrituras a SQL Server (RPEMPLEA / RPEMPOBSERV) con auditoría.",
+            "Todos los cambios quedan registrados con fecha y usuario.",
         ),
         rx.vstack(
             rx.cond(_S.edit_error != "", rx.callout(_S.edit_error, color_scheme="red", size="1")),
@@ -174,7 +174,7 @@ def editar() -> rx.Component:
                 rx.cond(
                     _S.es_nuevo,
                     rx.vstack(
-                        rx.text("Código de empleado (EMPLEADO)", size="1", weight="bold"),
+                        rx.text("Código de empleado", size="1", weight="bold"),
                         rx.input(
                             value=_S.edit_campos["EMPLEADO"],
                             on_change=lambda v: _S.set_campo("EMPLEADO", v),

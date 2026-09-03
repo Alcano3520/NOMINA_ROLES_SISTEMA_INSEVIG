@@ -3,25 +3,23 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web import theme
-from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
 
 
-@rx.page(route="/empleados/buscar", title="INSEVIG — Empleados", on_load=AuthState.cargar_sesion)
+@rx.page(
+    route="/empleados/buscar",
+    title="INSEVIG — Empleados",
+    on_load=[AuthState.cargar_sesion, EmpleadosState.cargar_lista_inicial],
+)
 def buscar() -> rx.Component:
     return pagina(
-        page_heading("Gestión de empleados", "Busca, edita o crea empleados (RPEMPLEA)."),
+        page_heading("Gestión de empleados", "Busca, edita o crea el registro de un empleado."),
         rx.vstack(
             card(
                 rx.vstack(
-                    rx.hstack(
-                        rx.text("Fuente:", weight="bold", size="2"),
-                        data_source_selector("empleados"),
-                        spacing="2",
-                    ),
                     rx.hstack(
                         rx.input(
                             value=EmpleadosState.grid_texto,

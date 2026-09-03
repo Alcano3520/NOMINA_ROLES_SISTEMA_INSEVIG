@@ -36,8 +36,7 @@ class ModuleSpec:
 MODULES: list[ModuleSpec] = [
     ModuleSpec(
         "reportes", "Reportes", "file-bar-chart",
-        [NavItem("Consolidado de nómina", "/reportes/consolidado"),
-         NavItem("Comparador SQL vs Supabase", "/reportes/comparador", "exportar")],
+        [NavItem("Consolidado de nómina", "/reportes/consolidado")],
     ),
     ModuleSpec(
         "prestamos", "Préstamos", "hand-coins",
@@ -78,6 +77,7 @@ MODULES: list[ModuleSpec] = [
         [NavItem("Usuarios", "/admin/usuarios"),
          NavItem("Roles y permisos", "/admin/roles"),
          NavItem("Auditoría", "/admin/auditoria"),
+         NavItem("Verificación de datos", "/reportes/comparador", "ver"),
          NavItem("Configuración", "/admin/config")],
     ),
 ]

@@ -15,7 +15,7 @@ from insevig_web.states.registrador_state import RegistradorState
 )
 def manual() -> rx.Component:
     return pagina(
-        page_heading("Registro manual en RPINGDES", "Alta puntual de un ingreso/egreso. Se audita y aplica dedupe."),
+        page_heading("Registro manual", "Alta puntual de un ingreso o egreso para un empleado."),
         rx.vstack(
             card(
                 rx.vstack(

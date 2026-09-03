@@ -18,7 +18,7 @@ def carga_masiva() -> rx.Component:
     return pagina(
         page_heading(
             "Carga masiva de empleados",
-            "Sube un Excel con columna EMPLEADO + las columnas a actualizar. Solo SQL Server, con auditoría por fila.",
+            "Sube un Excel con la columna EMPLEADO y las columnas a actualizar. Cada fila queda registrada.",
         ),
         rx.vstack(
             card(
@@ -62,7 +62,7 @@ def carga_masiva() -> rx.Component:
                         ),
                         rx.cond(
                             AuthState.permisos_flat.contains("empleados:cargar_masivo"),
-                            primary_button("Aplicar a SQL Server", on_click=EmpleadosState.aplicar_masiva),
+                            primary_button("Aplicar cambios", on_click=EmpleadosState.aplicar_masiva),
                         ),
                         spacing="2",
                     ),

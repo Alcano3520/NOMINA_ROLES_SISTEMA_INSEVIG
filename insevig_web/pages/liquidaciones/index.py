@@ -3,7 +3,6 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web import theme
-from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
@@ -23,8 +22,6 @@ def index() -> rx.Component:
             card(
                 rx.vstack(
                     rx.hstack(
-                        rx.text("Fuente:", weight="bold", size="2"),
-                        data_source_selector("liquidaciones"),
                         rx.text("Región:", weight="bold", size="2"),
                         rx.select(["COSTA", "SIERRA"], default_value="COSTA", on_change=LiquidacionesState.set_region),
                         spacing="3",

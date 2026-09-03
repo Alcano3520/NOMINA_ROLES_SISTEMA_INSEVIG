@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button
@@ -13,13 +12,6 @@ from insevig_web.states.reportes_state import ReportesState
 def _controles() -> rx.Component:
     return card(
         rx.vstack(
-            rx.hstack(
-                rx.text("Fuente:", size="2", weight="bold"),
-                data_source_selector("reportes"),
-                spacing="2",
-                align="center",
-                wrap="wrap",
-            ),
             rx.hstack(
                 rx.vstack(
                     rx.text("Período (YYYY-MM)", size="2", weight="bold"),
@@ -35,7 +27,7 @@ def _controles() -> rx.Component:
                 rx.vstack(
                     rx.text("Alcance", size="2", weight="bold"),
                     rx.select(
-                        ["Nómina actual", "Histórico (RPHISTOR)"],
+                        ["Nómina actual", "Histórico"],
                         default_value="Nómina actual",
                         on_change=ReportesState.set_alcance,
                     ),

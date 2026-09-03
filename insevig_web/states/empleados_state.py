@@ -21,6 +21,22 @@ GRUPOS = {g: list(cs) for g, cs in repo_emp.GRUPOS.items()}
 _TERMINALES = {"ok", "error", "cancelado"}
 
 
+def _limpiar_valor(k: str, v: object) -> str:
+    """Muestra el valor sin ruido (cédula sin '.0', fechas sin hora)."""
+    if v is None:
+        return ""
+    s = str(v).strip()
+    if k == "CEDULA":
+        from core.utils import normalizar_cedula
+
+        return normalizar_cedula(v) if s not in ("", "None") else ""
+    if s.endswith(".0"):
+        s = s[:-2]
+    if "T00:00:00" in s:
+        s = s.split("T")[0]
+    return s
+
+
 def _periodo_actual() -> str:
     return dt.date.today().strftime("%Y-%m")
 
@@ -115,15 +131,30 @@ class EmpleadosState(rx.State):
     def toggle_solo_activos(self, v: bool):
         self.grid_solo_activos = v
 
+    async def _recargar_grid(self):
+        try:
+            fuente = await self._fuente()
+            self.grid = await asyncio.to_thread(
+                repo_emp.buscar, self.grid_texto, fuente, solo_activos=self.grid_solo_activos
+            )
+        except Exception:  # noqa: BLE001
+            self.grid = []
+        self.grid_cargando = False
+
     @rx.event
     async def buscar_grid(self):
         self.grid_cargando = True
         yield
-        fuente = await self._fuente()
-        self.grid = await asyncio.to_thread(
-            repo_emp.buscar, self.grid_texto, fuente, solo_activos=self.grid_solo_activos
-        )
-        self.grid_cargando = False
+        await self._recargar_grid()
+
+    @rx.event
+    async def cargar_lista_inicial(self):
+        """Al abrir Gestión de empleados: mostrar la lista (como el sistema anterior)."""
+        if self.grid:
+            return
+        self.grid_cargando = True
+        yield
+        await self._recargar_grid()
 
     # ── Editor / CRUD (siempre SQL Server) ─────────────────────────────────
     edit_empleado: str = ""
@@ -166,7 +197,7 @@ class EmpleadosState(rx.State):
             yield rx.redirect("/empleados/editar")
             return
         self.edit_empleado = e.empleado
-        self.edit_campos = {k: ("" if v is None else str(v)) for k, v in e.campos.items()}
+        self.edit_campos = {k: _limpiar_valor(k, v) for k, v in e.campos.items()}
         self.edit_campos["EMPLEADO"] = e.empleado
         self.edit_token = e.token
         self.es_nuevo = False

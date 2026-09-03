@@ -3,7 +3,6 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web import theme
-from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.employee_search import employee_search
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
@@ -77,7 +76,6 @@ def index() -> rx.Component:
     return pagina(
         page_heading("Observaciones, Multas y Faltas", "Consulta por empleado."),
         rx.vstack(
-            rx.hstack(rx.text("Fuente:", weight="bold", size="2"), data_source_selector("observaciones"), spacing="2"),
             employee_search(
                 texto=ObservacionesState.texto_busqueda,
                 resultados=ObservacionesState.resultados,

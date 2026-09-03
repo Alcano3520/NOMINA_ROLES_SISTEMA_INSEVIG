@@ -3,7 +3,6 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web import theme
-from insevig_web.components.data_source_selector import data_source_selector
 from insevig_web.components.employee_search import employee_search
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, scroll_x
@@ -81,9 +80,8 @@ def _tabla_resumen() -> rx.Component:
 )
 def historial() -> rx.Component:
     return pagina(
-        page_heading("Historial de préstamos", "CLASE 205. Combina SQL Server / Supabase + histórico migrado."),
+        page_heading("Historial de préstamos", "Movimientos y saldo de los préstamos del empleado, incluido el histórico."),
         rx.vstack(
-            rx.hstack(rx.text("Fuente:", weight="bold", size="2"), data_source_selector("prestamos"), spacing="2"),
             employee_search(
                 texto=PrestamosState.texto_busqueda,
                 resultados=PrestamosState.resultados,

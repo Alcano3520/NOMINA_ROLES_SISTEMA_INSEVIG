@@ -60,7 +60,7 @@ def index() -> rx.Component:
     return pagina(
         page_heading(
             "Agenda de cobro de liquidación de haberes",
-            "Programación de cuándo los empleados salientes cobran su liquidación. Datos en Supabase.",
+            "Programación de cuándo los empleados salientes cobran su liquidación.",
         ),
         rx.vstack(
             card(
