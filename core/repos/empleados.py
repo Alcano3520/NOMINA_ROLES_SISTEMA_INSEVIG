@@ -17,28 +17,92 @@ from core.db import sqlserver, supabase_client
 from core.db.health import FUENTE_SUPABASE
 from core.utils import a_float, normalizar_cedula
 
-# Campos editables de RPEMPLEA, agrupados para el formulario.
+# Campos editables de RPEMPLEA, agrupados como las 6 pestañas del legado
+# (`SISTEMA_GESTION_EMPLEADOS_10.pyw`). Nombres de columna EXACTOS del legado.
 GRUPOS: dict[str, tuple[str, ...]] = {
     "Datos generales": (
         "NOMBRES", "APELLIDOS", "CEDULA", "SEXO", "ESTADO_CI", "FECHA_NAC", "LUGAR_NAC",
+        "NACIONAL", "DIRECCION", "PROVINCIA", "CANTON", "PARROQUIA",
+        "FECHA_ING", "FECHA_SAL", "DEPTO", "CARGO", "SECCION", "ESTADO",
+        "TELEFONO", "RPCAM", "emp_mail", "TIPO_TRA", "ACTIVIDAD", "CONYUGUE",
     ),
-    "Contacto": ("DIRECCION", "PROVINCIA", "CANTON", "PARROQUIA", "TELEFONO", "emp_mail"),
-    "Laboral": ("FECHA_ING", "FECHA_SAL", "DEPTO", "SECCION", "CARGO", "ESTADO"),
     "Ingresos / descuentos": (
-        "SUELDO", "BONIFI", "TRANSP", "LUNCH", "DECIMO3", "DECIMO4", "VACACION", "CARGAS",
+        "SUELDO", "BONIFI", "COMPEN", "TRANSP", "HOR25", "HOR50", "HOR100",
+        "DECIMO3", "DECIMO4", "VACACION", "FONRESER",
+        "MOVILIZA", "LUNCH", "ANTICIPO", "DESCUENTO", "ING_EXTRA", "DCT_EXTRA", "CONCEPTO",
+        "CAT_PROYECT_7", "CAT_PROYECT_8", "RPCAM2",
     ),
-    "Bancarios": ("TIPO_PGO", "CODCTA", "CTA_CTE", "CTA_AHO", "CODIESS", "NUM_AFIL"),
+    "Otros datos": (
+        "INCL_ROL", "INCL_BAN", "CARGAS", "ULTLIQ", "ULTDIATRA", "DIAS_TRA",
+        "TIP_SAN", "TIPO_PGO", "CODCTA", "CTADPT", "CTAAUX", "RUTA4", "CTA_CTE", "CTA_AHO",
+    ),
+    "Certificados / familiares": (
+        "NOM_FAM", "DIR_FAM", "TEL_FAM", "NOM_NO_FAM", "DIR_NO_FAM", "TEL_NO_FAM",
+    ),
+    "Referencias": (
+        "CED_MIL", "EDAD", "IDVOTA", "LICCOND", "CODIESS", "ID_CONADIS", "OBSERV",
+        "PRIMARIA", "SECUNDARIA", "EST_SUP", "TITULO", "ANIO_EST",
+        "RPCAM5", "CONTINS", "RPCAM3", "RPCAM4", "certificados", "reentrenamiento", "vacuna",
+        "FZA_PUB", "SER_MIL", "CERTVINF", "MANIOBRAS", "NUM_AFIL",
+    ),
 }
 CAMPOS_EDITABLES: tuple[str, ...] = tuple(c for cs in GRUPOS.values() for c in cs)
-CAMPOS_NUMERICOS = frozenset(
-    {"SUELDO", "BONIFI", "TRANSP", "LUNCH", "DECIMO3", "DECIMO4", "VACACION", "CARGAS"}
-)
 
-# Catálogos de DBTABLAS: TIPO -> etiqueta
-CATALOGOS = {
-    "CAR": "cargos", "SEC": "secciones", "DPT": "departamentos", "SEX": "sexos",
-    "ECS": "estados_civiles", "TTR": "tipos_trabajo", "FPA": "formas_pago", "BCO": "bancos",
+# Etiquetas legibles para el formulario web (las que no están usan el nombre crudo).
+ETIQUETAS: dict[str, str] = {
+    "emp_mail": "Email", "RPCAM": "2do teléfono", "TIPO_TRA": "Tipo de empleado",
+    "ESTADO_CI": "Estado civil", "LUGAR_NAC": "Lugar nac.", "FECHA_NAC": "Fecha nac.",
+    "FECHA_ING": "Fecha ingreso", "FECHA_SAL": "Fecha salida", "NACIONAL": "Nacionalidad",
+    "BONIFI": "Bonificación", "COMPEN": "Compensación", "TRANSP": "Transporte",
+    "HOR25": "Horas 25%", "HOR50": "Horas 50%", "HOR100": "Horas 100%",
+    "DECIMO3": "Décimo 3ro", "DECIMO4": "Décimo 4to", "FONRESER": "Fdo. reserva",
+    "MOVILIZA": "Movilización", "ING_EXTRA": "Ing. extra", "DCT_EXTRA": "Dct. extra",
+    "CAT_PROYECT_7": "Décimo 3ro se paga aparte", "CAT_PROYECT_8": "Décimo 4to se paga aparte",
+    "RPCAM2": "Aporta IESS cónyuge (3.41%)", "INCL_ROL": "Incluir en el rol",
+    "INCL_BAN": "Acreditar al banco", "ULTLIQ": "Últ. liquidación",
+    "ULTDIATRA": "Últ. día trabajado", "DIAS_TRA": "Días trab.", "TIP_SAN": "Grupo sanguíneo",
+    "TIPO_PGO": "Período de pago", "CODCTA": "Código cta.", "CTADPT": "Cta. depto.",
+    "CTAAUX": "Cta. auxiliar", "RUTA4": "Banco", "CTA_CTE": "Cta. corriente",
+    "CTA_AHO": "Cta. ahorros", "NOM_FAM": "Familiar — nombres", "DIR_FAM": "Familiar — dirección",
+    "TEL_FAM": "Familiar — teléfonos", "NOM_NO_FAM": "No familiar — nombres",
+    "DIR_NO_FAM": "No familiar — dirección", "TEL_NO_FAM": "No familiar — teléfonos",
+    "CED_MIL": "Cédula militar", "IDVOTA": "Nro cert. votación", "LICCOND": "Licencia conducir",
+    "CODIESS": "Código IESS", "ID_CONADIS": "Carnet Conadis", "OBSERV": "Visita domiciliaria",
+    "EST_SUP": "Universidad", "ANIO_EST": "Años estudio", "RPCAM5": "Tipo de servicio",
+    "CONTINS": "Contrato inspectoría", "RPCAM3": "GIPASE", "RPCAM4": "AFIS",
+    "FZA_PUB": "Miembro activo Fuerza Pública", "SER_MIL": "Realizó servicio militar",
+    "CERTVINF": "Cert. violencia intrafamiliar", "NUM_AFIL": "No. afiliación IESS",
 }
+
+CAMPOS_NUMERICOS = frozenset({
+    "SUELDO", "BONIFI", "COMPEN", "TRANSP", "HOR25", "HOR50", "HOR100",
+    "DECIMO3", "DECIMO4", "VACACION", "FONRESER", "MOVILIZA", "LUNCH", "ANTICIPO",
+    "DESCUENTO", "ING_EXTRA", "DCT_EXTRA", "CARGAS", "DIAS_TRA", "EDAD", "ANIO_EST",
+})
+# 'S'/'N' como texto (RPEMPLEA.INCL_ROL / INCL_BAN)
+CAMPOS_SN = frozenset({"INCL_ROL", "INCL_BAN"})
+# '1'/'0' como texto (columnas varchar genéricas reutilizadas como flags de nómina)
+CAMPOS_FLAG_TXT = frozenset({"CAT_PROYECT_7", "CAT_PROYECT_8", "RPCAM2"})
+# 1/0 como entero (estudios / servicio militar)
+CAMPOS_FLAG_INT = frozenset({"PRIMARIA", "SECUNDARIA", "EST_SUP", "FZA_PUB", "SER_MIL"})
+
+# Combos con catálogo fijo: campo -> [(código, etiqueta)]
+CAMPOS_COMBO: dict[str, list[tuple[str, str]]] = {
+    "SEXO": [("1", "Masculino"), ("2", "Femenino")],
+    "ESTADO_CI": [
+        ("1", "Casado"), ("2", "Soltero"), ("3", "Divorciado"), ("4", "Viudo"), ("5", "Unión libre"),
+    ],
+    "ESTADO": [("ACT", "Activo"), ("LIQ", "Liquidado"), ("SUS", "Suspendido")],
+    "TIPO_TRA": [("1", "Empleado"), ("2", "Código 2"), ("3", "Obrero")],
+    "TIPO_PGO": [("1", "1"), ("2", "2"), ("3", "3")],
+    "TIP_SAN": [(x, x) for x in ("O+", "O-", "A+", "A-", "B+", "B-", "AB+", "AB-")],
+}
+
+# Combos que se llenan desde DBTABLAS: campo -> TIPO
+CAMPOS_CATALOGO: dict[str, str] = {"DEPTO": "DPT", "CARGO": "FNC", "SECCION": "SEC", "RUTA4": "BAN"}
+
+# Catálogos de DBTABLAS a cargar (TIPO -> etiqueta). El legado real usa FNC/SEC/DPT/BAN.
+CATALOGOS = {"FNC": "cargos", "SEC": "secciones", "DPT": "departamentos", "BAN": "bancos"}
 
 
 @dataclass
@@ -121,7 +185,7 @@ def obtener(empleado: str, fuente: str) -> Empleado | None:
         r = sb.table("rpemplea").select("*").eq("codemp", "10").eq("empleado", str(empleado)).limit(1).execute()
         if not r.data:
             return None
-        row = {k.upper() if k.upper() in CAMPOS_EDITABLES else k: v for k, v in r.data[0].items()}
+        row = r.data[0]
     else:
         flt = get_settings().sqlserver_filter
         filas = sqlserver.filas(
@@ -131,7 +195,8 @@ def obtener(empleado: str, fuente: str) -> Empleado | None:
         if not filas:
             return None
         row = filas[0]
-    campos = {c: row.get(c) for c in CAMPOS_EDITABLES}
+    low = {str(k).lower(): v for k, v in row.items()}  # RPEMPLEA vs supabase: distinta capitalización
+    campos = {c: low.get(c.lower()) for c in CAMPOS_EDITABLES}
     return Empleado(
         empleado=str(empleado).strip(),
         campos=campos,
@@ -150,16 +215,22 @@ class ConflictoConcurrencia(RuntimeError):
     """Otro usuario modificó el registro desde que se abrió el editor."""
 
 
+def _norm_valor(k: str, v: object) -> object:
+    """Convierte el valor del formulario al tipo/codificación de la columna RPEMPLEA."""
+    if k in CAMPOS_NUMERICOS:
+        return a_float(v)
+    s = "" if v is None else str(v).strip()
+    if k in CAMPOS_SN:
+        return "S" if s in ("S", "s", "1", "true", "True") else "N"
+    if k in CAMPOS_FLAG_TXT:
+        return "1" if s in ("1", "S", "true", "True") else "0"
+    if k in CAMPOS_FLAG_INT:
+        return 1 if s in ("1", "S", "true", "True") else 0
+    return None if s == "" else s
+
+
 def _normalizar(campos: dict) -> dict:
-    out: dict[str, object] = {}
-    for k, v in campos.items():
-        if k not in CAMPOS_EDITABLES:
-            continue
-        if k in CAMPOS_NUMERICOS:
-            out[k] = a_float(v)
-        else:
-            out[k] = None if v in (None, "") else str(v).strip()
-    return out
+    return {k: _norm_valor(k, campos.get(k)) for k in CAMPOS_EDITABLES if k in campos}
 
 
 def actualizar(empleado: str, campos: dict, token_previo: str, *, usuario: str, roles: set[str]) -> None:

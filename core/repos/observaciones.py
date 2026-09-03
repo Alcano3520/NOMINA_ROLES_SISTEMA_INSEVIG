@@ -227,6 +227,131 @@ def guardar_observacion(empleado: str, periodo: str, texto: str, *, usuario: str
         return "nueva_fila"
 
 
+def _rango_mes(periodo: str) -> tuple[str, str]:
+    anio, mes = periodo.split("-")
+    ini = f"{anio}-{int(mes):02d}-01"
+    fin = f"{int(anio) + 1}-01-01" if int(mes) == 12 else f"{anio}-{int(mes) + 1:02d}-01"
+    return ini, fin
+
+
+def observaciones_mes(empleado: str, periodo: str, fuente: str) -> dict:
+    """Los 7 slots refer1..7 de la fila del mes `periodo` (YYYY-MM) para el editor
+    de empleados. Devuelve {'existe': bool, 'fecha_ven': str, 'slots': [7 textos]}.
+    """
+    ini, fin = _rango_mes(periodo)
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        filas = (
+            sb.table("rpempobserv")
+            .select("*")
+            .eq("empleado", str(empleado))
+            .gte("fecha_ven", ini)
+            .lt("fecha_ven", fin)
+            .order("fecha_ven")
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        r = filas[0] if filas else None
+        get = (lambda s: (r or {}).get(s))  # noqa: E731
+    else:
+        flt = get_settings().sqlserver_filter
+        filas = sqlserver.filas(
+            f"""SELECT TOP 1 {', '.join(SLOTS_REFER)}, fecha_ven
+                FROM dbo.RPEMPOBSERV
+                WHERE empleado = ? AND fecha_ven >= ? AND fecha_ven < ? AND {flt}
+                ORDER BY fecha_ven""",
+            (str(empleado), ini, fin),
+        )
+        r = filas[0] if filas else None
+        get = (lambda s: (r or {}).get(s.upper()) or (r or {}).get(s))  # noqa: E731
+    if r is None:
+        return {"existe": False, "fecha_ven": "", "slots": [""] * 7}
+    return {
+        "existe": True,
+        "fecha_ven": str(get("fecha_ven") or "")[:10],
+        "slots": [str(get(s) or "").strip() for s in SLOTS_REFER],
+    }
+
+
+def guardar_observaciones_mes(
+    empleado: str, periodo: str, slots: list[str], *, usuario: str, roles: set[str]
+) -> int:
+    """Reescribe los 7 slots refer1..7 de la fila del mes `periodo` en RPEMPOBSERV
+    (edición inline, como el legado). Crea la fila si no existe. SQL Server + auditoría.
+    Devuelve cuántos slots cambiaron.
+    """
+    from core.audit.writer import audit_scope
+
+    slots = [(s or "").strip()[:256] for s in slots][:7]
+    slots += [""] * (7 - len(slots))
+    ini, fin = _rango_mes(periodo)
+    flt = get_settings().sqlserver_filter
+    anio, mes = periodo.split("-")
+    with audit_scope(
+        "empleados", "editar", usuario=usuario, roles=roles,
+        target_table="RPEMPOBSERV", target_key=empleado,
+        after={"periodo": periodo, "slots": slots},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT APPLOCK_MODE('public', ?, 'Session')", (f"obs_{empleado}",))
+        cur.execute(
+            f"""SELECT TOP 1 {', '.join(SLOTS_REFER)}, fecha_ven FROM dbo.RPEMPOBSERV
+                WHERE empleado = ? AND fecha_ven >= ? AND fecha_ven < ? AND {flt}
+                ORDER BY fecha_ven""",
+            (empleado, ini, fin),
+        )
+        fila = cur.fetchone()
+        if fila is None:
+            cur.execute(
+                f"INSERT INTO dbo.RPEMPOBSERV (empleado, codemp, codsuc, fecha_ven, "
+                f"{', '.join(SLOTS_REFER)}) VALUES (?, '10', '10', ?, {', '.join(['?'] * 7)})",
+                (empleado, f"{anio}-{int(mes):02d}-01", *slots),
+            )
+            conn.commit()
+            return sum(1 for s in slots if s)
+        actuales = [str(fila[i] or "").strip() for i in range(7)]
+        fecha_ven = fila[7]
+        cambios = 0
+        for i, slot in enumerate(SLOTS_REFER):
+            if slots[i] != actuales[i]:
+                cur.execute(
+                    f"UPDATE TOP (1) dbo.RPEMPOBSERV SET {slot} = ? "
+                    f"WHERE empleado = ? AND fecha_ven = ? AND {flt}",
+                    (slots[i] or None, empleado, fecha_ven),
+                )
+                cambios += 1
+        conn.commit()
+        return cambios
+
+
+def historial_observaciones(empleado: str, fuente: str) -> list[dict]:
+    """Todas las filas de RPEMPOBSERV del empleado, para imprimir historial completo."""
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        filas = (
+            sb.table("rpempobserv").select("*").eq("empleado", str(empleado))
+            .order("fecha_ven", desc=True).execute().data or []
+        )
+        get = lambda r, s: r.get(s)  # noqa: E731
+    else:
+        flt = get_settings().sqlserver_filter
+        filas = sqlserver.filas(
+            f"""SELECT {', '.join(SLOTS_REFER)}, fecha_ven FROM dbo.RPEMPOBSERV
+                WHERE empleado = ? AND {flt} ORDER BY fecha_ven DESC""",
+            (str(empleado),),
+        )
+        get = lambda r, s: r.get(s.upper()) or r.get(s)  # noqa: E731
+    out = []
+    for r in filas:
+        textos = [str(get(r, s) or "").strip() for s in SLOTS_REFER]
+        textos = [t for t in textos if t]
+        if textos:
+            out.append({"fecha_ven": str(get(r, "fecha_ven") or "")[:10], "textos": textos})
+    return out
+
+
 def buscar_empleados(texto: str, fuente: str) -> list[dict]:
     """Devuelve [{'empleado','apellidos_nombres','cedula'}] para el selector."""
     texto = texto.strip()

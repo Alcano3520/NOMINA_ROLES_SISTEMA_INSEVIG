@@ -133,7 +133,24 @@ class EmpleadosState(rx.State):
     es_nuevo: bool = False
     edit_error: str = ""
     edit_ok: str = ""
+    edit_audit: str = ""  # "creado por X · modificado por Y"
+    modo_edicion: bool = False  # como el legado: hay que pulsar "Modificar" para editar
     confirmar_borrado: str = ""  # el usuario reescribe el código para confirmar
+    edit_catalogos: dict[str, list[dict]] = {"FNC": [], "SEC": [], "DPT": [], "BAN": []}
+
+    @rx.event
+    def toggle_modo_edicion(self):
+        self.modo_edicion = not self.modo_edicion
+        self.edit_ok = self.edit_error = ""
+
+    async def _cargar_catalogos_editor(self):
+        if self.edit_catalogos:
+            return
+        fuente = await self._fuente()
+        try:
+            self.edit_catalogos = await asyncio.to_thread(repo_emp.catalogos, fuente)
+        except Exception:  # noqa: BLE001
+            self.edit_catalogos = {}
 
     @rx.event
     async def abrir_editor(self, empleado: str):
@@ -143,24 +160,43 @@ class EmpleadosState(rx.State):
             return
         self.edit_empleado = e.empleado
         self.edit_campos = {k: ("" if v is None else str(v)) for k, v in e.campos.items()}
+        self.edit_campos["EMPLEADO"] = e.empleado
         self.edit_token = e.token
         self.es_nuevo = False
+        self.modo_edicion = False
         self.edit_error = self.edit_ok = ""
-        return rx.redirect("/empleados/editar")
+        self.edit_audit = (
+            f"Creado por {e.creado_por or '—'} ({e.fecha_crea or '—'}) · "
+            f"Últ. modif. {e.mod_por or '—'} ({e.fecha_mod or '—'})"
+        )
+        self.edit_obs_slots = ["", "", "", "", "", "", ""]
+        self.edit_obs_existe = False
+        self.edit_obs_msg = ""
+        yield
+        await self._cargar_catalogos_editor()
+        yield rx.redirect("/empleados/editar")
 
     @rx.event
-    def nuevo(self):
+    async def nuevo(self):
         self.edit_empleado = ""
         self.edit_campos = {c: "" for cs in GRUPOS.values() for c in cs}
         self.edit_campos["EMPLEADO"] = ""
         self.edit_token = ""
         self.es_nuevo = True
-        self.edit_error = self.edit_ok = ""
-        return rx.redirect("/empleados/editar")
+        self.modo_edicion = True
+        self.edit_error = self.edit_ok = self.edit_audit = ""
+        yield
+        await self._cargar_catalogos_editor()
+        yield rx.redirect("/empleados/editar")
 
     @rx.event
     def set_campo(self, campo: str, valor: str):
         self.edit_campos[campo] = valor
+
+    @rx.event
+    def toggle_campo(self, campo: str):
+        actual = str(self.edit_campos.get(campo, ""))
+        self.edit_campos[campo] = "" if actual in ("1", "S", "true") else "1"
 
     @rx.event
     async def guardar(self):
@@ -168,6 +204,13 @@ class EmpleadosState(rx.State):
         accion = "crear" if self.es_nuevo else "editar"
         if f"empleados:{accion}" not in auth.permisos_flat:
             self.edit_error = "Sin permiso."
+            return
+        if not self.es_nuevo and not self.modo_edicion:
+            self.edit_error = "Pulsa 'Modificar' para habilitar la edicion."
+            return
+        req = [c for c in ("EMPLEADO", "CEDULA", "NOMBRES", "APELLIDOS") if not str(self.edit_campos.get(c, "")).strip()]
+        if req:
+            self.edit_error = "Campos obligatorios faltantes: " + ", ".join(req)
             return
         campos, token = dict(self.edit_campos), self.edit_token
         usuario, roles = auth.username, set(auth.roles)
@@ -184,13 +227,78 @@ class EmpleadosState(rx.State):
                     usuario=usuario, roles=roles,
                 )
             self.edit_ok = "Guardado."
+            self.modo_edicion = False
             e = await asyncio.to_thread(repo_emp.obtener, self.edit_empleado, "sqlserver")
             if e:
                 self.edit_token = e.token
+                self.edit_audit = (
+                    f"Creado por {e.creado_por or '—'} ({e.fecha_crea or '—'}) · "
+                    f"Últ. modif. {e.mod_por or '—'} ({e.fecha_mod or '—'})"
+                )
         except repo_emp.ConflictoConcurrencia as e:
             self.edit_error = str(e)
         except Exception as e:  # noqa: BLE001
             self.edit_error = str(e)
+
+    # ── Observaciones por período (pestaña dentro del editor) ──────────────
+    edit_obs_periodo: str = ""
+    edit_obs_slots: list[str] = ["", "", "", "", "", "", ""]
+    edit_obs_existe: bool = False
+    edit_obs_msg: str = ""
+    obs_historial: list[dict] = []
+
+    @rx.event
+    def set_obs_periodo(self, v: str):
+        self.edit_obs_periodo = v.strip()
+
+    @rx.event
+    def set_obs_slot(self, idx: int, v: str):
+        s = list(self.edit_obs_slots)
+        s[idx] = v
+        self.edit_obs_slots = s
+
+    @rx.event
+    async def cargar_obs_editor(self):
+        if not self.edit_empleado:
+            return
+        per = self.edit_obs_periodo or _periodo_actual()
+        self.edit_obs_periodo = per
+        fuente = await self._fuente()
+        d = await asyncio.to_thread(observaciones.observaciones_mes, self.edit_empleado, per, fuente)
+        self.edit_obs_existe = d["existe"]
+        self.edit_obs_slots = d["slots"]
+        self.edit_obs_msg = "" if d["existe"] else f"Sin observaciones para {per}. Puedes crear."
+
+    @rx.event
+    async def guardar_obs_editor(self):
+        auth = await self.get_state(AuthState)
+        if "empleados:editar" not in auth.permisos_flat:
+            self.edit_obs_msg = "Sin permiso."
+            return
+        per = self.edit_obs_periodo or _periodo_actual()
+        slots = list(self.edit_obs_slots)
+        try:
+            n = await asyncio.to_thread(
+                observaciones.guardar_observaciones_mes,
+                self.edit_empleado, per, slots,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+            self.edit_obs_msg = f"{n} campo(s) guardado(s)."
+            self.edit_obs_existe = True
+        except Exception as e:  # noqa: BLE001
+            self.edit_obs_msg = str(e)
+
+    @rx.event
+    async def cargar_historial_obs(self):
+        if not self.edit_empleado:
+            return
+        fuente = await self._fuente()
+        filas = await asyncio.to_thread(
+            observaciones.historial_observaciones, self.edit_empleado, fuente
+        )
+        self.obs_historial = [
+            {"fecha_ven": f["fecha_ven"], "texto": " · ".join(f["textos"])} for f in filas
+        ]
 
     @rx.event
     def set_confirmar_borrado(self, v: str):
