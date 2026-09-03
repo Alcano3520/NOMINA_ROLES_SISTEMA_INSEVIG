@@ -16,7 +16,7 @@ WEB = RAIZ / "insevig_web"
 
 MODULOS = (
     "reportes", "prestamos", "observaciones", "empleados", "roles",
-    "registrador", "bitacora", "admin",
+    "registrador", "bitacora", "liquidaciones", "admin",
 )
 
 

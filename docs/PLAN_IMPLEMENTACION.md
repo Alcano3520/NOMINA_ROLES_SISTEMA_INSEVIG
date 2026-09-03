@@ -5,7 +5,7 @@ Historial: `docs/BITACORA.md`.
 
 ---
 
-## Parte A — Terminar los 8 módulos actuales
+## Parte A — Terminar los 9 módulos actuales
 
 Todos tienen interfaz Reflex y lógica `core/`, pero **nada se ha probado contra el
 SQL Server (`192.168.2.115`) ni el Supabase reales**. Orden sugerido:
@@ -97,7 +97,7 @@ fuente de datos).
 
 | Proyecto | Qué es | Stack actual | Notas para migrar |
 |---|---|---|---|
-| `LIQUIDACIONES_SISTEMA_INSEVIG` | Genera liquidaciones/finiquitos (PDF + QR) | Tkinter → ya migrado a Supabase | Encaja bien; comparte empleados; genera PDF (como Roles) |
+| ~~`LIQUIDACIONES_SISTEMA_INSEVIG`~~ | ✅ **Módulo 9 hecho** (`core/repos/liquidaciones.py`) — cálculo legal completo + Excel FORMATO | | falta validar montos vs el .pyw |
 | `VACACIONES_SISTEMA_INSEVIG` | Solicitudes y saldos de vacaciones | Tkinter + pyodbc + Supabase | CRUD + cálculo de saldo; escribe a RPINGDES o tabla propia |
 | `sistema_sanciones_RRHH` | Flujo de sanciones (supervisor → RRHH) con estados | Tkinter | Workflow con estados (como bitacora); `admin_panel.py` |
 | `sistema_sanciones_insevig` / `novedades_insevig` | Sanciones / novedades operativas | **Flutter** (móvil + web) | Ya son web/móvil; decidir si se absorben o se dejan aparte |

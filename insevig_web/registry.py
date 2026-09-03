@@ -70,6 +70,10 @@ MODULES: list[ModuleSpec] = [
         [NavItem("Agenda de cobro", "/bitacora")],
     ),
     ModuleSpec(
+        "liquidaciones", "Liquidaciones", "file-check-2",
+        [NavItem("Generar finiquitos", "/liquidaciones", "ver")],
+    ),
+    ModuleSpec(
         "admin", "Administración", "settings",
         [NavItem("Usuarios", "/admin/usuarios"),
          NavItem("Roles y permisos", "/admin/roles"),
