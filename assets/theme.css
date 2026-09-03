@@ -1,18 +1,69 @@
-/* Fuerza modo claro (la app tiene un único look corporativo claro). */
+/* La app INSEVIG tiene un ÚNICO look corporativo claro. Se fuerza el modo claro
+   sin importar el `prefers-color-scheme` del navegador del usuario. */
+
+/* LightningCSS (el transformador CSS de Reflex/Vite) convierte la función
+   `light-dark()` de Radix Themes en un toggle con estas custom properties,
+   controladas por `@media (prefers-color-scheme)`. En un navegador en modo
+   oscuro resuelve TODO a la rama oscura aunque la clase `.light` esté puesta.
+   Forzamos aquí la rama clara de forma incondicional. */
 :root,
-:root .radix-themes,
-.radix-themes {
+.radix-themes,
+.light,
+.light-theme,
+.dark,
+.dark-theme {
+  --lightningcss-light: ;
+  --lightningcss-dark: initial;
   color-scheme: light !important;
 }
 
 html,
 body {
+  color-scheme: light !important;
   background-color: #f5f7fa !important;
-  color: #1f2937;
+  color: #1f2937 !important;
 }
 
-/* Radix pinta superficies según prefers-color-scheme si el appearance no fuerza;
-   lo fijamos a la escala clara. */
+/* El <Theme> de Radix (div .radix-themes): fondo claro y color de texto oscuro.
+   Sin esto, en un navegador en modo oscuro el div queda transparente y se ve
+   el "canvas" oscuro del navegador a través de toda la app. */
 .radix-themes {
+  color-scheme: light !important;
+  background-color: #f5f7fa !important;
+  color: #1f2937 !important;
   --color-background: #ffffff;
+}
+
+/* Superficies Radix con fondo blanco sólido (los paneles translúcidos por
+   defecto dejan ver el fondo oscuro del navegador). */
+.rt-Card,
+.rt-Card::before,
+.rt-BaseCard,
+.rt-PopperContent,
+.rt-DialogContent,
+.rt-AlertDialogContent,
+.rt-PopoverContent,
+.rt-HoverCardContent,
+.rt-DropdownMenuContent,
+.rt-SelectContent,
+.rt-Table,
+.rt-TableRootTable {
+  background-color: #ffffff !important;
+}
+
+/* Campos de formulario legibles en modo claro. */
+.rt-TextFieldInput,
+.rt-TextFieldRoot,
+.rt-TextAreaInput,
+.rt-TextArea,
+.rt-SelectTrigger,
+select,
+input,
+textarea {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+}
+
+.rt-Button.rt-variant-solid {
+  color: #ffffff !important;
 }

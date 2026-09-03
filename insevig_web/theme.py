@@ -30,8 +30,7 @@ theme = rx.theme(
     custom_attrs={"data-appearance": "light"},
 )
 
-# Estilo global mínimo: fondo claro y sin scroll horizontal del body.
-global_style = {
-    "body": {"background_color": BG, "color": "#1f2937"},
-    ":root": {"color_scheme": "light"},
-}
+# El estilo global (fondo claro, modo claro forzado, superficies Radix) vive en
+# `assets/theme.css`: da control fino sobre las clases .rt-* de Radix y evita el
+# problema de anidado que produce `rx.App(style=...)` con claves como "body".
+global_style: dict = {}

@@ -18,18 +18,29 @@ ETIQUETA = {"sqlserver": "SQL Server", "supabase": "Supabase"}
 CLAVE = {v: k for k, v in ETIQUETA.items()}
 
 
+_MODULOS = (
+    "reportes", "prestamos", "observaciones", "empleados", "roles", "registrador",
+    "bitacora", "liquidaciones",
+)
+
+
 class DataSourceState(rx.State):
-    # fuente elegida explícitamente por módulo; si falta, se usa `_auto`
+    # fuente elegida explícitamente por módulo; si falta, se usa `auto`
     fuente_por_modulo: dict[str, str] = {}
-    _auto: str = ""
+    auto: str = ""  # fuente autodetectada (sqlserver si responde, si no supabase)
+
+    @rx.event
+    async def detectar(self):
+        if not self.auto:
+            self.auto = await asyncio.to_thread(fuente_por_defecto)
 
     async def resolver(self, modulo: str) -> str:
         """Fuente efectiva para un módulo: la elegida, o la autodetectada."""
         if modulo in self.fuente_por_modulo:
             return self.fuente_por_modulo[modulo]
-        if not self._auto:
-            self._auto = await asyncio.to_thread(fuente_por_defecto)
-        return self._auto
+        if not self.auto:
+            self.auto = await asyncio.to_thread(fuente_por_defecto)
+        return self.auto
 
     @rx.event
     def set_fuente(self, modulo: str, etiqueta: str):
@@ -38,5 +49,9 @@ class DataSourceState(rx.State):
         # TODO Fase 1: persistir en AppConfig(scope='user')
 
     @rx.var
-    def etiquetas_por_modulo(self) -> dict[str, str]:
-        return {m: ETIQUETA.get(f, "SQL Server") for m, f in self.fuente_por_modulo.items()}
+    def etiquetas_efectivas(self) -> dict[str, str]:
+        """Etiqueta a mostrar por módulo: la elección explícita, o la autodetectada."""
+        base = ETIQUETA.get(self.auto, "SQL Server")
+        return {
+            m: ETIQUETA.get(self.fuente_por_modulo.get(m, ""), base) for m in _MODULOS
+        }

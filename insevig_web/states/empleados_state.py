@@ -153,9 +153,17 @@ class EmpleadosState(rx.State):
 
     @rx.event
     async def abrir_editor(self, empleado: str):
-        e = await asyncio.to_thread(repo_emp.obtener, empleado, "sqlserver")
+        self.edit_error = self.edit_ok = ""
+        fuente = await self._fuente()
+        try:
+            e = await asyncio.to_thread(repo_emp.obtener, empleado, fuente)
+        except Exception as ex:  # noqa: BLE001
+            self.edit_error = f"No se pudo cargar el empleado: {ex}"
+            yield rx.redirect("/empleados/editar")
+            return
         if e is None:
             self.edit_error = "Empleado no encontrado."
+            yield rx.redirect("/empleados/editar")
             return
         self.edit_empleado = e.empleado
         self.edit_campos = {k: ("" if v is None else str(v)) for k, v in e.campos.items()}

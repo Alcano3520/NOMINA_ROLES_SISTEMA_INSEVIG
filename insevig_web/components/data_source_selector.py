@@ -14,11 +14,12 @@ def data_source_selector(modulo: str, *, solo_escritura: bool = False) -> rx.Com
         rx.icon("database", size=14),
         rx.select(
             list(ETIQUETA.values()),
-            default_value="SQL Server",
+            value=DataSourceState.etiquetas_efectivas[modulo],
             on_change=lambda v: DataSourceState.set_fuente(modulo, v),
             size="1",
         ),
         rx.badge("solo lectura", color_scheme="amber", size="1"),
         spacing="2",
         align="center",
+        on_mount=DataSourceState.detectar,
     )
