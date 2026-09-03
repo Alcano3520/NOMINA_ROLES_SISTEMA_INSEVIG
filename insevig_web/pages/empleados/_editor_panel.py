@@ -62,16 +62,16 @@ def _campo(nombre: str) -> rx.Component:
             style=_SELECT_STYLE,
         )
     elif nombre in CAMPOS_CATALOGO:
+        # Catálogos con cientos de opciones (DEPTO ~987, SECCION ~557): input con
+        # <datalist> (autocompletar nativo). Los <datalist> se declaran UNA vez en
+        # `_datalists()`; aquí solo se referencia por id.
         tipo = CAMPOS_CATALOGO[nombre]
-        control = rx.el.select(
-            rx.el.option("—", value=""),
-            rx.foreach(
-                _S.edit_catalogos[tipo],
-                lambda o: rx.el.option(f"{o['codigo']} — {o['nombre']}", value=o["codigo"]),
-            ),
+        control = rx.el.input(
             value=val,
             on_change=lambda v: _S.set_campo(nombre, v),
+            list=f"cat_{tipo}",
             disabled=_bloqueado(),
+            placeholder="código o nombre…",
             style=_SELECT_STYLE,
         )
     else:
@@ -99,6 +99,22 @@ _TABS = {
     "Certificados / familiares": "Certificados",
     "Referencias": "Referencias",
 }
+
+
+def _datalists() -> rx.Component:
+    """Los <datalist> de catálogos, declarados una sola vez para todo el editor."""
+    return rx.fragment(
+        *[
+            rx.el.datalist(
+                rx.foreach(
+                    _S.edit_catalogos[tipo],
+                    lambda o: rx.el.option(o["nombre"], value=o["codigo"]),
+                ),
+                id=f"cat_{tipo}",
+            )
+            for tipo in ("FNC", "SEC", "DPT", "BAN")
+        ]
+    )
 
 
 def _grid_campos(campos: tuple[str, ...]) -> rx.Component:
@@ -217,6 +233,7 @@ def editor_panel() -> rx.Component:
                         spacing="1",
                     ),
                 ),
+                _datalists(),
                 rx.tabs.root(
                     rx.tabs.list(
                         *[
