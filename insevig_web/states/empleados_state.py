@@ -263,7 +263,9 @@ class EmpleadosState(rx.State):
         self.edit_obs_slots = ["", "", "", "", "", "", ""]
         self.edit_obs_existe = False
         self.edit_obs_msg = ""
+        self.foto_msg = ""
         self.cargando_editor = False
+        await self._cargar_foto()
         await self._cargar_catalogos_editor()
 
     @rx.event
@@ -311,6 +313,61 @@ class EmpleadosState(rx.State):
 
         data = ficha_empleado_pdf(self.edit_empleado, dict(self.edit_campos))
         return rx.download(data=data, filename=f"ficha_{self.edit_empleado}.pdf")
+
+    # ── Foto del empleado ────────────────────────────────────────────────
+    foto_uri: str = ""
+    foto_msg: str = ""
+
+    async def _cargar_foto(self):
+        import base64
+
+        from core.repos import fotos
+
+        self.foto_uri = ""
+        try:
+            r = await asyncio.to_thread(fotos.leer_foto, self.edit_empleado)
+        except Exception:  # noqa: BLE001
+            r = None
+        if r:
+            datos, mime = r
+            self.foto_uri = f"data:{mime};base64," + base64.b64encode(datos).decode("ascii")
+
+    @rx.event
+    async def subir_foto(self, files: list[rx.UploadFile]):
+        from core.repos import fotos
+
+        if not files or not self.edit_empleado or self.edit_empleado == "NUEVO":
+            return
+        datos = await files[0].read()
+        try:
+            await asyncio.to_thread(
+                fotos.guardar_foto, self.edit_empleado, datos, files[0].name or ""
+            )
+            self.foto_msg = "Foto guardada."
+        except Exception as e:  # noqa: BLE001
+            self.foto_msg = str(e)
+        await self._cargar_foto()
+
+    @rx.event
+    async def quitar_foto(self):
+        from core.repos import fotos
+
+        await asyncio.to_thread(fotos.borrar_foto, self.edit_empleado)
+        self.foto_uri = ""
+        self.foto_msg = "Foto eliminada."
+
+    # ── Documentos (CV, certificado, contrato, renuncia) ─────────────────
+    @rx.event
+    def generar_documento(self, tipo: str):
+        if not self.edit_campos:
+            return
+        from core.pdf.documentos_empleado import DOCUMENTOS
+
+        if tipo not in DOCUMENTOS:
+            return
+        _nombre, fn = DOCUMENTOS[tipo]
+        data = fn(self.edit_empleado, dict(self.edit_campos))
+        return rx.download(data=data, filename=f"{tipo}_{self.edit_empleado}.pdf")
 
     @rx.event
     def toggle_campo(self, campo: str):

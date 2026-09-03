@@ -79,7 +79,9 @@ la pestaña Observaciones como una más.
 | 22 | **Búsqueda Avanzada** (diálogo): apellidos, nombres, cédula, estado, departamento, cargo → tabla con 12 columnas (incl. nombre de cargo/depto, sueldo, teléfono, email); Mostrar todos; Limpiar; **Exportar Excel**; doble-clic carga en la ficha | ⬜ |
 | 23 | **Vista Completa** (diálogo): tabla de todos los empleados con muchas columnas + exportar | ⬜ |
 | 24 | **Exportar Catálogos** (diálogo): vuelca DBTABLAS (cargos/secciones/deptos/…) a Excel | ⬜ |
-| 25 | **Imprimir empleado** (ficha a papel/PDF) | ⬜ (en el legado está "no implementado" — hacerlo bien: PDF de la ficha) |
+| 25 | **Imprimir empleado** (ficha a papel/PDF) | ✅ `core/pdf/ficha_empleado.py` |
+| 25b | **Foto del empleado** (subir / mostrar / quitar) — ref. ManagementPro | ✅ `core/repos/fotos.py`, en STORAGE_DIR/fotos/. Falta: "tomar foto" con la cámara |
+| 25c | **Documentos**: hoja de vida, certificado de trabajo, contrato, carta de renuncia (PDF con los datos de la ficha) | ✅ `core/pdf/documentos_empleado.py`. Falta: plantillas editables desde Administración, huellas dactilares |
 | 26 | **Historial de nómina del empleado** (`historial_empleado_GUI.pyw`): períodos recientes, detalle por concepto (ingreso/egreso), filtro, exportar Excel, ventana de detalle por fila | 🟡 `/empleados/historial` muestra consolidado de UN período · faltan: varios períodos a la vez, detalle por fila, exportar |
 
 ## 1.5 Carga masiva (`CARGA_MASIVA_EMPLEADOS.pyw`)

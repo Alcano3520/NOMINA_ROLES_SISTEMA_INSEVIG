@@ -70,6 +70,38 @@ def test_ficha_empleado_pdf_parseable():
     assert "Ficha de empleado" in txt
 
 
+def test_documentos_empleado_pdf():
+    import io
+
+    import pypdf
+
+    from core.pdf.documentos_empleado import DOCUMENTOS
+
+    c = {
+        "NOMBRES": "JUAN", "APELLIDOS": "PEREZ MERA", "CEDULA": "0920116811",
+        "CARGO": "GUARDIA", "SUELDO": "470", "FECHA_ING": "2023-01-15", "ESTADO": "ACT",
+    }
+    for tipo, (_nombre, fn) in DOCUMENTOS.items():
+        data = fn("1012", c)
+        assert data[:4] == b"%PDF", tipo
+        txt = pypdf.PdfReader(io.BytesIO(data)).pages[0].extract_text()
+        assert "PEREZ MERA" in txt or "PEREZ" in txt, tipo
+    # el certificado debe nombrar el cargo
+    cert = DOCUMENTOS["certificado"][1]("1012", c)
+    assert "GUARDIA" in pypdf.PdfReader(io.BytesIO(cert)).pages[0].extract_text()
+
+
+def test_fotos_guardar_leer_borrar(app_db, tmp_path, monkeypatch):
+    from core.repos import fotos
+
+    png = bytes.fromhex("89504e470d0a1a0a") + b"x" * 50  # cabecera PNG + relleno
+    fotos.guardar_foto("9999", png, "cara.png")
+    r = fotos.leer_foto("9999")
+    assert r is not None and r[1] == "image/png"
+    assert fotos.borrar_foto("9999") is True
+    assert fotos.leer_foto("9999") is None
+
+
 def test_grupos_cubren_las_6_pestanas_del_legado():
     assert set(empleados.GRUPOS) == {
         "Datos generales", "Ingresos / descuentos", "Otros datos",

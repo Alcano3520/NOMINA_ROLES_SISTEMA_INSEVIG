@@ -101,6 +101,91 @@ _TABS = {
 }
 
 
+def _foto_y_documentos() -> rx.Component:
+    puede_editar = AuthState.permisos_flat.contains("empleados:editar")
+    foto = rx.cond(
+        _S.foto_uri != "",
+        rx.image(
+            src=_S.foto_uri,
+            width="120px",
+            height="150px",
+            object_fit="cover",
+            border_radius="8px",
+            border="1px solid var(--gray-6)",
+        ),
+        rx.center(
+            rx.icon("user", size=48, color="var(--gray-8)"),
+            width="120px",
+            height="150px",
+            border_radius="8px",
+            border="1px dashed var(--gray-6)",
+        ),
+    )
+    docs = [
+        ("hoja_vida", "Hoja de vida"),
+        ("certificado", "Certificado de trabajo"),
+        ("contrato", "Contrato"),
+        ("renuncia", "Carta de renuncia"),
+    ]
+    return card(
+        rx.hstack(
+            rx.vstack(
+                foto,
+                rx.cond(
+                    puede_editar,
+                    rx.vstack(
+                        rx.upload(
+                            rx.button("Subir foto", size="1", variant="soft", type="button"),
+                            id="foto_emp",
+                            accept={"image/*": [".jpg", ".jpeg", ".png", ".webp"]},
+                            max_files=1,
+                            on_drop=_S.subir_foto(rx.upload_files(upload_id="foto_emp")),
+                            border="0",
+                            padding="0",
+                        ),
+                        rx.cond(
+                            _S.foto_uri != "",
+                            rx.button("Quitar foto", size="1", variant="ghost", color_scheme="red",
+                                      on_click=_S.quitar_foto),
+                        ),
+                        spacing="1",
+                    ),
+                ),
+                rx.cond(_S.foto_msg != "", rx.text(_S.foto_msg, size="1", color_scheme="gray")),
+                spacing="2",
+                align="center",
+            ),
+            rx.vstack(
+                rx.text("Documentos", weight="bold", size="2"),
+                rx.text("Se generan con los datos de la ficha.", size="1", color_scheme="gray"),
+                rx.grid(
+                    *[
+                        rx.button(
+                            etq,
+                            on_click=lambda tipo=tipo: _S.generar_documento(tipo),
+                            variant="soft",
+                            size="1",
+                        )
+                        for tipo, etq in docs
+                    ],
+                    rx.button("Imprimir ficha", on_click=_S.imprimir_ficha, variant="soft", size="1"),
+                    columns="2",
+                    spacing="2",
+                    width="100%",
+                ),
+                spacing="1",
+                align="start",
+                width="100%",
+            ),
+            spacing="4",
+            align="start",
+            width="100%",
+            wrap="wrap",
+        ),
+        width="100%",
+    )
+
+
 def _datalists() -> rx.Component:
     """Los <datalist> de catálogos, declarados una sola vez para todo el editor."""
     return rx.fragment(
@@ -221,6 +306,7 @@ def editor_panel() -> rx.Component:
                 rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
                 rx.cond(_S.edit_error != "", rx.callout(_S.edit_error, color_scheme="red", size="1")),
                 rx.cond(_S.edit_ok != "", rx.callout(_S.edit_ok, color_scheme="green", size="1")),
+                rx.cond(~_S.es_nuevo, _foto_y_documentos()),
                 rx.cond(
                     _S.es_nuevo,
                     rx.vstack(
@@ -285,10 +371,6 @@ def editor_panel() -> rx.Component:
                     rx.cond(
                         ~_S.es_nuevo & _S.modo_edicion,
                         rx.button("Cancelar", on_click=_S.cancelar_edicion, variant="soft", color_scheme="gray"),
-                    ),
-                    rx.cond(
-                        ~_S.es_nuevo,
-                        rx.button("Imprimir ficha", on_click=_S.imprimir_ficha, variant="soft", size="2"),
                     ),
                     spacing="3",
                     wrap="wrap",
