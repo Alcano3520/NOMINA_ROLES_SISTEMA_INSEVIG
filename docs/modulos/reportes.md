@@ -52,3 +52,10 @@ Excel descargable, ambas fuentes, un Job largo.
 - [ ] Comparador reproduce la lista de discrepancias del módulo legado.
 - [ ] `pytest`, `ruff`, `mypy core` limpios; página en `test_arquitectura`.
 - [ ] Revisado a 360 / 768 / 1280 px.
+
+## Actualización — paridad
+- `consolidado_xlsx` incluye una hoja **"Por departamento"** con subtotales
+  (empleados / ingresos / egresos / neto), como `SP_RP_EMPLEADOS_X_DEPTO`.
+- El job del consolidado reporta en el mensaje final los totales
+  (empleados · ingresos · egresos · neto) — resumen en pantalla sin abrir el Excel.
+- `nomina.resumen_por_departamento(filas)` reutilizable.

@@ -18,10 +18,29 @@ def _columnas(filas: list[dict]) -> list[str]:
 def consolidado_xlsx(filas: list[dict], *, hoja: str = "Consolidado") -> bytes:
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True, "constant_memory": True})
-    ws = wb.add_worksheet(hoja[:31])
     hdr = wb.add_format({"bold": True, "bg_color": "#1a4d8f", "font_color": "white", "border": 1})
     money = wb.add_format({"num_format": "#,##0.00"})
 
+    # Hoja de subtotales por departamento primero (constant_memory: no se puede volver atrás).
+    from core.repos.nomina import resumen_por_departamento
+
+    wr = wb.add_worksheet("Por departamento")
+    wr.write_row(0, 0, ["DEPARTAMENTO", "EMPLEADOS", "INGRESOS", "EGRESOS", "NETO"], hdr)
+    resumen = resumen_por_departamento(filas)
+    for r, g in enumerate(resumen, 1):
+        wr.write(r, 0, g.depto)
+        wr.write_number(r, 1, g.empleados)
+        wr.write_number(r, 2, g.ingresos, money)
+        wr.write_number(r, 3, g.egresos, money)
+        wr.write_number(r, 4, g.recibir, money)
+    tr = len(resumen) + 1
+    wr.write(tr, 0, "TOTAL", hdr)
+    wr.write_number(tr, 1, sum(g.empleados for g in resumen))
+    wr.write_number(tr, 2, round(sum(g.ingresos for g in resumen), 2), money)
+    wr.write_number(tr, 3, round(sum(g.egresos for g in resumen), 2), money)
+    wr.write_number(tr, 4, round(sum(g.recibir for g in resumen), 2), money)
+
+    ws = wb.add_worksheet(hoja[:31])
     cols = _columnas(filas)
     for c, nombre in enumerate(cols):
         ws.write(0, c, nombre, hdr)

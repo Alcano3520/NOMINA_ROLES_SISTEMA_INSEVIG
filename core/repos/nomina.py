@@ -227,6 +227,33 @@ def reporte_consolidado(
     return [f.to_row() for f in consolidar(movs, catalogos, empleados, progreso=progreso)]
 
 
+@dataclass
+class ResumenDepto:
+    depto: str
+    empleados: int
+    ingresos: float
+    egresos: float
+    recibir: float
+
+
+def resumen_por_departamento(filas: list[dict]) -> list[ResumenDepto]:
+    """Subtotales del consolidado agrupados por DEPTO (como SP_RP_EMPLEADOS_X_DEPTO)."""
+    acc: dict[str, dict[str, float]] = {}
+    for f in filas:
+        d = str(f.get("DEPTO") or "(sin depto)")
+        a = acc.setdefault(d, {"n": 0, "i": 0.0, "e": 0.0, "r": 0.0})
+        a["n"] += 1
+        a["i"] += a_float(f.get("TOTAL_INGRESOS"))
+        a["e"] += a_float(f.get("TOTAL_EGRESOS"))
+        a["r"] += a_float(f.get("TOTAL_RECIBIR"))
+    out = [
+        ResumenDepto(d, int(a["n"]), round(a["i"], 2), round(a["e"], 2), round(a["r"], 2))
+        for d, a in acc.items()
+    ]
+    out.sort(key=lambda x: x.depto)
+    return out
+
+
 # ── Comparador SQL Server vs Supabase ────────────────────────────────────────
 
 
@@ -274,7 +301,13 @@ def job_consolidado(ctx, periodo: str, historico: bool, fuente: str) -> None:
     nombre = f"CONSOLIDADO_{periodo}_{'HIST' if historico else 'ACTUAL'}.xlsx"
     ruta = storage.guardar(ctx.job_id, nombre, datos)
     ctx.set_resultado(str(ruta))
-    ctx.progreso(len(filas), len(filas), f"Listo: {len(filas)} empleados")
+    ing = round(sum(a_float(f.get("TOTAL_INGRESOS")) for f in filas), 2)
+    egr = round(sum(a_float(f.get("TOTAL_EGRESOS")) for f in filas), 2)
+    net = round(sum(a_float(f.get("TOTAL_RECIBIR")) for f in filas), 2)
+    ctx.progreso(
+        len(filas), len(filas),
+        f"Listo: {len(filas)} empleados · ingresos {ing:,.2f} · egresos {egr:,.2f} · neto {net:,.2f}",
+    )
 
 
 def job_comparador(ctx, periodo: str, historico: bool) -> None:

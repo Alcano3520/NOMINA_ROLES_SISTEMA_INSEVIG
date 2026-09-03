@@ -69,8 +69,12 @@ def test_consolidado_xlsx_valido():
     filas = [f.to_row() for f in nomina.consolidar(_movs(), _CATALOGOS, _EMPLEADOS)]
     data = consolidado_xlsx(filas)
     wb = openpyxl.load_workbook(io.BytesIO(data))
-    ws = wb.active
+    assert "Por departamento" in wb.sheetnames
+    ws = wb["Consolidado"]
     headers = [c.value for c in ws[1]]
     assert headers[:3] == ["EMPLEADO", "APELLIDOS_NOMBRES", "CEDULA"]
     assert headers[-3:] == ["TOTAL_INGRESOS", "TOTAL_EGRESOS", "TOTAL_RECIBIR"]
     assert ws.max_row == 3  # header + 2 empleados
+    # subtotales por depto
+    dep = wb["Por departamento"]
+    assert [c.value for c in dep[1]][:2] == ["DEPARTAMENTO", "EMPLEADOS"]
