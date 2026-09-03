@@ -38,6 +38,13 @@ _RUTAS_MIGRADAS = {
     "/empleados/carga-masiva",
     "/roles/generar",
     "/roles/lote",
+    "/envio",
+    "/registrador/biess",
+    "/registrador/manual",
+    "/admin/usuarios",
+    "/admin/roles",
+    "/admin/auditoria",
+    "/admin/config",
 }
 
 for _spec in MODULES:

@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import reflex as rx
+
+from insevig_web import theme
+from insevig_web.components.layout import pagina
+from insevig_web.components.ui import page_heading, scroll_x
+from insevig_web.states.admin_state import AdminState
+from insevig_web.states.auth_state import AuthState
+
+
+@rx.page(
+    route="/admin/auditoria",
+    title="INSEVIG — Auditoría",
+    on_load=[AuthState.cargar_sesion, AdminState.cargar_auditoria],
+)
+def auditoria() -> rx.Component:
+    return pagina(
+        page_heading("Auditoría", "Últimas 100 acciones registradas."),
+        scroll_x(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        *[
+                            rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                            for c in ("Fecha", "Usuario", "Módulo", "Acción", "Objetivo", "Estado")
+                        ]
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(
+                        AdminState.auditoria,
+                        lambda a: rx.table.row(
+                            rx.table.cell(a["ts"]),
+                            rx.table.cell(a["usuario"]),
+                            rx.table.cell(a["modulo"]),
+                            rx.table.cell(a["accion"]),
+                            rx.table.cell(a["objetivo"]),
+                            rx.table.cell(a["status"]),
+                        ),
+                    )
+                ),
+                variant="surface",
+                size="1",
+                width="100%",
+            )
+        ),
+        requiere=("admin", "ver"),
+    )

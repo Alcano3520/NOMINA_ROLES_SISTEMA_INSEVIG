@@ -12,5 +12,8 @@ from insevig_web.pages import (  # noqa: F401, I001
     observaciones,
     empleados,
     roles,
+    envio,
+    registrador,
+    admin,
 )
 from insevig_web.pages import placeholders  # noqa: F401

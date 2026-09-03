@@ -64,7 +64,6 @@ MODULES: list[ModuleSpec] = [
         "registrador", "Registrar egresos/ingresos", "file-plus-2",
         [NavItem("Importar BIESS", "/registrador/biess", "registrar_rpingdes"),
          NavItem("Registro manual", "/registrador/manual", "registrar_rpingdes")],
-        disponible=False,
     ),
     ModuleSpec(
         "admin", "Administración", "settings",
@@ -72,7 +71,6 @@ MODULES: list[ModuleSpec] = [
          NavItem("Roles y permisos", "/admin/roles"),
          NavItem("Auditoría", "/admin/auditoria"),
          NavItem("Configuración", "/admin/config")],
-        disponible=False,
     ),
 ]
 
