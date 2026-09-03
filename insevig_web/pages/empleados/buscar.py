@@ -2,92 +2,111 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
+from insevig_web.components.ui import card, page_heading
+from insevig_web.pages.empleados._editor_panel import editor_panel
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
+
+_S = EmpleadosState
+
+
+def _fila(e: rx.Var) -> rx.Component:
+    seleccionado = _S.edit_empleado == e["empleado"]
+    return rx.box(
+        rx.hstack(
+            rx.text(e["empleado"], size="1", weight="bold", width="48px"),
+            rx.vstack(
+                rx.text(e["apellidos_nombres"], size="1", weight="medium"),
+                rx.text(
+                    f"{e['cedula']}  ·  {e['cargo']}  ·  {e['estado']}",
+                    size="1",
+                    color_scheme="gray",
+                ),
+                spacing="0",
+                align="start",
+            ),
+            spacing="2",
+            align="center",
+            width="100%",
+        ),
+        on_click=lambda: _S.abrir_editor(e["empleado"]),
+        padding="6px 8px",
+        border_radius="6px",
+        cursor="pointer",
+        background=rx.cond(seleccionado, "var(--accent-4)", "transparent"),
+        _hover={"background": "var(--accent-3)"},
+        width="100%",
+    )
+
+
+def _lista() -> rx.Component:
+    return card(
+        rx.vstack(
+            rx.hstack(
+                rx.input(
+                    value=_S.grid_texto,
+                    on_change=_S.set_grid_texto,
+                    placeholder="Código, cédula, apellido o nombre…",
+                    size="2",
+                    width="100%",
+                ),
+                rx.button("Buscar", on_click=_S.buscar_grid, size="2"),
+                spacing="2",
+                width="100%",
+            ),
+            rx.hstack(
+                rx.checkbox(
+                    "Solo activos",
+                    checked=_S.grid_solo_activos,
+                    on_change=_S.toggle_solo_activos,
+                ),
+                rx.spacer(),
+                rx.cond(
+                    AuthState.permisos_flat.contains("empleados:crear"),
+                    rx.button("Nuevo empleado", on_click=_S.nuevo, size="2", color_scheme="blue"),
+                ),
+                width="100%",
+                align="center",
+            ),
+            rx.text(
+                _S.grid.length().to_string() + " empleados",
+                size="1",
+                color_scheme="gray",
+            ),
+            rx.cond(
+                _S.grid_cargando,
+                rx.center(rx.spinner(), padding="2rem"),
+                rx.vstack(
+                    rx.foreach(_S.grid, _fila),
+                    spacing="1",
+                    width="100%",
+                    max_height="60vh",
+                    overflow_y="auto",
+                ),
+            ),
+            spacing="2",
+            width="100%",
+        ),
+        width="100%",
+    )
 
 
 @rx.page(
     route="/empleados/buscar",
-    title="INSEVIG — Empleados",
+    title="INSEVIG — Gestión de empleados",
     on_load=[AuthState.cargar_sesion, EmpleadosState.cargar_lista_inicial],
 )
 def buscar() -> rx.Component:
     return pagina(
-        page_heading("Gestión de empleados", "Busca, edita o crea el registro de un empleado."),
-        rx.vstack(
-            card(
-                rx.vstack(
-                    rx.hstack(
-                        rx.input(
-                            value=EmpleadosState.grid_texto,
-                            on_change=EmpleadosState.set_grid_texto,
-                            placeholder="Código o nombre…",
-                            width="100%",
-                        ),
-                        rx.button("Buscar", on_click=EmpleadosState.buscar_grid),
-                        rx.cond(
-                            AuthState.permisos_flat.contains("empleados:crear"),
-                            primary_button("Nuevo", on_click=EmpleadosState.nuevo),
-                        ),
-                        width="100%",
-                        spacing="2",
-                    ),
-                    rx.checkbox(
-                        "Solo activos",
-                        checked=EmpleadosState.grid_solo_activos,
-                        on_change=EmpleadosState.toggle_solo_activos,
-                    ),
-                    spacing="3",
-                    width="100%",
-                ),
-                width="100%",
-            ),
-            rx.cond(
-                EmpleadosState.grid_cargando,
-                rx.spinner(),
-                scroll_x(
-                    rx.table.root(
-                        rx.table.header(
-                            rx.table.row(
-                                *[
-                                    rx.table.column_header_cell(
-                                        c, style={"background": theme.PRIMARY, "color": "white"}
-                                    )
-                                    for c in ("Código", "Apellidos y nombres", "Cédula", "Cargo", "Estado", "")
-                                ]
-                            )
-                        ),
-                        rx.table.body(
-                            rx.foreach(
-                                EmpleadosState.grid,
-                                lambda e: rx.table.row(
-                                    rx.table.cell(e["empleado"]),
-                                    rx.table.cell(e["apellidos_nombres"]),
-                                    rx.table.cell(e["cedula"]),
-                                    rx.table.cell(e["cargo"]),
-                                    rx.table.cell(e["estado"]),
-                                    rx.table.cell(
-                                        rx.button(
-                                            "Editar",
-                                            on_click=lambda: EmpleadosState.abrir_editor(e["empleado"]),
-                                            size="1",
-                                            variant="soft",
-                                        )
-                                    ),
-                                ),
-                            )
-                        ),
-                        variant="surface",
-                        size="1",
-                        width="100%",
-                    )
-                ),
-            ),
+        page_heading("Gestión de empleados", "Selecciona un empleado para ver y editar su ficha."),
+        rx.grid(
+            rx.box(_lista(), width="100%"),
+            rx.box(card(editor_panel(), width="100%"), width="100%"),
+            columns=rx.breakpoints(initial="1", lg="minmax(360px, 420px) 1fr"),
             spacing="4",
             width="100%",
+            align_items="start",
         ),
         requiere=("empleados", "ver"),
     )

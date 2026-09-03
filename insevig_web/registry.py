@@ -49,7 +49,7 @@ MODULES: list[ModuleSpec] = [
     ),
     ModuleSpec(
         "empleados", "Gestión de empleados", "users",
-        [NavItem("Buscar", "/empleados/buscar"),
+        [NavItem("Fichas de empleados", "/empleados/buscar"),
          NavItem("Historial de nómina", "/empleados/historial"),
          NavItem("Carga masiva", "/empleados/carga-masiva", "cargar_masivo")],
     ),

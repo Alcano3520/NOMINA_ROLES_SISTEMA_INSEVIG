@@ -128,8 +128,11 @@ class EmpleadosState(rx.State):
         self.grid_texto = v
 
     @rx.event
-    def toggle_solo_activos(self, v: bool):
+    async def toggle_solo_activos(self, v: bool):
         self.grid_solo_activos = v
+        self.grid_cargando = True
+        yield
+        await self._recargar_grid()
 
     async def _recargar_grid(self):
         try:
@@ -182,27 +185,46 @@ class EmpleadosState(rx.State):
         except Exception:  # noqa: BLE001
             self.edit_catalogos = {}
 
+    cargando_editor: bool = False
+
+    @rx.var
+    def nombre_editor(self) -> str:
+        c = self.edit_campos
+        nom = f"{c.get('APELLIDOS', '')} {c.get('NOMBRES', '')}".strip()
+        return f"{self.edit_empleado} — {nom}" if nom else f"Empleado {self.edit_empleado}"
+
+    @rx.event
+    def cerrar_editor(self):
+        self.edit_empleado = ""
+        self.edit_campos = {}
+        self.es_nuevo = False
+        self.modo_edicion = False
+        self.edit_error = self.edit_ok = self.edit_audit = ""
+
     @rx.event
     async def abrir_editor(self, empleado: str):
+        """Carga el empleado en el panel de detalle (misma pantalla, sin navegar)."""
         self.edit_error = self.edit_ok = ""
+        self.edit_empleado = str(empleado)
+        self.es_nuevo = False
+        self.cargando_editor = True
+        yield
         fuente = await self._fuente()
         try:
             e = await asyncio.to_thread(repo_emp.obtener, empleado, fuente)
         except Exception as ex:  # noqa: BLE001
             self.edit_error = f"No se pudo cargar el empleado: {ex}"
-            yield rx.redirect("/empleados/editar")
+            self.cargando_editor = False
             return
         if e is None:
             self.edit_error = "Empleado no encontrado."
-            yield rx.redirect("/empleados/editar")
+            self.cargando_editor = False
             return
         self.edit_empleado = e.empleado
         self.edit_campos = {k: _limpiar_valor(k, v) for k, v in e.campos.items()}
         self.edit_campos["EMPLEADO"] = e.empleado
         self.edit_token = e.token
-        self.es_nuevo = False
         self.modo_edicion = False
-        self.edit_error = self.edit_ok = ""
         self.edit_audit = (
             f"Creado por {e.creado_por or '—'} ({e.fecha_crea or '—'}) · "
             f"Últ. modif. {e.mod_por or '—'} ({e.fecha_mod or '—'})"
@@ -210,22 +232,21 @@ class EmpleadosState(rx.State):
         self.edit_obs_slots = ["", "", "", "", "", "", ""]
         self.edit_obs_existe = False
         self.edit_obs_msg = ""
-        yield
+        self.cargando_editor = False
         await self._cargar_catalogos_editor()
-        yield rx.redirect("/empleados/editar")
 
     @rx.event
     async def nuevo(self):
-        self.edit_empleado = ""
+        self.edit_empleado = "NUEVO"
         self.edit_campos = {c: "" for cs in GRUPOS.values() for c in cs}
         self.edit_campos["EMPLEADO"] = ""
         self.edit_token = ""
         self.es_nuevo = True
         self.modo_edicion = True
         self.edit_error = self.edit_ok = self.edit_audit = ""
+        self.edit_obs_slots = ["", "", "", "", "", "", ""]
         yield
         await self._cargar_catalogos_editor()
-        yield rx.redirect("/empleados/editar")
 
     @rx.event
     def set_campo(self, campo: str, valor: str):
