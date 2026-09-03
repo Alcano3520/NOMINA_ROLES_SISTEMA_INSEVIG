@@ -59,7 +59,6 @@ MODULES: list[ModuleSpec] = [
         [NavItem("Generar", "/roles/generar", "generar_pdf"),
          NavItem("Lote", "/roles/lote", "generar_pdf"),
          NavItem("Envío por correo", "/envio", "enviar_email")],
-        disponible=False,
     ),
     ModuleSpec(
         "registrador", "Registrar egresos/ingresos", "file-plus-2",

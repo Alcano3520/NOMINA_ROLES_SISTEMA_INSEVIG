@@ -11,5 +11,6 @@ from insevig_web.pages import (  # noqa: F401, I001
     prestamos,
     observaciones,
     empleados,
+    roles,
 )
 from insevig_web.pages import placeholders  # noqa: F401

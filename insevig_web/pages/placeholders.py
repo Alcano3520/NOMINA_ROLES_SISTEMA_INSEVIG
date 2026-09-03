@@ -36,6 +36,8 @@ _RUTAS_MIGRADAS = {
     "/empleados/buscar",
     "/empleados/editar",
     "/empleados/carga-masiva",
+    "/roles/generar",
+    "/roles/lote",
 }
 
 for _spec in MODULES:
