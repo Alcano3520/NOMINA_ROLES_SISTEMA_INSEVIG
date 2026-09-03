@@ -8,7 +8,6 @@ from dataclasses import asdict
 
 import reflex as rx
 
-from core.db.health import FUENTE_SQLSERVER
 from core.repos import observaciones
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.datasource_state import DataSourceState
@@ -32,7 +31,7 @@ class ObservacionesState(rx.State):
 
     async def _fuente(self) -> str:
         ds = await self.get_state(DataSourceState)
-        return ds.fuente_por_modulo.get("observaciones", FUENTE_SQLSERVER)
+        return await ds.resolver("observaciones")
 
     @rx.event
     async def buscar(self):

@@ -8,7 +8,6 @@ import datetime as dt
 import reflex as rx
 
 from core.audit.writer import registrar_evento
-from core.db.health import FUENTE_SQLSERVER
 from core.jobs.runner import JobRunner, get_runner, leer_job
 from core.repos import nomina
 from insevig_web.states.auth_state import AuthState
@@ -56,7 +55,7 @@ class ReportesState(rx.State):
 
     async def _fuente(self) -> str:
         ds = await self.get_state(DataSourceState)
-        return ds.fuente_por_modulo.get("reportes", FUENTE_SQLSERVER)
+        return await ds.resolver("reportes")
 
     @rx.event
     async def generar(self):

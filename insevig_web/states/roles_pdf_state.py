@@ -10,7 +10,6 @@ from pathlib import Path
 import reflex as rx
 
 from core.datos.service import datos_empleado
-from core.db.health import FUENTE_SQLSERVER
 from core.jobs.runner import JobRunner, get_runner, leer_job
 from core.pdf.layout import FORMATOS
 from core.pdf.rol_pago import OpcionesRol, rol_pago_pdf
@@ -90,7 +89,7 @@ class RolesState(rx.State):
 
     async def _fuente(self) -> str:
         ds = await self.get_state(DataSourceState)
-        return ds.fuente_por_modulo.get("roles", FUENTE_SQLSERVER)
+        return await ds.resolver("roles")
 
     @rx.event
     async def generar_individual(self):

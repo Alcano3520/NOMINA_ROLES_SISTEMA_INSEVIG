@@ -11,7 +11,6 @@ import datetime as dt
 import reflex as rx
 
 from core.datos.service import datos_empleado
-from core.db.health import FUENTE_SQLSERVER
 from core.jobs.runner import get_runner, leer_job
 from core.repos import empleados as repo_emp
 from core.repos import observaciones
@@ -53,7 +52,7 @@ class EmpleadosState(rx.State):
 
     async def _fuente(self) -> str:
         ds = await self.get_state(DataSourceState)
-        return ds.fuente_por_modulo.get("empleados", FUENTE_SQLSERVER)
+        return await ds.resolver("empleados")
 
     @rx.event
     async def buscar(self):
