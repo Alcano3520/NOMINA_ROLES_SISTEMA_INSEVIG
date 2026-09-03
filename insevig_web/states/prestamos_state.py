@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import asdict
 
 import reflex as rx
@@ -24,8 +25,36 @@ class PrestamosState(rx.State):
 
     # historial del empleado seleccionado
     movimientos: list[dict] = []
+    resumen: list[dict] = []  # agrupado por NUMERO de préstamo
     saldo_empleado: float = 0.0
     cargando_hist: bool = False
+    filtro_desde: str = ""  # YYYY-MM-DD
+    filtro_hasta: str = ""
+    exportar_job: int = 0
+    exportar_status: str = ""
+    exportar_path: str = ""
+
+    @rx.event
+    def set_filtro_desde(self, v: str):
+        self.filtro_desde = v.strip()
+
+    @rx.event
+    def set_filtro_hasta(self, v: str):
+        self.filtro_hasta = v.strip()
+
+    @rx.var
+    def movimientos_filtrados(self) -> list[dict]:
+        d, h = self.filtro_desde, self.filtro_hasta
+        if not d and not h:
+            return self.movimientos
+        return [
+            m for m in self.movimientos
+            if (not d or m["fecha"] >= d) and (not h or m["fecha"] <= h)
+        ]
+
+    @rx.var
+    def total_filtrado(self) -> float:
+        return round(sum(m["valor"] for m in self.movimientos_filtrados), 2)
 
     # narrativa IA (Job)
     narrativa: str = ""
@@ -66,8 +95,72 @@ class PrestamosState(rx.State):
         fuente = await self._fuente()
         movs = await asyncio.to_thread(prestamos.historial_empleado, empleado, fuente)
         self.movimientos = [asdict(m) for m in movs]
+        self.resumen = [asdict(g) for g in prestamos.agrupar_por_numero(movs)]
         self.saldo_empleado = round(sum(m["valor"] for m in self.movimientos), 2)
         self.cargando_hist = False
+
+    @rx.event
+    async def exportar_empleado(self):
+        if not self.empleado_sel:
+            return rx.toast.error("Selecciona un empleado.")
+        fuente = await self._fuente()
+        cod, nombre = self.empleado_sel, self.nombre_sel
+
+        def _fn(ctx):
+            from core import storage
+            from core.excel.prestamos_builders import historial_xlsx
+
+            ctx.progreso(0, 1, "Generando Excel…")
+            movs = prestamos.historial_empleado(cod, fuente)
+            data = historial_xlsx(cod, nombre, movs)
+            ruta = storage.guardar(ctx.job_id, f"PRESTAMOS_{cod}.xlsx", data)
+            ctx.set_resultado(str(ruta))
+            ctx.progreso(1, 1, "Listo")
+
+        self.exportar_path = ""
+        self.exportar_job = get_runner().encolar("prestamos_empleado", {"emp": cod}, creado_por="", fn=_fn)
+        self.exportar_status = "pendiente"
+        return PrestamosState.vigilar_exportar
+
+    @rx.event(background=True)
+    async def vigilar_exportar(self):
+        for _ in range(300):
+            async with self:
+                jid = self.exportar_job
+            j = leer_job(jid)
+            if j is None:
+                return
+            async with self:
+                self.exportar_status = j.status
+                self.exportar_path = j.result_path
+            if j.status in _TERMINALES:
+                return
+            await asyncio.sleep(1)
+
+    @rx.event
+    def descargar_exportar(self):
+        if not self.exportar_path:
+            return rx.toast.error("Aún no hay archivo.")
+        from pathlib import Path
+
+        p = Path(self.exportar_path)
+        return rx.download(data=p.read_bytes(), filename=p.name)
+
+    @rx.event
+    def leer_en_voz_alta(self):
+        """Lee la narrativa con la Web Speech API del navegador (sin depender de gTTS)."""
+        if not self.narrativa:
+            return
+        texto = json.dumps(self.narrativa)
+        return rx.call_script(
+            "window.speechSynthesis.cancel();"
+            f"var u=new SpeechSynthesisUtterance({texto});u.lang='es-ES';"
+            "window.speechSynthesis.speak(u);"
+        )
+
+    @rx.event
+    def detener_voz(self):
+        return rx.call_script("window.speechSynthesis.cancel();")
 
     @rx.event
     async def generar_narrativa(self):

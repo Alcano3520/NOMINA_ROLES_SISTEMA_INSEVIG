@@ -42,5 +42,21 @@ def historial_xlsx(empleado: str, nombre: str, movimientos: list) -> bytes:
         ws.write(r, 3, m.origen)
         ws.write(r, 4, m.numero)
         ws.write(r, 5, "SÍ" if m.es_cuadre else "")
+    ws.freeze_panes(3, 0)
+
+    from core.repos.prestamos import agrupar_por_numero
+
+    ws2 = wb.add_worksheet("Resumen por préstamo")
+    ws2.write_row(0, 0, ["NUMERO", "DESDE", "HASTA", "PRESTADO", "ABONADO", "SALDO", "CUOTAS"], hdr)
+    resumen = agrupar_por_numero(list(movimientos))
+    for r, g in enumerate(resumen, 1):
+        ws2.write(r, 0, g.numero)
+        ws2.write(r, 1, g.desde)
+        ws2.write(r, 2, g.hasta)
+        ws2.write_number(r, 3, g.prestado, money)
+        ws2.write_number(r, 4, g.abonado, money)
+        ws2.write_number(r, 5, g.saldo, money)
+        ws2.write_number(r, 6, g.cuotas)
+    ws2.freeze_panes(1, 0)
     wb.close()
     return buf.getvalue()

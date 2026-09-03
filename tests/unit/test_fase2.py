@@ -26,6 +26,35 @@ def test_numeros_migrados_se_excluyen_de_rphistor():
     assert prestamos.CLASE_PRESTAMO == 205
 
 
+def test_agrupar_por_numero():
+    M = prestamos.MovimientoPrestamo
+    movs = [
+        M("2025-01-05", 1000.0, "PRESTAMO", "500", "RPHISTOR"),
+        M("2025-02-05", -100.0, "CUOTA", "500", "RPHISTOR"),
+        M("2025-03-05", -100.0, "CUOTA", "500", "RPHISTOR"),
+        M("2025-04-05", 300.0, "PRESTAMO", "700", "RPINGDES"),
+    ]
+    g = {r.numero: r for r in prestamos.agrupar_por_numero(movs)}
+    assert g["500"].prestado == 1000.0
+    assert g["500"].abonado == 200.0
+    assert g["500"].saldo == 800.0
+    assert g["500"].cuotas == 2
+    assert g["700"].saldo == 300.0
+
+
+def test_historial_xlsx_tiene_hoja_resumen():
+    import io
+
+    import openpyxl
+
+    from core.excel.prestamos_builders import historial_xlsx
+
+    M = prestamos.MovimientoPrestamo
+    data = historial_xlsx("1012", "PEREIRA", [M("2025-01-05", 500.0, "P", "9", "RPHISTOR")])
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert {"Historial", "Resumen por préstamo"} <= set(wb.sheetnames)
+
+
 def test_migracion_sqlite_a_appdb(app_db, tmp_path):
     ruta = tmp_path / "Saldo_prestamos_driver.db"
     con = sqlite3.connect(ruta)

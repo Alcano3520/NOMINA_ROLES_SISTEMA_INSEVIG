@@ -204,3 +204,41 @@ def _historial_supabase(codigo: str) -> list[MovimientoPrestamo]:
 
 def saldo_total(codigo: str, fuente: str) -> float:
     return round(sum(m.valor for m in historial_empleado(codigo, fuente)), 2)
+
+
+@dataclass
+class ResumenPrestamo:
+    numero: str
+    desde: str
+    hasta: str
+    prestado: float   # suma de ingresos (VALOR > 0)
+    abonado: float    # suma de |egresos| (VALOR < 0)
+    saldo: float
+    cuotas: int
+
+
+def agrupar_por_numero(movs: list[MovimientoPrestamo]) -> list[ResumenPrestamo]:
+    """Agrupa los movimientos por NUMERO de préstamo (como `agrupar_prestamos_por_numero`
+    del legado): total prestado, total abonado, saldo y nº de cuotas (egresos).
+    """
+    grupos: dict[str, list[MovimientoPrestamo]] = {}
+    for m in movs:
+        grupos.setdefault(m.numero or "(sin nº)", []).append(m)
+    out: list[ResumenPrestamo] = []
+    for num, ms in grupos.items():
+        fechas = sorted(x.fecha for x in ms if x.fecha)
+        prestado = round(sum(x.valor for x in ms if x.valor > 0), 2)
+        abonado = round(sum(-x.valor for x in ms if x.valor < 0), 2)
+        out.append(
+            ResumenPrestamo(
+                numero=num,
+                desde=fechas[0] if fechas else "",
+                hasta=fechas[-1] if fechas else "",
+                prestado=prestado,
+                abonado=abonado,
+                saldo=round(prestado - abonado, 2),
+                cuotas=sum(1 for x in ms if x.valor < 0),
+            )
+        )
+    out.sort(key=lambda r: r.hasta, reverse=True)
+    return out

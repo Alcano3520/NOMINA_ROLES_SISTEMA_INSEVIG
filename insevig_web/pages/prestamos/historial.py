@@ -24,7 +24,7 @@ def _tabla_movimientos() -> rx.Component:
             ),
             rx.table.body(
                 rx.foreach(
-                    PrestamosState.movimientos,
+                    PrestamosState.movimientos_filtrados,
                     lambda m: rx.table.row(
                         rx.table.cell(m["fecha"]),
                         rx.table.cell(m["concepto"]),
@@ -32,6 +32,38 @@ def _tabla_movimientos() -> rx.Component:
                         rx.table.cell(m["origen"]),
                         rx.table.cell(m["numero"]),
                         rx.table.cell(rx.cond(m["es_cuadre"], "SÍ", "")),
+                    ),
+                )
+            ),
+            variant="surface",
+            size="1",
+            width="100%",
+        )
+    )
+
+
+def _tabla_resumen() -> rx.Component:
+    return scroll_x(
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    *[
+                        rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                        for c in ("N° préstamo", "Desde", "Hasta", "Prestado", "Abonado", "Saldo", "Cuotas")
+                    ]
+                )
+            ),
+            rx.table.body(
+                rx.foreach(
+                    PrestamosState.resumen,
+                    lambda g: rx.table.row(
+                        rx.table.cell(g["numero"]),
+                        rx.table.cell(g["desde"]),
+                        rx.table.cell(g["hasta"]),
+                        rx.table.cell(g["prestado"].to_string()),
+                        rx.table.cell(g["abonado"].to_string()),
+                        rx.table.cell(g["saldo"].to_string()),
+                        rx.table.cell(g["cuotas"].to_string()),
                     ),
                 )
             ),
@@ -76,12 +108,45 @@ def historial() -> rx.Component:
                             align="center",
                             wrap="wrap",
                         ),
+                        rx.hstack(
+                            rx.text("Desde", size="1"),
+                            rx.input(value=PrestamosState.filtro_desde, on_change=PrestamosState.set_filtro_desde,
+                                     placeholder="AAAA-MM-DD", width="130px", size="1"),
+                            rx.text("Hasta", size="1"),
+                            rx.input(value=PrestamosState.filtro_hasta, on_change=PrestamosState.set_filtro_hasta,
+                                     placeholder="AAAA-MM-DD", width="130px", size="1"),
+                            rx.badge("Total: " + PrestamosState.total_filtrado.to_string()),
+                            rx.button("Exportar a Excel", on_click=PrestamosState.exportar_empleado, variant="soft", size="1"),
+                            rx.cond(
+                                PrestamosState.exportar_path != "",
+                                rx.button("Descargar", on_click=PrestamosState.descargar_exportar, size="1"),
+                            ),
+                            spacing="2",
+                            align="center",
+                            wrap="wrap",
+                        ),
                         rx.cond(PrestamosState.cargando_hist, rx.spinner(), _tabla_movimientos()),
+                        rx.cond(
+                            PrestamosState.resumen.length() > 0,
+                            rx.vstack(
+                                rx.heading("Resumen por préstamo", size="3"),
+                                _tabla_resumen(),
+                                spacing="2",
+                                width="100%",
+                            ),
+                        ),
                         rx.hstack(
                             rx.button(
                                 "Analizar con IA",
                                 on_click=PrestamosState.generar_narrativa,
                                 variant="soft",
+                            ),
+                            rx.cond(
+                                PrestamosState.narrativa != "",
+                                rx.fragment(
+                                    rx.button("🔊 Leer", on_click=PrestamosState.leer_en_voz_alta, variant="soft", size="1"),
+                                    rx.button("■ Detener", on_click=PrestamosState.detener_voz, variant="ghost", size="1"),
+                                ),
                             ),
                             rx.cond(
                                 PrestamosState.narrativa_status != "",
