@@ -61,6 +61,14 @@ class JobContext:
             s.add(j)
             s.commit()
 
+    def set_resultado(self, ruta: str) -> None:
+        with appdb.session() as s:
+            j = s.get(Job, self.job_id)
+            if j is not None:
+                j.result_path = ruta
+                s.add(j)
+                s.commit()
+
 
 class JobRunner:
     def __init__(self, workers: int = 2):
