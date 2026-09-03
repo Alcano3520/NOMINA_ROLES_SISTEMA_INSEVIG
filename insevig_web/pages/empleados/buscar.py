@@ -40,6 +40,15 @@ def _fila(e: rx.Var) -> rx.Component:
     )
 
 
+def _arrow(txt: str, delta: int, extremo: str = "") -> rx.Component:
+    return rx.button(
+        txt,
+        on_click=lambda: _S.ir_a_indice(delta, extremo),
+        variant="soft",
+        size="1",
+    )
+
+
 def _lista() -> rx.Component:
     return card(
         rx.vstack(
@@ -47,7 +56,7 @@ def _lista() -> rx.Component:
                 rx.input(
                     value=_S.grid_texto,
                     on_change=_S.set_grid_texto,
-                    placeholder="Código, cédula, apellido o nombre…",
+                    placeholder="Buscar por código, cédula o nombre…",
                     size="2",
                     width="100%",
                 ),
@@ -56,10 +65,15 @@ def _lista() -> rx.Component:
                 width="100%",
             ),
             rx.hstack(
-                rx.checkbox(
-                    "Solo activos",
-                    checked=_S.grid_solo_activos,
-                    on_change=_S.toggle_solo_activos,
+                rx.text("Mostrar:", size="1", weight="bold"),
+                rx.el.select(
+                    rx.el.option("Activos", value="ACTIVOS"),
+                    rx.el.option("Inactivos", value="INACTIVOS"),
+                    rx.el.option("Todos", value="TODOS"),
+                    value=_S.grid_estado,
+                    on_change=_S.set_grid_estado,
+                    style={"padding": "4px 6px", "borderRadius": "6px",
+                           "border": "1px solid var(--gray-6)", "background": "#fff"},
                 ),
                 rx.spacer(),
                 rx.cond(
@@ -68,20 +82,37 @@ def _lista() -> rx.Component:
                 ),
                 width="100%",
                 align="center",
+                wrap="wrap",
             ),
-            rx.text(
-                _S.grid.length().to_string() + " empleados",
+            rx.input(
+                value=_S.grid_filtro_vivo,
+                on_change=_S.set_grid_filtro_vivo,
+                placeholder="Filtrar la lista…",
                 size="1",
-                color_scheme="gray",
+                width="100%",
+            ),
+            rx.hstack(
+                rx.text(
+                    _S.grid_filtrado.length().to_string() + " empleados",
+                    size="1",
+                    color_scheme="gray",
+                ),
+                rx.spacer(),
+                _arrow("◀◀", 0, "primero"),
+                _arrow("◀", -1),
+                _arrow("▶", 1),
+                _arrow("▶▶", 0, "ultimo"),
+                width="100%",
+                align="center",
             ),
             rx.cond(
                 _S.grid_cargando,
                 rx.center(rx.spinner(), padding="2rem"),
                 rx.vstack(
-                    rx.foreach(_S.grid, _fila),
+                    rx.foreach(_S.grid_filtrado, _fila),
                     spacing="1",
                     width="100%",
-                    max_height="60vh",
+                    max_height="58vh",
                     overflow_y="auto",
                 ),
             ),

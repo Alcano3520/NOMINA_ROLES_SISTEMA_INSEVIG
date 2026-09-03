@@ -118,8 +118,9 @@ class EmpleadosState(rx.State):
         ]
 
     # ── Grid de búsqueda (página /empleados/buscar) ────────────────────────
-    grid_texto: str = ""
-    grid_solo_activos: bool = True
+    grid_texto: str = ""            # búsqueda contra el origen (código/cédula/nombre)
+    grid_filtro_vivo: str = ""      # filtro incremental sobre lo ya cargado
+    grid_estado: str = "ACTIVOS"    # ACTIVOS / INACTIVOS / TODOS
     grid: list[dict] = []
     grid_cargando: bool = False
 
@@ -128,8 +129,24 @@ class EmpleadosState(rx.State):
         self.grid_texto = v
 
     @rx.event
-    async def toggle_solo_activos(self, v: bool):
-        self.grid_solo_activos = v
+    def set_grid_filtro_vivo(self, v: str):
+        self.grid_filtro_vivo = v
+
+    @rx.var
+    def grid_filtrado(self) -> list[dict]:
+        t = self.grid_filtro_vivo.strip().lower()
+        if not t:
+            return self.grid
+        return [
+            e for e in self.grid
+            if t in e["empleado"].lower()
+            or t in e["apellidos_nombres"].lower()
+            or t in e["cedula"].lower()
+        ]
+
+    @rx.event
+    async def set_grid_estado(self, v: str):
+        self.grid_estado = v
         self.grid_cargando = True
         yield
         await self._recargar_grid()
@@ -138,7 +155,7 @@ class EmpleadosState(rx.State):
         try:
             fuente = await self._fuente()
             self.grid = await asyncio.to_thread(
-                repo_emp.buscar, self.grid_texto, fuente, solo_activos=self.grid_solo_activos
+                repo_emp.buscar, self.grid_texto, fuente, estado=self.grid_estado
             )
         except Exception:  # noqa: BLE001
             self.grid = []
@@ -159,6 +176,26 @@ class EmpleadosState(rx.State):
         yield
         await self._recargar_grid()
 
+    # navegación primer / anterior / siguiente / último (sobre la lista filtrada)
+    @rx.event
+    async def ir_a_indice(self, delta: int, extremo: str = ""):
+        filas = self.grid_filtrado
+        if not filas:
+            return
+        if extremo == "primero":
+            idx = 0
+        elif extremo == "ultimo":
+            idx = len(filas) - 1
+        else:
+            actuales = [i for i, e in enumerate(filas) if e["empleado"] == self.edit_empleado]
+            base = actuales[0] if actuales else 0
+            idx = max(0, min(len(filas) - 1, base + delta))
+        cod = filas[idx]["empleado"]
+        self.edit_empleado = cod
+        self.cargando_editor = True
+        yield
+        await self._cargar_ficha(cod)
+
     # ── Editor / CRUD (siempre SQL Server) ─────────────────────────────────
     edit_empleado: str = ""
     edit_campos: dict = {}
@@ -175,6 +212,7 @@ class EmpleadosState(rx.State):
     def toggle_modo_edicion(self):
         self.modo_edicion = not self.modo_edicion
         self.edit_ok = self.edit_error = ""
+
 
     async def _cargar_catalogos_editor(self):
         if self.edit_catalogos:
@@ -201,14 +239,7 @@ class EmpleadosState(rx.State):
         self.modo_edicion = False
         self.edit_error = self.edit_ok = self.edit_audit = ""
 
-    @rx.event
-    async def abrir_editor(self, empleado: str):
-        """Carga el empleado en el panel de detalle (misma pantalla, sin navegar)."""
-        self.edit_error = self.edit_ok = ""
-        self.edit_empleado = str(empleado)
-        self.es_nuevo = False
-        self.cargando_editor = True
-        yield
+    async def _cargar_ficha(self, empleado: str):
         fuente = await self._fuente()
         try:
             e = await asyncio.to_thread(repo_emp.obtener, empleado, fuente)
@@ -236,6 +267,26 @@ class EmpleadosState(rx.State):
         await self._cargar_catalogos_editor()
 
     @rx.event
+    async def abrir_editor(self, empleado: str):
+        """Carga el empleado en el panel de detalle (misma pantalla, sin navegar)."""
+        self.edit_error = self.edit_ok = ""
+        self.edit_empleado = str(empleado)
+        self.es_nuevo = False
+        self.cargando_editor = True
+        yield
+        await self._cargar_ficha(empleado)
+
+    @rx.event
+    async def cancelar_edicion(self):
+        cod = self.edit_empleado
+        self.modo_edicion = False
+        self.edit_ok = self.edit_error = ""
+        if cod and cod != "NUEVO":
+            self.cargando_editor = True
+            yield
+            await self._cargar_ficha(cod)
+
+    @rx.event
     async def nuevo(self):
         self.edit_empleado = "NUEVO"
         self.edit_campos = {c: "" for cs in GRUPOS.values() for c in cs}
@@ -251,6 +302,15 @@ class EmpleadosState(rx.State):
     @rx.event
     def set_campo(self, campo: str, valor: str):
         self.edit_campos[campo] = valor
+
+    @rx.event
+    def imprimir_ficha(self):
+        if not self.edit_campos:
+            return
+        from core.pdf.ficha_empleado import ficha_empleado_pdf
+
+        data = ficha_empleado_pdf(self.edit_empleado, dict(self.edit_campos))
+        return rx.download(data=data, filename=f"ficha_{self.edit_empleado}.pdf")
 
     @rx.event
     def toggle_campo(self, campo: str):

@@ -91,17 +91,23 @@ def _campo(nombre: str) -> rx.Component:
     )
 
 
-def _grupo(titulo: str, campos: tuple[str, ...]) -> rx.Component:
-    return rx.accordion.item(
-        header=titulo,
-        content=rx.grid(
-            *[_campo(c) for c in campos],
-            columns=rx.breakpoints(initial="1", sm="2", lg="3"),
-            spacing="3",
-            width="100%",
-            padding_y="3",
-        ),
-        value=titulo,
+# Etiqueta corta de pestaña por grupo (como el Notebook del sistema anterior).
+_TABS = {
+    "Datos generales": "Datos generales",
+    "Ingresos / descuentos": "Ingresos / Dctos.",
+    "Otros datos": "Otros datos",
+    "Certificados / familiares": "Certificados",
+    "Referencias": "Referencias",
+}
+
+
+def _grid_campos(campos: tuple[str, ...]) -> rx.Component:
+    return rx.grid(
+        *[_campo(c) for c in campos],
+        columns=rx.breakpoints(initial="1", sm="2", lg="3"),
+        spacing="3",
+        width="100%",
+        padding_y="3",
     )
 
 
@@ -211,38 +217,106 @@ def editor_panel() -> rx.Component:
                         spacing="1",
                     ),
                 ),
-                rx.accordion.root(
-                    *[_grupo(g, cs) for g, cs in GRUPOS.items()],
-                    type="multiple",
-                    default_value=[next(iter(GRUPOS))],
-                    collapsible=True,
+                rx.tabs.root(
+                    rx.tabs.list(
+                        *[
+                            rx.tabs.trigger(_TABS[g], value=str(i))
+                            for i, g in enumerate(GRUPOS)
+                        ],
+                        rx.tabs.trigger("Observaciones", value="obs"),
+                        wrap="wrap",
+                    ),
+                    *[
+                        rx.tabs.content(_grid_campos(tuple(cs)), value=str(i))
+                        for i, (g, cs) in enumerate(GRUPOS.items())
+                    ],
+                    rx.tabs.content(
+                        rx.cond(_S.es_nuevo, rx.text("Disponible al guardar el empleado."), _observaciones()),
+                        value="obs",
+                    ),
+                    default_value="0",
                     width="100%",
                 ),
                 rx.hstack(
                     rx.cond(
                         AuthState.permisos_flat.contains("empleados:editar")
                         | AuthState.permisos_flat.contains("empleados:crear"),
-                        primary_button("Guardar", on_click=_S.guardar),
+                        rx.alert_dialog.root(
+                            rx.alert_dialog.trigger(primary_button("Guardar")),
+                            rx.alert_dialog.content(
+                                rx.alert_dialog.title("Confirmar"),
+                                rx.alert_dialog.description(
+                                    rx.cond(
+                                        _S.es_nuevo,
+                                        "Se creará un nuevo empleado en el sistema.",
+                                        "Se modificarán los datos de " + _S.nombre_editor
+                                        + ". El cambio es permanente y queda registrado.",
+                                    ),
+                                ),
+                                rx.hstack(
+                                    rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                    rx.alert_dialog.action(
+                                        rx.button("Sí, guardar", on_click=_S.guardar, color_scheme="blue")
+                                    ),
+                                    spacing="3",
+                                    justify="end",
+                                    margin_top="1rem",
+                                ),
+                            ),
+                        ),
+                    ),
+                    rx.cond(
+                        ~_S.es_nuevo & _S.modo_edicion,
+                        rx.button("Cancelar", on_click=_S.cancelar_edicion, variant="soft", color_scheme="gray"),
+                    ),
+                    rx.cond(
+                        ~_S.es_nuevo,
+                        rx.button("Imprimir ficha", on_click=_S.imprimir_ficha, variant="soft", size="2"),
                     ),
                     spacing="3",
+                    wrap="wrap",
                 ),
-                rx.cond(~_S.es_nuevo, _observaciones()),
                 rx.cond(
                     ~_S.es_nuevo & AuthState.permisos_flat.contains("empleados:eliminar"),
                     card(
                         rx.vstack(
                             rx.heading("Eliminar empleado", size="3", color_scheme="red"),
                             rx.text(
-                                "Escribe el código exacto (" + _S.edit_empleado + ") para confirmar.",
+                                "Escribe el código exacto (" + _S.edit_empleado + ") y confirma dos veces.",
                                 size="1",
                             ),
                             rx.hstack(
                                 rx.input(
                                     value=_S.confirmar_borrado,
                                     on_change=_S.set_confirmar_borrado,
-                                    width="160px",
+                                    placeholder="código",
+                                    width="140px",
                                 ),
-                                rx.button("Eliminar", on_click=_S.eliminar, color_scheme="red"),
+                                rx.alert_dialog.root(
+                                    rx.alert_dialog.trigger(
+                                        rx.button("Eliminar", color_scheme="red")
+                                    ),
+                                    rx.alert_dialog.content(
+                                        rx.alert_dialog.title("¿Eliminar a " + _S.nombre_editor + "?"),
+                                        rx.alert_dialog.description(
+                                            "Se borrará el registro del empleado de forma permanente. "
+                                            "Esta acción no se puede deshacer."
+                                        ),
+                                        rx.hstack(
+                                            rx.alert_dialog.cancel(rx.button("No", variant="soft")),
+                                            rx.alert_dialog.action(
+                                                rx.button(
+                                                    "Sí, eliminar definitivamente",
+                                                    on_click=_S.eliminar,
+                                                    color_scheme="red",
+                                                )
+                                            ),
+                                            spacing="3",
+                                            justify="end",
+                                            margin_top="1rem",
+                                        ),
+                                    ),
+                                ),
                                 spacing="2",
                             ),
                             spacing="2",

@@ -47,6 +47,29 @@ def test_normalizar_codificacion_de_flags():
     assert n["SEXO"] == "1"
 
 
+def test_estados_filtro():
+    assert empleados._ESTADOS_FILTRO["ACTIVOS"] == ("ACT",)
+    assert set(empleados._ESTADOS_FILTRO["INACTIVOS"]) == {"LIQ", "SUS"}
+    assert empleados._ESTADOS_FILTRO["TODOS"] == ()
+
+
+def test_ficha_empleado_pdf_parseable():
+    import io
+
+    import pypdf
+
+    from core.pdf.ficha_empleado import ficha_empleado_pdf
+
+    data = ficha_empleado_pdf("1012", {
+        "NOMBRES": "JUAN", "APELLIDOS": "PEREZ", "CEDULA": "0920116811",
+        "SUELDO": "800", "DIRECCION": "GUAYAQUIL", "CONYUGUE": "MARIA",
+    })
+    assert data[:4] == b"%PDF"
+    txt = pypdf.PdfReader(io.BytesIO(data)).pages[0].extract_text()
+    assert "PEREZ JUAN" in txt
+    assert "Ficha de empleado" in txt
+
+
 def test_grupos_cubren_las_6_pestanas_del_legado():
     assert set(empleados.GRUPOS) == {
         "Datos generales", "Ingresos / descuentos", "Otros datos",

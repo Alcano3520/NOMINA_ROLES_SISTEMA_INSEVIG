@@ -124,20 +124,35 @@ def _token(campos: dict) -> str:
 # ── Lectura ──────────────────────────────────────────────────────────────────
 
 
-def buscar(texto: str, fuente: str, *, solo_activos: bool = False, limite: int = 200) -> list[dict]:
+# Filtro de estado para la lista: etiqueta -> códigos RPEMPLEA.ESTADO
+_ESTADOS_FILTRO = {
+    "ACTIVOS": ("ACT",),
+    "INACTIVOS": ("LIQ", "SUS"),
+    "TODOS": (),
+}
+
+
+def buscar(
+    texto: str, fuente: str, *, solo_activos: bool = False, estado: str = "", limite: int = 300
+) -> list[dict]:
     texto = texto.strip()
+    if solo_activos and not estado:
+        estado = "ACTIVOS"
+    codigos = _ESTADOS_FILTRO.get(estado.upper(), ())
     if fuente == FUENTE_SUPABASE:
         sb = supabase_client.get_client()
         q = sb.table("rpemplea").select("empleado,apellidos,nombres,cedula,cargo,estado").eq("codemp", "10")
-        if solo_activos:
-            q = q.eq("estado", "ACT")
+        if len(codigos) == 1:
+            q = q.eq("estado", codigos[0])
+        elif len(codigos) > 1:
+            q = q.in_("estado", list(codigos))
         if texto:
             q = (
                 q.eq("empleado", texto)
                 if texto.isdigit()
                 else q.or_(f"apellidos.ilike.%{texto}%,nombres.ilike.%{texto}%")
             )
-        filas = q.limit(limite).execute().data or []
+        filas = q.order("apellidos").limit(limite).execute().data or []
         return [
             {
                 "empleado": str(r["empleado"]).strip(),
@@ -151,8 +166,12 @@ def buscar(texto: str, fuente: str, *, solo_activos: bool = False, limite: int =
     flt = get_settings().sqlserver_filter
     cond = flt
     params: list = []
-    if solo_activos:
-        cond += " AND [ESTADO]='ACT'"
+    if len(codigos) == 1:
+        cond += " AND [ESTADO] = ?"
+        params.append(codigos[0])
+    elif len(codigos) > 1:
+        cond += " AND [ESTADO] IN (" + ",".join("?" * len(codigos)) + ")"
+        params.extend(codigos)
     if texto:
         if texto.isdigit():
             cond += " AND [EMPLEADO] = ?"
@@ -261,9 +280,21 @@ def actualizar(empleado: str, campos: dict, token_previo: str, *, usuario: str, 
 def crear(campos: dict, *, usuario: str, roles: set[str]) -> str:
     nuevos = _normalizar(campos)
     empleado = str(campos.get("EMPLEADO") or "").strip()
+    cedula = str(campos.get("CEDULA") or "").strip()
     if not empleado:
-        raise ValueError("Falta el código de empleado (EMPLEADO)")
-    s = get_settings()
+        raise ValueError("Falta el código de empleado")
+    if not cedula:
+        raise ValueError("Falta la cédula")
+    flt = get_settings().sqlserver_filter
+    dup = sqlserver.filas(
+        f"SELECT [EMPLEADO],[CEDULA] FROM [insevig].[dbo].[RPEMPLEA] "
+        f"WHERE {flt} AND ([EMPLEADO] = ? OR [CEDULA] = ?)",
+        (empleado, cedula),
+    )
+    for d in dup:
+        if str(d.get("EMPLEADO") or "").strip() == empleado:
+            raise ValueError(f"Ya existe un empleado con el código {empleado}")
+        raise ValueError(f"Ya existe un empleado con la cédula {cedula}")
     cols = ["EMPLEADO", "CODEMP", "CODSUC", *nuevos.keys(), "creado_por", "fecha_crea"]
     vals: list = [empleado, "10", "10", *nuevos.values(), usuario]
     placeholders = ", ".join(["?"] * (len(vals)) + ["GETDATE()"])
@@ -277,7 +308,6 @@ def crear(campos: dict, *, usuario: str, roles: set[str]) -> str:
             tuple(vals),
         )
         conn.commit()
-    _ = s
     return empleado
 
 
