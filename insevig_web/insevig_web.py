@@ -13,11 +13,13 @@ from insevig_web.theme import global_style
 
 app = rx.App(style=global_style, stylesheets=["/theme.css"])
 
-# Dev: crea las tablas que falten. En prod se usa alembic.
+# Dev (SQLite): crea las tablas que falten. En prod (Postgres) manda alembic.
 try:
+    from core.config import get_settings
     from core.db import appdb
 
-    appdb.crear_tablas()
+    if get_settings().app_db_url.startswith("sqlite"):
+        appdb.crear_tablas()
 except Exception as e:  # noqa: BLE001
     import logging
 

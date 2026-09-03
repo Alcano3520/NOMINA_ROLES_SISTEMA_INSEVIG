@@ -76,3 +76,8 @@ htmlcov/
 .coverage
 node_modules/
 var/
+
+# Despliegue
+deploy/.env.prod
+backups/
+*.dump

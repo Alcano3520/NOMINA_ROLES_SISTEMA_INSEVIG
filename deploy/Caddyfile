@@ -1,0 +1,42 @@
+# Proxy inverso para INSEVIG. Copiar a C:\insevig\caddy\Caddyfile.
+# Caddy pasa el Upgrade/WebSocket que Reflex necesita para el estado y el progreso de jobs.
+#
+# Opción A (recomendada en LAN sin CA pública): certificado interno de Caddy.
+#   Los navegadores mostrarán aviso salvo que se distribuya la CA raíz de Caddy
+#   (C:\insevig\caddy\data\caddy\pki\authorities\local\root.crt) por GPO.
+#
+# Opción B: si RRHH tiene un cert emitido por la CA interna de la empresa,
+#   reemplaza `tls internal` por `tls C:\ruta\cert.pem C:\ruta\key.pem`.
+
+insevig-rrhh.local {
+	tls internal
+
+	encode zstd gzip
+
+	# Frontend estático (salida de `reflex export`)
+	handle {
+		root * C:/insevig/app/.web/build/client
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Backend Reflex (API + WebSocket de estado) en :8000
+	@backend {
+		path /_event* /ping /_upload* /backend/*
+	}
+	handle @backend {
+		reverse_proxy 127.0.0.1:8000
+	}
+
+	log {
+		output file C:/insevig/logs/caddy-access.log {
+			roll_size 20MiB
+			roll_keep 8
+		}
+	}
+}
+
+# Redirige HTTP -> HTTPS
+http://insevig-rrhh.local {
+	redir https://{host}{uri}
+}

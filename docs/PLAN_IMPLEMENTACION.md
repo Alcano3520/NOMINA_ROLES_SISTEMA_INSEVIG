@@ -11,17 +11,22 @@ Todos tienen interfaz Reflex y lógica `core/`, pero **nada se ha probado contra
 SQL Server (`192.168.2.115`) ni el Supabase reales**. Orden sugerido:
 
 ### A0. Poner en marcha el entorno de pruebas (bloqueante)
-- [ ] `.env` con credenciales reales: `SQLSERVER_*` (crear logins `insevig_ro`
-      SELECT e `insevig_rw` con grants mínimos, **no `sa`**), `SUPABASE_URL/KEY`
-      (rotar el JWT filtrado en git), `APP_DB_URL` (Postgres nuevo).
-- [ ] **Spike TLS 1.0**: probar `.venv/bin/python -c "from core.db.health import
-      sqlserver_disponible; print(sqlserver_disponible())"` desde una máquina con
-      línea de vista al `192.168.2.115`. Si falla: parchear la BD (SP3+KB3144114)
-      o reactivar SCHANNEL TLS 1.0 Client en Windows. Sin esto no se prueba nada
-      contra SQL Server.
-- [ ] `pip install -e ".[web,dev]"`, `python -m insevig_web.seed`, `reflex run`.
-- [ ] alembic para la BD de la app: `reflex db init` + primera migración (hoy se
-      crean tablas con `SQLModel.metadata.create_all`, sirve para dev, no para prod).
+- [x] alembic configurado (`alembic.ini`, `alembic/env.py`, primera migración
+      `54489ef6eafd`). `alembic upgrade head` crea las 8 tablas de la app;
+      `alembic check` sin drift.
+- [x] `scripts/healthcheck.py` — `python -m scripts.healthcheck` comprueba
+      SQL Server + Supabase + BD de la app. **Verificado en dev: Supabase responde
+      con las credenciales de `config/supabase.yaml`; SQL Server no (sin red al
+      192.168.2.115 desde aquí).**
+- [x] `insevig_web.py`: en prod (Postgres) manda alembic; `create_all` solo en dev (SQLite).
+- [ ] `.env` prod: copiar `deploy/.env.prod.example`. Crear logins `insevig_ro`
+      (SELECT) e `insevig_rw` (grants mínimos, **no `sa`**) — SQL en `deploy/README.md §3`.
+      **Rotar el JWT de Supabase filtrado en git.**
+- [ ] **Spike TLS 1.0** (bloqueante para todo lo de SQL Server): desde una máquina
+      con línea de vista al `192.168.2.115`, `python -m scripts.healthcheck`. Si
+      "FALLA SQL Server": parchear la BD (SP3+KB3144114) o
+      `deploy/windows/enable-tls10.ps1`.
+- [ ] `python -m insevig_web.seed`, `reflex run`, validar módulo por módulo (A1).
 
 ### A1. Validación por módulo (comparar con el legado)
 Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` actual:
@@ -117,18 +122,36 @@ de la Parte B.
 
 ---
 
-## Parte D — Despliegue y cutover (Fase 6)
+## Parte D — Despliegue y cutover (Fase 6) — andamiaje LISTO en `deploy/`
 
-1. **Windows Server**: Python 3.12 + venv, Node LTS, ODBC Driver 17, PostgreSQL 16
-   local, Caddy (reverse proxy HTTPS) o IIS+ARR, servicio Windows vía NSSM.
-   `reflex export` (frontend estático) + `reflex run --env prod --backend-only`
-   (1 proceso). `.env` con ACL restringida.
-2. **Backups**: `pg_dump insevig_app` diario + copia de `STORAGE_DIR`.
-3. **Piloto en paralelo**: 1–2 ciclos de nómina con la web y el Tkinter a la vez;
-   reconciliar; cero diferencias inexplicadas.
-4. **Cutover**: congelar los `.pyw`, retirar PyInstaller, archivar repos anidados.
-5. **Seguridad**: rotar JWT Supabase y password `sa`; `git rm --cached
-   config/supabase_credentials.txt` + reescribir historia si hace falta.
+Todo el material de despliegue está en la carpeta `deploy/` + `scripts/healthcheck.py`
++ alembic. Falta ejecutarlo en el servidor real.
+
+| Archivo | Para qué |
+|---|---|
+| `deploy/README.md` | **runbook** completo, paso a paso |
+| `deploy/.env.prod.example` | plantilla de `.env` de producción (secretos enmascarados) |
+| `deploy/Caddyfile` | proxy inverso HTTPS + sirve el frontend estático + pasa WebSocket |
+| `deploy/windows/setup.ps1` | guía de prereqs (Python, Node, ODBC 17, Postgres, Caddy, NSSM) |
+| `deploy/windows/install-services.ps1` | registra `insevig-backend` e `insevig-caddy` como servicios (NSSM, auto-restart) |
+| `deploy/windows/enable-tls10.ps1` | fallback TLS 1.0 en SCHANNEL para SQL 2008 R2 |
+| `deploy/windows/backup.ps1` | `pg_dump` diario + ZIP de `storage/` + retención 30 días |
+| `deploy/docker/` | ruta Docker opcional (Linux): Dockerfile + compose (app+pg+caddy) |
+| `scripts/healthcheck.py` | `python -m scripts.healthcheck` — SQL Server + Supabase + BD app |
+| `alembic/` | migraciones de la BD de la app (`alembic upgrade head`) |
+
+**Checklist de ejecución** (detalle en `deploy/README.md`):
+1. `deploy/windows/setup.ps1` → instalar prereqs, crear `svc_insevig`.
+2. Crear BD `insevig_app` en Postgres + logins `insevig_ro`/`insevig_rw` en SQL Server.
+3. Clonar repo a `C:\insevig\app`, venv, `pip install -e ".[web]"`, completar `.env`.
+4. TLS 1.0: parchear la BD (preferido) o `enable-tls10.ps1`.
+5. `python -m scripts.healthcheck` → "todo OK".
+6. `alembic upgrade head`, `python -m insevig_web.seed`, migrar SQLite de préstamos.
+7. `reflex export --no-zip`, `install-services.ps1`, `Start-Service`, DNS interno.
+8. Programar `backup.ps1` a diario.
+9. **Piloto en paralelo** 1–2 ciclos de nómina; reconciliar; sign-off de RRHH.
+10. Cutover: congelar `.pyw`, retirar PyInstaller. **Rotar JWT Supabase y password `sa`**;
+    `git rm --cached config/supabase_credentials.txt`.
 
 ---
 

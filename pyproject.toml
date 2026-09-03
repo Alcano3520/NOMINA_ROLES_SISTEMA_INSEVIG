@@ -29,6 +29,7 @@ web = [
     "reflex==0.9.10.post1",
     "bcrypt>=4.1",
     "itsdangerous>=2.1",
+    "psycopg[binary]>=3.1",
     "msal>=1.28",
 ]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "mypy>=1.11", "pypdf>=4"]
@@ -45,7 +46,7 @@ addopts = "-m 'not integration'"
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = [".venv", "*.pyw", "HISTORIAL PRESTAMOS", "TOTAL_OSERVACIONES"]
+extend-exclude = [".venv", "*.pyw", "HISTORIAL PRESTAMOS", "TOTAL_OSERVACIONES", "alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
