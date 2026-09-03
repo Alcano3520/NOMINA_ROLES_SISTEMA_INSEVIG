@@ -174,6 +174,59 @@ def _falta(r: dict) -> Falta:
     )
 
 
+def guardar_observacion(empleado: str, periodo: str, texto: str, *, usuario: str, roles: set[str]) -> str:
+    """Guarda `texto` en el primer slot refer1..7 libre del mes/año de `periodo`
+    (YYYY-MM) en RPEMPOBSERV. Crea fila si los 7 están llenos. Evita duplicados exactos.
+    Escribe solo a SQL Server, con auditoría y advisory lock por empleado.
+    """
+    from core.audit.writer import audit_scope
+    from core.db import sqlserver
+
+    texto = texto.strip()[:256]
+    if not texto:
+        raise ValueError("Texto vacío")
+    anio, mes = periodo.split("-")
+    ini, fin = f"{anio}-{int(mes):02d}-01", (
+        f"{int(anio) + 1}-01-01" if int(mes) == 12 else f"{anio}-{int(mes) + 1:02d}-01"
+    )
+    with audit_scope(
+        "observaciones", "crear", usuario=usuario, roles=roles,
+        target_table="RPEMPOBSERV", target_key=empleado, after={"periodo": periodo, "texto": texto},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        # serializa la asignación de slot entre usuarios
+        cur.execute("SELECT APPLOCK_MODE('public', ?, 'Session')", (f"obs_{empleado}",))
+        cur.execute(
+            f"""SELECT TOP 1 {', '.join(SLOTS_REFER)}, fecha_ven
+                    FROM dbo.RPEMPOBSERV
+                    WHERE empleado = ? AND fecha_ven >= ? AND fecha_ven < ?
+                    ORDER BY fecha_ven""",
+            (empleado, ini, fin),
+        )
+        fila = cur.fetchone()
+        if fila is not None:
+            actuales = [fila[i] for i in range(7)]
+            if texto in [str(a).strip() for a in actuales if a]:
+                return "duplicado"
+            for i, slot in enumerate(SLOTS_REFER):
+                if not actuales[i]:
+                    cur.execute(
+                        f"UPDATE TOP (1) dbo.RPEMPOBSERV SET {slot} = ? "
+                        f"WHERE empleado = ? AND fecha_ven = ?",
+                        (texto, empleado, fila[7]),
+                    )
+                    conn.commit()
+                    return slot
+        # sin fila con hueco -> insertar nueva
+        cur.execute(
+            f"INSERT INTO dbo.RPEMPOBSERV (empleado, codemp, codsuc, fecha_ven, {SLOTS_REFER[0]}) "
+            f"VALUES (?, '10', '10', ?, ?)",
+            (empleado, f"{anio}-{int(mes):02d}-01", texto),
+        )
+        conn.commit()
+        return "nueva_fila"
+
+
 def buscar_empleados(texto: str, fuente: str) -> list[dict]:
     """Devuelve [{'empleado','apellidos_nombres','cedula'}] para el selector."""
     texto = texto.strip()

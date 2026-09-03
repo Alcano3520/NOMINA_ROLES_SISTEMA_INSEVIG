@@ -53,7 +53,6 @@ MODULES: list[ModuleSpec] = [
         [NavItem("Buscar", "/empleados/buscar"),
          NavItem("Historial de nómina", "/empleados/historial"),
          NavItem("Carga masiva", "/empleados/carga-masiva", "cargar_masivo")],
-        disponible=False,
     ),
     ModuleSpec(
         "roles", "Roles de pago", "receipt-text",
