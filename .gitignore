@@ -55,3 +55,18 @@ respaldo*/
 empleados/PLANTILLA_*.xlsx
 SACAR_SEC/
 HISTORIAL*PRESTAMOS/
+
+# Migración Reflex (dev en Linux, deploy en Windows Server)
+.venv/
+venv/
+.env.*
+!.env.example
+.web/
+insevig_web/.web/
+.reflex/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+node_modules/

@@ -581,6 +581,93 @@ def biess_col_a_indice(col_str):
         result = result * 26 + (ord(ch) - ord('A') + 1)
     return result - 1
 
+def biess_indice_a_col(idx):
+    """Convierte indice 0-based a letra(s) de columna Excel. 0->'A', 26->'AA'."""
+    idx += 1
+    letras = ''
+    while idx > 0:
+        idx, resto = divmod(idx - 1, 26)
+        letras = chr(65 + resto) + letras
+    return letras
+
+def biess_autodetectar_columnas(archivo_path):
+    """
+    Detecta automaticamente fila de inicio, columna de cedula y columna de
+    valor en un Excel BIESS a partir del CONTENIDO de los datos, no del
+    texto de los encabezados (que suelen venir desalineados por celdas
+    combinadas en la plantilla del banco y cambian de una planilla a otra).
+
+    Retorna (fila_inicio_1based, col_cedula_letra, col_valor_letra, confianza).
+    confianza es 0.0 si no se pudo detectar con un minimo razonable de datos.
+    """
+    try:
+        df = pd.read_excel(archivo_path, header=None)
+    except Exception:
+        return None, None, None, 0.0
+
+    n_filas, n_cols = df.shape
+    if n_filas == 0 or n_cols == 0:
+        return None, None, None, 0.0
+
+    # 1) Columna de cedula: la que tiene mas valores que, al limpiarlos,
+    #    quedan en 9 o 10 digitos (los identificadores del padron BIESS).
+    mejor_col_ced, mejor_score_ced, mejor_primera_fila = None, 0, None
+    for c in range(n_cols):
+        validos = 0
+        primera_fila = None
+        for idx, v in df.iloc[:, c].items():
+            if pd.isna(v):
+                continue
+            s = str(v).strip()
+            if '.' in s:
+                try:
+                    s = str(int(float(s)))
+                except Exception:
+                    pass
+            digits = ''.join(ch for ch in s if ch.isdigit())
+            if len(digits) in (9, 10):
+                validos += 1
+                if primera_fila is None:
+                    primera_fila = idx
+        if validos > mejor_score_ced:
+            mejor_score_ced, mejor_col_ced, mejor_primera_fila = validos, c, primera_fila
+
+    if mejor_col_ced is None or mejor_score_ced < 5:
+        return None, None, None, 0.0
+
+    fila_inicio_idx = mejor_primera_fila
+
+    # 2) Columna de valor: numerica, en rango monetario, con muchos valores
+    #    con decimales (los montos casi nunca son enteros exactos), a partir
+    #    de la fila donde empiezan los datos de cedula.
+    mejor_col_val, mejor_score_val = None, 0
+    for c in range(n_cols):
+        if c == mejor_col_ced:
+            continue
+        validos, con_decimales = 0, 0
+        for v in df.iloc[fila_inicio_idx:, c]:
+            if pd.isna(v):
+                continue
+            try:
+                f = float(str(v).replace('$', '').replace(',', '').strip())
+            except Exception:
+                continue
+            if 0.01 <= f <= 100_000:
+                validos += 1
+                if f != int(f):
+                    con_decimales += 1
+        score = validos + con_decimales
+        if score > mejor_score_val:
+            mejor_score_val, mejor_col_val = score, c
+
+    if mejor_col_val is None or mejor_score_val < 5:
+        return None, None, None, 0.0
+
+    filas_restantes = max(1, n_filas - fila_inicio_idx)
+    confianza = min(1.0, mejor_score_ced / filas_restantes)
+    return (fila_inicio_idx + 1, biess_indice_a_col(mejor_col_ced),
+            biess_indice_a_col(mejor_col_val), confianza)
+
 def biess_procesar_excel(archivo_path, fila_inicio, col_cedula_str, col_valor_str):
     """
     Lee el Excel BIESS y retorna (consolidado, descartados).
@@ -4212,6 +4299,10 @@ class SistemaPrestamosUnificado:
             setattr(self, attr, var)
             ttk.Entry(r, textvariable=var, width=6).pack(side=tk.LEFT)
 
+        tk.Button(xls_frame, text="🧠 Auto-detectar", command=self._biess_autodetectar,
+                  bg=COL_ACCENT, fg=COL_WHITE, font=('Segoe UI', 8, 'bold'),
+                  relief='flat', cursor='hand2').pack(fill=tk.X, pady=(4, 0))
+
         # ── Archivo ──────────────────────────────────────────────────
         arch_frame = tk.LabelFrame(main, text="Archivo Excel BIESS", bg=COL_BG, fg=COL_HEADER,
                                    font=('Segoe UI', 9, 'bold'), padx=8, pady=4)
@@ -4314,6 +4405,34 @@ class SistemaPrestamosUnificado:
             nombre = os.path.basename(fn)
             self.biess_archivo_lbl.config(text=nombre, fg=COL_OK)
             self._set_status(f"Archivo BIESS: {nombre}", COL_OK)
+            self._biess_autodetectar()
+
+    def _biess_autodetectar(self):
+        """Detecta fila/columnas automaticamente segun el contenido del
+        archivo seleccionado y ajusta los campos de Parametros Excel.
+        Si la planilla cambia de formato de un mes a otro, esto evita
+        tener que reconfigurar las columnas a mano."""
+        archivo = self.biess_archivo_path
+        if not archivo:
+            return
+        def worker():
+            fila, col_ced, col_val, confianza = biess_autodetectar_columnas(archivo)
+            def aplicar():
+                if archivo != self.biess_archivo_path:
+                    return
+                if fila and col_ced and col_val and confianza >= 0.3:
+                    self.biess_fila_var.set(str(fila))
+                    self.biess_col_ced_var.set(col_ced)
+                    self.biess_col_val_var.set(col_val)
+                    self._set_status(
+                        f"Columnas auto-detectadas: fila {fila}, cédula {col_ced}, "
+                        f"valor {col_val} (verifique con 🔍 Diagnóstico)", COL_OK)
+                else:
+                    self._set_status(
+                        "No se pudo auto-detectar columnas; revise Fila/Col. "
+                        "manualmente y confirme con 🔍 Diagnóstico", COL_PEND)
+            self.master.after(0, aplicar)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _biess_procesar(self):
         if not self.biess_archivo_path:

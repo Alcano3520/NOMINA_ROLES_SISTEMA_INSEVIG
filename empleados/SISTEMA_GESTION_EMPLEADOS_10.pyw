@@ -6,7 +6,7 @@ GUI Mejorada siguiendo estándares RRHH documentados.
 Compatible Linux/Windows.
 """
 
-import os, sys, threading, webbrowser, shutil, tempfile, calendar, logging
+import os, sys, threading, webbrowser, shutil, tempfile, calendar, logging, html
 from pathlib import Path
 from datetime import datetime
 
@@ -50,11 +50,11 @@ COL_CARD     = '#2D2D2D'      # Tarjetas oscuras
 COL_TEXT     = '#E0E0E0'      # Texto claro
 COL_BORDER   = '#404040'      # Borde oscuro
 
-FONT_DEFAULT = ('Segoe UI', 10)
-FONT_SMALL   = ('Segoe UI', 9)
-FONT_LABEL   = ('Segoe UI', 10, 'bold')
-FONT_HEAD    = ('Segoe UI', 11, 'bold')
-FONT_TITLE   = ('Segoe UI', 14, 'bold')
+FONT_DEFAULT = ('Segoe UI', 13)
+FONT_SMALL   = ('Segoe UI', 10)
+FONT_LABEL   = ('Segoe UI', 11, 'bold')
+FONT_HEAD    = ('Segoe UI', 12, 'bold')
+FONT_TITLE   = ('Segoe UI', 15, 'bold')
 
 # ── SQL Server ──────────────────────────────────────────────────────
 SQL_CFG = {
@@ -116,6 +116,17 @@ class ToolTip:
             self.tip_window = None
 
 
+def _bind_scroll_rueda(widget, canvas):
+    """Une `widget` (y todos sus descendientes) al scroll de `canvas` con
+    la rueda del mouse. Bindear solo el canvas no basta: los widgets hijos
+    (Entry, Label, Frame, etc.) reciben el evento de rueda antes que el
+    canvas y lo consumen, así que hay que bindear recursivamente todo el
+    árbol de contenido desplazable."""
+    widget.bind('<MouseWheel>', lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units'), add='+')
+    for child in widget.winfo_children():
+        _bind_scroll_rueda(child, canvas)
+
+
 class SistemaGestionEmpleados10:
     def __init__(self, root):
         self.root = root
@@ -142,16 +153,47 @@ class SistemaGestionEmpleados10:
         self.cargos = {}
         self.secciones = {}
         self.departamentos = {}
-        self.sexos = {}
-        self.estados_civiles = {}
-        self.tipos_trabajo = {}
-        self.formas_pago = {}
+        self.sexos = {'1': 'MASCULINO', '2': 'FEMENINO'}  # sin catálogo propio en DBTABLAS (TIPO='SEX' no existe); valores fijos
+        # Sin catálogo propio en DBTABLAS (TIPO='ECS' no existe; se buscó por
+        # nombre "CIVIL"/"SOLTERO"/"CASADO" en las 47 TIPO de DBTABLAS y no
+        # aparece en ninguna). NO sigue el orden "estándar" del registro civil:
+        # se asumió 1=Soltero/2=Casado por convención y estaba AL REVÉS —
+        # confirmado con datos reales: empleado 5220 tiene ESTADO_CI='1' y su
+        # campo CONYUGUE literalmente dice "CASADO-GISSELA...", y en general
+        # ESTADO_CI='1' correlaciona 84.8% con tener CONYUGUE lleno vs. solo
+        # 36.8% para ESTADO_CI='2' (el código mayoritario, 91% de activos —
+        # coincide con plantilla joven de guardias, mayoría soltera). Solo 1 y
+        # 2 están confirmados así; 3/4/5 siguen siendo suposición (muy pocos
+        # empleados: 14, 1 y 10 respectivamente) — no tratarlos como certeza.
+        self.estados_civiles = {'1': 'CASADO', '2': 'SOLTERO', '3': 'DIVORCIADO', '4': 'VIUDO', '5': 'UNION LIBRE'}
+        # Sin catálogo propio en DBTABLAS (TIPO='TTR' no existe). No es "tipo
+        # de contrato" (Fijo/Temporal/Contrato) como se asumía antes: en
+        # SP_RP_IMPRIME_ROL el parámetro que filtra por esta columna se llama
+        # literalmente @TIPO_EMPLEADO, y en SP_RP_PREPARA_ROL hay un comentario
+        # "FONDO DE RESERVA ESLIVE OBREROS Y SEMANAL" junto a
+        # "if @mtipo_tra = '3' and @mforma_liq = '1'" — confirma 3=OBRERO. El
+        # 100% de los empleados activos usa TIPO_TRA='1' (=EMPLEADO). El
+        # código '2' solo aparece en 407 empleados LIQUIDADOS, ninguno activo
+        # — sin confirmar qué significa (posible código retirado), no
+        # inventarle una etiqueta.
+        self.tipos_trabajo = {'1': 'EMPLEADO', '2': 'CÓDIGO 2 (sin confirmar)', '3': 'OBRERO'}
+        # RPEMPLEA.TIPO_PGO es de hecho el PERÍODO DE PAGO (semanal/quincenal/
+        # mensual), no "forma de pago" — el catálogo DBTABLAS TIPO='FPF' que
+        # se usaba antes aquí es para forma de pago de facturación (cheque,
+        # transferencia...), con códigos de 2 dígitos que nunca calzan con el
+        # dígito único que usa TIPO_PGO (100% de los 2452 empleados activos,
+        # en las 3 sucursales, tiene TIPO_PGO='3'). Sin catálogo propio en
+        # DBTABLAS para el período de pago; convención estándar ecuatoriana.
+        self.periodos_pago = {'1': 'SEMANAL', '2': 'QUINCENAL', '3': 'MENSUAL'}
         self.bancos = {}
         self._auditoria_data = {}
         self._combos_widgets = {}
         self._form_widgets = {}
         self._check_widgets = {}
         self._readonly_descs = set()
+        self._lista_rows_cache = []
+        self._combo_full_values = {}  # lista completa "codigo - descripcion" por combo buscable, para filtrar en vivo
+        self.conn_lock = threading.Lock()  # pyodbc no soporta un mismo Connection desde varios hilos a la vez
 
         self._configurar_estilo()
         self._build_layout()
@@ -204,8 +246,11 @@ class SistemaGestionEmpleados10:
                     foreground=COL_ACCENT, background=COL_BG)
 
         s.configure('TEntry', fieldbackground=COL_ENTRY_BG, foreground=COL_WHITE, font=FONT_DEFAULT)
+        s.map('TEntry', fieldbackground=[('disabled', COL_ENTRY_BG), ('readonly', COL_ENTRY_BG)],
+              foreground=[('disabled', COL_TEXT), ('readonly', COL_TEXT)])
         s.configure('TCombobox', fieldbackground=COL_ENTRY_BG, foreground=COL_WHITE, font=FONT_DEFAULT)
-        s.map('TCombobox', fieldbackground=[('readonly', COL_ENTRY_BG)], foreground=[('readonly', COL_WHITE)])
+        s.map('TCombobox', fieldbackground=[('readonly', COL_ENTRY_BG), ('disabled', COL_ENTRY_BG)],
+              foreground=[('readonly', COL_WHITE), ('disabled', COL_TEXT)])
 
     # ── Status ──────────────────────────────────────────────────────
     def _status(self, msg):
@@ -226,7 +271,7 @@ class SistemaGestionEmpleados10:
         body.pack(fill='both', expand=True)
 
         # Izquierda (320px fijo)
-        left = tk.Frame(body, bg=COL_BG, width=320)
+        left = tk.Frame(body, bg=COL_BG, width=430)
         left.pack(side='left', fill='y', padx=(8, 0), pady=8)
         left.pack_propagate(False)
 
@@ -276,7 +321,7 @@ class SistemaGestionEmpleados10:
         tk.Label(row, text="Cédula:", font=FONT_LABEL,
                  bg=COL_BG).pack(side='left')
         self._cedula_var = tk.StringVar()
-        e = ttk.Entry(row, textvariable=self._cedula_var, width=20)
+        e = ttk.Entry(row, textvariable=self._cedula_var, width=12, font=FONT_DEFAULT)
         e.pack(side='left', padx=(6, 0))
         e.bind('<Return>', lambda ev: self._buscar_por_cedula())
         ttk.Button(row, text="Buscar", command=self._buscar_por_cedula,
@@ -287,30 +332,77 @@ class SistemaGestionEmpleados10:
         tk.Label(row2, text="Código:", font=FONT_LABEL,
                  bg=COL_BG).pack(side='left')
         self._codigo_var = tk.StringVar()
-        e2 = ttk.Entry(row2, textvariable=self._codigo_var, width=20)
+        e2 = ttk.Entry(row2, textvariable=self._codigo_var, width=12, font=FONT_DEFAULT)
         e2.pack(side='left', padx=(6, 0))
         e2.bind('<Return>', lambda ev: self._buscar_por_codigo())
         ttk.Button(row2, text="Buscar", command=self._buscar_por_codigo,
                    style='Accent.TButton').pack(side='left', padx=(6, 0))
 
+        row3 = tk.Frame(g, bg=COL_BG)
+        row3.pack(fill='x', pady=(8, 0))
+        tk.Label(row3, text="Autocompletar:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w')
+        self._autocomplete_var = tk.StringVar()
+        self._autocomplete_entry = ttk.Entry(g, textvariable=self._autocomplete_var, font=FONT_DEFAULT)
+        self._autocomplete_entry.pack(fill='x', pady=(2, 0))
+        self._autocomplete_var.trace_add('write', self._debounce_autocomplete_change)
+        self._autocomplete_entry.bind('<Down>', self._autocomplete_focus_listbox)
+        self._autocomplete_entry.bind('<Return>', self._autocomplete_select_first)
+        self._autocomplete_entry.bind('<Escape>', lambda ev: self._autocomplete_ocultar())
+        ToolTip(self._autocomplete_entry, "Escriba código, cédula, apellido o nombre y elija de la lista")
+
+        self._autocomplete_sug_frame = tk.Frame(g, bg=COL_CARD, relief='solid', borderwidth=1)
+        self._autocomplete_sug_list = tk.Listbox(self._autocomplete_sug_frame, font=FONT_SMALL,
+                                                  bg=COL_ENTRY_BG, fg=COL_TEXT, selectbackground=COL_ACCENT,
+                                                  selectforeground=COL_HEADER, height=6,
+                                                  borderwidth=0, highlightthickness=0, activestyle='none')
+        self._autocomplete_sug_list.pack(fill='both', expand=True, padx=2, pady=2)
+        self._autocomplete_sug_list.bind('<<ListboxSelect>>', self._autocomplete_on_click)
+        self._autocomplete_sug_list.bind('<Return>', self._autocomplete_on_click)
+        self._autocomplete_sug_visible = False
+        self._autocomplete_map = {}
+        self._autocomplete_empleados = []
+
         ttk.Button(g, text="🔍 Búsqueda Avanzada", command=self._abrir_buscador,
                    style='Accent.TButton').pack(fill='x', pady=(6, 0))
 
-        # Botones de acción PRIMERO (para que no queden ocultos)
+        # Botones de acción: agrupados en un menú desplegable compacto
+        # (antes eran 5 botones apilados que empujaban la lista de
+        # EMPLEADOS fuera de la pantalla visible).
         act = tk.Frame(parent, bg=COL_BG)
         act.pack(fill='x', pady=(8, 6))
-        ttk.Button(act, text="Nuevo", command=self._nuevo_empleado,
-                   style='Accent.TButton').pack(fill='x', pady=2)
-        ttk.Button(act, text="Modificar", command=self._modificar_empleado).pack(fill='x', pady=2)
-        ttk.Button(act, text="Eliminar", command=self._eliminar_empleado).pack(fill='x', pady=2)
-        ttk.Button(act, text="Edición Masiva (Excel)",
-                   command=self._edicion_masiva).pack(fill='x', pady=2)
-        ttk.Button(act, text="Agregar Observaciones",
-                   command=self._agregar_observaciones).pack(fill='x', pady=2)
-        ttk.Button(act, text="Vista Completa", command=self._abrir_vista_completa).pack(fill='x', pady=2)
+
+        self._acciones_menu = tk.Menu(
+            parent, tearoff=0, bg=COL_CARD, fg=COL_TEXT,
+            activebackground=COL_ACCENT, activeforeground=COL_HEADER,
+            font=FONT_DEFAULT, borderwidth=0, relief='flat')
+        self._acciones_menu.add_command(label="🆕  Nuevo", command=self._nuevo_empleado)
+        self._acciones_menu.add_command(label="✏️  Modificar", command=self._modificar_empleado)
+        self._acciones_menu.add_command(label="🗑️  Eliminar", command=self._eliminar_empleado,
+                                         foreground=COL_DANGER, activeforeground=COL_DANGER)
+        self._acciones_menu.add_separator()
+        self._acciones_menu.add_command(label="📋  Vista Completa", command=self._abrir_vista_completa)
+        self._acciones_menu.add_command(label="📤  Exportar Catálogos", command=self._abrir_exportador_catalogos)
+
+        def _mostrar_menu_acciones():
+            x = btn_acciones.winfo_rootx()
+            y = btn_acciones.winfo_rooty() + btn_acciones.winfo_height()
+            self._acciones_menu.post(x, y)
+
+        btn_acciones = ttk.Button(act, text="⚙  Acciones  ▾", command=_mostrar_menu_acciones,
+                                   style='Accent.TButton')
+        btn_acciones.pack(fill='x', pady=2)
 
         lf = ttk.LabelFrame(parent, text="EMPLEADOS", padding=6)
         lf.pack(fill='both', expand=True)
+
+        buscar_row = tk.Frame(lf, bg=COL_BG)
+        buscar_row.pack(fill='x', pady=(0, 6))
+        tk.Label(buscar_row, text="🔍", font=FONT_LABEL, bg=COL_BG).pack(side='left')
+        self._filtro_texto_var = tk.StringVar()
+        e_filtro = ttk.Entry(buscar_row, textvariable=self._filtro_texto_var, font=FONT_DEFAULT)
+        e_filtro.pack(side='left', fill='x', expand=True, padx=(4, 0))
+        self._filtro_texto_var.trace_add('write', lambda *a: self._debounce_renderizar_lista())
+        ToolTip(e_filtro, "Filtra la lista en vivo por código, cédula, apellido o nombre")
 
         ctrl = tk.Frame(lf, bg=COL_BG)
         ctrl.pack(fill='x', pady=(0, 4))
@@ -335,9 +427,9 @@ class SistemaGestionEmpleados10:
         self._tree.heading('cod', text='Cód.')
         self._tree.heading('ape', text='Apellidos')
         self._tree.heading('nom', text='Nombres')
-        self._tree.column('cod', width=60, anchor='center')
-        self._tree.column('ape', width=140)
-        self._tree.column('nom', width=140)
+        self._tree.column('cod', width=55, anchor='center')
+        self._tree.column('ape', width=180)
+        self._tree.column('nom', width=180)
 
         vsb = ttk.Scrollbar(lf, orient='vertical', command=self._tree.yview)
         self._tree.configure(yscrollcommand=vsb.set)
@@ -404,10 +496,10 @@ class SistemaGestionEmpleados10:
             var = tk.StringVar()
             self._dg_vars[col_key] = var
             if is_combo:
-                w = ttk.Combobox(container, textvariable=var, values=values, width=width, state='readonly')
+                w = ttk.Combobox(container, textvariable=var, values=values, width=width, state='readonly', font=FONT_DEFAULT)
                 self._combos_widgets[col_key] = w
             else:
-                w = ttk.Entry(container, textvariable=var, width=width)
+                w = ttk.Entry(container, textvariable=var, width=width, font=FONT_DEFAULT)
             w.grid(row=row, column=c + 1, sticky='w', padx=4, pady=2)
             self._form_widgets[col_key] = w
             return w
@@ -422,8 +514,10 @@ class SistemaGestionEmpleados10:
         field_set(g1, 2, 'Apellidos:', 'APELLIDOS', 48, col=0)
         w_sexo = field_set(g1, 3, 'Sexo:', 'SEXO', 14, is_combo=True, values=['1', '2'], col=0)
         ToolTip(w_sexo, "1=Masculino, 2=Femenino")
-        w_ec = field_set(g1, 3, 'Estado Civil:', 'ESTADO_CI', 14, is_combo=True, values=['1', '2', '3', '4'], col=1)
-        ToolTip(w_ec, "1=Soltero, 2=Casado, 3=Divorciado, 4=Viudo")
+        w_ec = field_set(g1, 3, 'Estado Civil:', 'ESTADO_CI', 20, is_combo=True, values=['1', '2', '3', '4', '5'], col=1)
+        ToolTip(w_ec, "Sin catálogo propio en DBTABLAS. Confirmado con datos reales: "
+                       "1=Casado, 2=Soltero. Sin confirmar (pocos empleados): "
+                       "3=Divorciado, 4=Viudo, 5=Unión Libre")
         w_nac = field_set(g1, 4, 'Lugar Nac.:', 'LUGAR_NAC', 32, col=0)
         field_set(g1, 4, 'Fecha Nac.:', 'FECHA_NAC', 18, col=1)
 
@@ -437,66 +531,41 @@ class SistemaGestionEmpleados10:
 
         g3 = ttk.LabelFrame(sf, text="Información Laboral", padding=8)
         g3.grid(row=2, column=0, columnspan=2, sticky='ew', padx=4, pady=3)
-        field_set(g3, 0, 'Fecha Ingreso:', 'FECHA_ING', 18, col=0)
-        tk.Label(g3, text='Departamento:', font=FONT_LABEL,
-                 bg=COL_BG).grid(row=0, column=4, sticky='w', padx=4, pady=2)
-        self._dg_vars['DEPTO'] = tk.StringVar()
-        self._combo_depto = ttk.Combobox(g3, textvariable=self._dg_vars['DEPTO'], width=10, state='readonly')
-        self._combo_depto.grid(row=0, column=5, sticky='w', padx=(4,0), pady=2)
-        self._form_widgets['DEPTO'] = self._combo_depto
-        self._combos_widgets['DEPTO'] = self._combo_depto
-        ToolTip(self._combo_depto, "Seleccione el departamento")
-        self._ent_depto = ttk.Entry(g3, width=30, state='readonly')
-        self._ent_depto.grid(row=0, column=6, sticky='w', padx=(2,4), pady=2)
-        self._form_widgets['_ent_depto'] = self._ent_depto
+        field_set(g3, 0, 'Fecha Ingreso:', 'FECHA_ING', 12, col=0)
+        field_set(g3, 0, 'Fecha Salida:', 'FECHA_SAL', 12, col=1)
         self._readonly_descs = set()
-        self._readonly_descs.add('_ent_depto')
-        self._combo_depto.bind('<<ComboboxSelected>>', lambda ev: self._actualizar_nombre_desc('DEPTO'))
 
-        tk.Label(g3, text='Cargo:', font=FONT_LABEL,
-                 bg=COL_BG).grid(row=1, column=0, sticky='w', padx=4, pady=2)
-        self._dg_vars['CARGO'] = tk.StringVar()
-        self._combo_cargo = ttk.Combobox(g3, textvariable=self._dg_vars['CARGO'], width=10, state='readonly')
-        self._combo_cargo.grid(row=1, column=1, sticky='w', padx=4, pady=2)
-        self._form_widgets['CARGO'] = self._combo_cargo
-        self._combos_widgets['CARGO'] = self._combo_cargo
-        ToolTip(self._combo_cargo, "Seleccione el cargo")
-        self._ent_cargo = ttk.Entry(g3, width=30, state='readonly')
-        self._ent_cargo.grid(row=1, column=2, sticky='w', padx=4, pady=2)
-        self._form_widgets['_ent_cargo'] = self._ent_cargo
-        self._readonly_descs.add('_ent_cargo')
-        self._combo_cargo.bind('<<ComboboxSelected>>', lambda ev: self._actualizar_nombre_desc('CARGO'))
+        self._combo_depto = self._crear_selector_catalogo(g3, 1, 'Departamento:', 'DEPTO', "Escriba para buscar el departamento")
 
-        tk.Label(g3, text='Sección:', font=FONT_LABEL,
-                 bg=COL_BG).grid(row=2, column=0, sticky='w', padx=4, pady=2)
-        self._dg_vars['SECCION'] = tk.StringVar()
-        self._combo_seccion = ttk.Combobox(g3, textvariable=self._dg_vars['SECCION'], width=10, state='readonly')
-        self._combo_seccion.grid(row=2, column=1, sticky='w', padx=4, pady=2)
-        self._form_widgets['SECCION'] = self._combo_seccion
-        self._combos_widgets['SECCION'] = self._combo_seccion
-        ToolTip(self._combo_seccion, "Seleccione la sección")
-        self._ent_seccion = ttk.Entry(g3, width=30, state='readonly')
-        self._ent_seccion.grid(row=2, column=2, sticky='w', padx=4, pady=2)
-        self._form_widgets['_ent_seccion'] = self._ent_seccion
-        self._readonly_descs.add('_ent_seccion')
-        self._combo_seccion.bind('<<ComboboxSelected>>', lambda ev: self._actualizar_nombre_desc('SECCION'))
+        self._combo_cargo = self._crear_selector_catalogo(g3, 2, 'Cargo:', 'CARGO', "Escriba para buscar el cargo")
 
-        field_set(g3, 3, 'Estado:', 'ESTADO', 14, is_combo=True, values=['ACTIVO', 'INACTIVO'], col=0)
-        w_tel = field_set(g3, 3, 'Teléfono:', 'TELEFONO', 20, col=1)
+        self._combo_seccion = self._crear_selector_catalogo(g3, 3, 'Sección:', 'SECCION', "Escriba para buscar la sección")
+
+        field_set(g3, 4, 'Estado:', 'ESTADO', 22, is_combo=True,
+                  values=['ACT - ACTIVO', 'LIQ - LIQUIDADO', 'SUS - SUSPENDIDO'], col=0)
+        w_tel = field_set(g3, 4, 'Teléfono:', 'TELEFONO', 20, col=1)
         ToolTip(w_tel, "Teléfono principal del empleado")
-        field_set(g3, 4, 'Email:', 'emp_mail', 44, col=0)
-        w_tel2 = field_set(g3, 5, '2do Teléfono:', 'RPCAM', 20, col=0)
+        field_set(g3, 5, 'Email:', 'emp_mail', 44, col=0)
+        w_tel2 = field_set(g3, 6, '2do Teléfono:', 'RPCAM', 20, col=0)
         ToolTip(w_tel2, "Teléfono alternativo o celular")
-        w_tt = field_set(g3, 5, 'Tipo Trabajo:', 'TIPO_TRA', 14, is_combo=True, values=['1', '2', '3'], col=1)
-        ToolTip(w_tt, "1=Fijo, 2=Temporal, 3=Contrato")
-        field_set(g3, 6, 'Actividad:', 'ACTIVIDAD', 34, col=0)
-        field_set(g3, 7, 'Cónyugue:', 'CONYUGUE', 44, col=0)
+        w_tt = field_set(g3, 6, 'Tipo de Empleado:', 'TIPO_TRA', 20, is_combo=True,
+                          values=['1 - EMPLEADO', '2 - CÓDIGO 2 (sin confirmar)', '3 - OBRERO'], col=1)
+        ToolTip(w_tt, "Sin catálogo propio en DBTABLAS. Confirmado con el código real: en "
+                       "SP_RP_IMPRIME_ROL el parámetro se llama @TIPO_EMPLEADO, y "
+                       "SP_RP_PREPARA_ROL trata explícitamente 3=OBRERO. El 100% de los "
+                       "empleados activos usa 1=EMPLEADO. El código 2 solo aparece en "
+                       "empleados liquidados (ninguno activo) — sin confirmar qué significa.")
+        field_set(g3, 7, 'Actividad:', 'ACTIVIDAD', 34, col=0)
+        field_set(g3, 8, 'Cónyugue:', 'CONYUGUE', 44, col=0)
 
         g4 = ttk.LabelFrame(sf, text="Auditoría", padding=6)
         g4.grid(row=3, column=0, columnspan=2, sticky='ew', padx=4, pady=3)
         self._lbl_audit = tk.Label(g4, text="", font=FONT_SMALL,
                                     fg=COL_GRAY, bg=COL_BG, anchor='w')
         self._lbl_audit.pack(fill='x', padx=4, pady=2)
+
+        _bind_scroll_rueda(canvas, canvas)
+        _bind_scroll_rueda(sf, canvas)
 
     # ── Pestaña: Ingresos / Descuentos ───────────────────────────────
     def _build_tab_ingresos(self):
@@ -508,29 +577,107 @@ class SistemaGestionEmpleados10:
                      bg=COL_BG).grid(row=row, column=col * 2, sticky='w', padx=4, pady=2)
             var = tk.StringVar()
             self._ing_vars[key] = var
-            w = ttk.Entry(frame, textvariable=var, width=width)
+            w = ttk.Entry(frame, textvariable=var, width=width, font=FONT_DEFAULT)
             w.grid(row=row, column=col * 2 + 1, sticky='w', padx=4, pady=2)
             self._form_widgets[f'ing_{key}'] = w
+            return w, var
 
-        g1 = ttk.LabelFrame(f, text="Sueldo y Beneficios", padding=8)
+        g1 = ttk.LabelFrame(f, text="Sueldo y Beneficios de Ley", padding=8)
         g1.pack(fill='x', padx=6, pady=4)
         field(g1, 0, 0, 'Sueldo:', 'SUELDO')
         field(g1, 0, 1, 'Bonificación:', 'BONIFI')
         field(g1, 0, 2, 'Compensación:', 'COMPEN')
         field(g1, 1, 0, 'Transporte:', 'TRANSP')
-        field(g1, 1, 1, 'Lunch:', 'LUNCH')
-        field(g1, 2, 0, 'Horas 25%:', 'HOR25')
-        field(g1, 2, 1, 'Horas 50%:', 'HOR50')
-        field(g1, 2, 2, 'Horas 100%:', 'HOR100')
+        field(g1, 1, 1, 'Horas 25%:', 'HOR25')
+        field(g1, 1, 2, 'Horas 50%:', 'HOR50')
+        field(g1, 2, 0, 'Horas 100%:', 'HOR100')
 
-        g2 = ttk.LabelFrame(f, text="Beneficios Sociales Acumulados", padding=8)
+        g2 = ttk.LabelFrame(f, text="Acumulados de Beneficios Sociales Históricos", padding=8)
         g2.pack(fill='x', padx=6, pady=4)
         field(g2, 0, 0, 'Décimo 3ro:', 'DECIMO3')
         field(g2, 0, 1, 'Décimo 4to:', 'DECIMO4')
         field(g2, 0, 2, 'Vacaciones:', 'VACACION')
         field(g2, 1, 0, 'Fdo. Reserva:', 'FONRESER')
-        field(g2, 1, 1, 'Anticipo ($):', 'ANTICIPO')
-        field(g2, 2, 0, 'Concepto:', 'CONCEPTO', 34)
+
+        g3 = ttk.LabelFrame(f, text="Rol Extra", padding=8)
+        g3.pack(fill='x', padx=6, pady=4)
+        field(g3, 0, 0, 'Moviliza:', 'MOVILIZA')
+        field(g3, 0, 1, 'Lunch:', 'LUNCH')
+        field(g3, 0, 2, 'Anticipo (%):', 'ANTICIPO')
+        field(g3, 1, 0, 'Descuento:', 'DESCUENTO')
+        field(g3, 1, 1, 'Ing. Extra:', 'ING_EXTRA')
+        field(g3, 1, 2, 'Dct. Extra:', 'DCT_EXTRA')
+        field(g3, 2, 0, 'Concepto:', 'CONCEPTO', 34)
+
+        self._flag_vars = {}
+
+        def flag(frame, row, col, text, key, tooltip=None):
+            var = tk.BooleanVar()
+            self._flag_vars[key] = var
+            chk = tk.Checkbutton(frame, text=text, variable=var, font=FONT_DEFAULT,
+                                  bg=COL_BG, fg=COL_TEXT, selectcolor=COL_ACCENT,
+                                  activebackground=COL_BG, activeforeground=COL_TEXT,
+                                  command=self._marcar_modificado)
+            chk.grid(row=row, column=col, sticky='w', padx=4, pady=4)
+            self._check_widgets[key] = chk
+            if tooltip:
+                ToolTip(chk, tooltip)
+            return chk
+
+        g4 = ttk.LabelFrame(f, text="Parámetros de Nómina (usados por Procesar Rol)", padding=8)
+        g4.pack(fill='x', padx=6, pady=4)
+
+        self._afil_iess_var = tk.BooleanVar()
+
+        def _num_afil_es_real(valor):
+            """True si NUM_AFIL ya tiene un número real (no 0/vacío/9999999999)."""
+            try:
+                v = float(valor)
+            except (TypeError, ValueError):
+                return False
+            return v not in (0, 9999999999)
+
+        def _on_toggle_fondo_reserva():
+            marcado = self._afil_iess_var.get()
+            actual = self._ref_vars.get('NUM_AFIL')
+            actual = actual.get() if actual else ''
+            if not marcado and _num_afil_es_real(actual):
+                # No se permite desmarcar si ya hay un número real cargado:
+                # se restaura el check y se pide borrarlo en Referencias,
+                # para no perder por accidente un número real de afiliación.
+                self._afil_iess_var.set(True)
+                messagebox.showwarning(
+                    "No se puede desmarcar",
+                    "═══════════════════════════════════════════════\n"
+                    "  Este empleado ya tiene un número de afiliación\n"
+                    f"  IESS real cargado: {actual}\n\n"
+                    "  Para marcarlo como NO afiliado, borre ese número\n"
+                    "  directamente en la pestaña Referencias.\n"
+                    "═══════════════════════════════════════════════"
+                )
+                return
+            if 'NUM_AFIL' in self._ref_vars:
+                self._ref_vars['NUM_AFIL'].set('0' if marcado else '9999999999')
+            self._marcar_modificado()
+
+        chk_afil = tk.Checkbutton(g4, text='Fondo de Reserva',
+                                   variable=self._afil_iess_var, font=FONT_DEFAULT,
+                                   bg=COL_BG, fg=COL_TEXT, selectcolor=COL_ACCENT,
+                                   activebackground=COL_BG, activeforeground=COL_TEXT,
+                                   command=_on_toggle_fondo_reserva)
+        chk_afil.grid(row=0, column=0, sticky='w', padx=4, pady=4)
+        self._check_widgets['_AFIL_IESS'] = chk_afil
+        ToolTip(chk_afil, "Escribe directo en NUM_AFIL (Referencias → No. Afiliación IESS). "
+                           "SP_RP_PREPARA_ROL calcula el Fondo de Reserva cuando NUM_AFIL <> 9999999999. "
+                           "Marcar=0 (afiliado genérico), desmarcar=9999999999 (no afiliado). "
+                           "Si ya hay un número real cargado, bórrelo en Referencias para desmarcar.")
+
+        flag(g4, 1, 0, 'Décimo Tercero se paga aparte (excluir de Procesar Rol)', 'CAT_PROYECT_7',
+             "Columna genérica CAT_PROYECT_7. Marcado = este empleado recibe el décimo tercero por una vía distinta al rol automático.")
+        flag(g4, 2, 0, 'Décimo Cuarto se paga aparte (excluir de Procesar Rol)', 'CAT_PROYECT_8',
+             "Columna genérica CAT_PROYECT_8. Marcado = este empleado recibe el décimo cuarto por una vía distinta al rol automático.")
+        flag(g4, 3, 0, 'Aporta IESS Cónyuge (descuento 3.41% del sueldo)', 'RPCAM2',
+             "Columna genérica RPCAM2. Activa el rubro 218 (Aporte IESS Cónyuge) en Procesar Rol.")
 
     # ── Pestaña: Observaciones ──────────────────────────────────────
     def _build_tab_observaciones(self):
@@ -551,6 +698,7 @@ class SistemaGestionEmpleados10:
         ttk.Button(top, text="Mostrar", command=self._mostrar_obs).pack(side='left', padx=8)
         ttk.Button(top, text="💾 Guardar Obs.", command=self._guardar_obs,
                   style='Accent.TButton').pack(side='left', padx=4)
+        ttk.Button(top, text="🖨 Imprimir Historial", command=self._imprimir_observaciones).pack(side='left', padx=4)
 
         self._lbl_fecha_fin = tk.Label(top, text='', font=FONT_DEFAULT,
                                        fg=COL_GRAY, bg=COL_BG)
@@ -602,26 +750,47 @@ class SistemaGestionEmpleados10:
         for widget in self._obs_frame.winfo_children():
             widget.destroy()
         self._obs_widgets = []  # Limpiar referencias anteriores
+        self._status("Cargando observaciones...")
+
+        def tarea():
+            try:
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"""
+                        SELECT refer1, refer2, refer3, refer4, refer5, refer6, refer7, fecha_ven
+                        FROM RPEMPOBSERV
+                        WHERE empleado = ? AND MONTH(fecha_ven) = ? AND YEAR(fecha_ven) = ?
+                          AND CODEMP='10' AND CODSUC='10'
+                        ORDER BY fecha_ven DESC
+                    """, (emp_cod, mes_num, ano_num))
+                    row = cur.fetchone()
+                self.root.after(0, lambda: self._render_obs(row, m, a))
+            except Exception as e:
+                LOG.error("Error cargando observaciones: %s", e)
+                self.root.after(0, lambda msg=str(e): self._obs_error(msg))
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _obs_error(self, msg):
+        lbl = tk.Label(self._obs_frame, text=f"Error: {msg}", font=FONT_LABEL,
+                     bg=COL_BG, fg=COL_DANGER)
+        lbl.pack(pady=20)
+        messagebox.showerror("Error", msg)
+        self._status("Error al cargar observaciones")
+
+    def _render_obs(self, row, m, a):
+        for widget in self._obs_frame.winfo_children():
+            widget.destroy()
+        self._obs_widgets = []
+
+        if not row:
+            lbl = tk.Label(self._obs_frame, text=f"Sin observaciones para {m} {a}",
+                         font=FONT_LABEL, bg=COL_BG, fg=COL_GRAY)
+            lbl.pack(pady=20)
+            self._lbl_fecha_fin.config(text='')
+            self._status("Sin observaciones para el período")
+            return
 
         try:
-            cur = self.conn.cursor()
-            cur.execute(f"""
-                SELECT refer1, refer2, refer3, refer4, refer5, refer6, refer7, fecha_ven
-                FROM RPEMPOBSERV
-                WHERE empleado = ? AND MONTH(fecha_ven) = ? AND YEAR(fecha_ven) = ?
-                  AND CODEMP='10' AND CODSUC='10'
-                ORDER BY fecha_ven DESC
-            """, (emp_cod, mes_num, ano_num))
-
-            row = cur.fetchone()
-
-            if not row:
-                lbl = tk.Label(self._obs_frame, text=f"Sin observaciones para {m} {a}",
-                             font=FONT_LABEL, bg=COL_BG, fg=COL_GRAY)
-                lbl.pack(pady=20)
-                self._lbl_fecha_fin.config(text='')
-                return
-
             fecha_ven = row[7]
 
             # Encabezado
@@ -631,46 +800,51 @@ class SistemaGestionEmpleados10:
             tk.Label(header, text=f"📅 {m} {a}  |  📆 {fecha_ven.strftime('%d/%m/%Y')}",
                     font=FONT_HEAD, bg=COL_HEADER, fg=COL_WHITE).pack(pady=10)
 
-            # Crear recuadro para cada observación
+            # Se muestran los 7 campos SIEMPRE (llenos y vacíos), para que nunca
+            # haga falta escribir una observación nueva encima de una ya existente.
             campos_llenos = 0
             for i in range(7):
-                if row[i]:
+                lleno = bool(row[i])
+                if lleno:
                     campos_llenos += 1
 
-                    # Recuadro para cada campo (dark mode)
-                    card = tk.Frame(self._obs_frame, bg=COL_CARD, relief='solid', borderwidth=2)
-                    card.pack(fill='both', expand=False, padx=0, pady=(0, 8))
+                card = tk.Frame(self._obs_frame, bg=COL_CARD, relief='solid', borderwidth=2)
+                card.pack(fill='both', expand=False, padx=0, pady=(0, 8))
 
-                    # Header del recuadro
-                    card_header = tk.Frame(card, bg=COL_ACCENT, height=30)
-                    card_header.pack(fill='x')
+                card_header = tk.Frame(card, bg=COL_ACCENT if lleno else COL_GRAY, height=30)
+                card_header.pack(fill='x')
 
-                    tk.Label(card_header, text=f"[CAMPO {i+1}]", font=FONT_LABEL,
-                            bg=COL_ACCENT, fg=COL_WHITE).pack(pady=6)
+                titulo = f"[CAMPO {i+1}]" if lleno else f"[CAMPO {i+1} — VACÍO, disponible para nueva observación]"
+                tk.Label(card_header, text=titulo, font=FONT_LABEL,
+                        bg=COL_ACCENT if lleno else COL_GRAY,
+                        fg=COL_WHITE if lleno else COL_HEADER).pack(pady=6)
 
-                    # Contenido editable - Text widget oscuro
-                    content = tk.Text(card, font=FONT_DEFAULT,
-                                    bg=COL_CARD, fg=COL_TEXT,
-                                    height=3, width=70, wrap='word',
-                                    relief='flat', borderwidth=0)
-                    content.pack(fill='both', expand=True, padx=12, pady=12)
+                content = tk.Text(card, font=FONT_DEFAULT,
+                                bg=COL_CARD, fg=COL_TEXT,
+                                height=3, width=70, wrap='word',
+                                relief='flat', borderwidth=0)
+                content.pack(fill='both', expand=True, padx=12, pady=12)
+                if lleno:
                     content.insert(1.0, row[i])
-                    content.config(state='normal')  # Permitir edición
 
-                    # Almacenar referencia para guardar después
-                    self._obs_widgets.append({
-                        'campo': i + 1,
-                        'widget': content,
-                        'valor_original': row[i]
-                    })
+                self._obs_widgets.append({
+                    'campo': i + 1,
+                    'widget': content,
+                    'valor_original': row[i] or ''
+                })
 
             # Footer
-            footer = tk.Label(self._obs_frame, text=f"Total: {campos_llenos}/7 campos",
-                            font=FONT_SMALL, bg=COL_BG, fg=COL_GRAY)
+            if campos_llenos >= 7:
+                nota = "Los 7 campos están llenos. Para agregar más use Carga Masiva de Observaciones (crea una fila adicional)."
+            else:
+                nota = f"Total: {campos_llenos}/7 campos llenos"
+            footer = tk.Label(self._obs_frame, text=nota,
+                            font=FONT_SMALL, bg=COL_BG, fg=COL_GRAY, wraplength=600, justify='left')
             footer.pack(pady=10)
 
             self._lbl_fecha_fin.config(text=f'Fecha: {fecha_ven.strftime("%d/%m/%Y")}')
             self._status("Observaciones cargadas correctamente")
+            _bind_scroll_rueda(self._obs_frame, self._obs_canvas)
 
         except Exception as e:
             lbl = tk.Label(self._obs_frame, text=f"Error: {str(e)}", font=FONT_LABEL,
@@ -692,46 +866,143 @@ class SistemaGestionEmpleados10:
         ano_num = int(a) if a.isdigit() else 2026
         emp_cod = self.empleado_actual.get('EMPLEADO', '')
 
-        try:
-            cur = self.conn.cursor()
+        # Leer el contenido de los widgets en el hilo principal (Tkinter no es thread-safe)
+        cambios_pendientes = []
+        for widget_info in self._obs_widgets:
+            texto_nuevo = widget_info['widget'].get(1.0, 'end').strip()
+            if texto_nuevo != widget_info['valor_original']:
+                cambios_pendientes.append((widget_info['campo'], texto_nuevo))
 
-            # Obtener la fecha_ven de la observación actual
-            cur.execute(f"""
-                SELECT fecha_ven FROM RPEMPOBSERV
-                WHERE empleado = ? AND MONTH(fecha_ven) = ? AND YEAR(fecha_ven) = ?
-                  AND CODEMP='10' AND CODSUC='10'
-                ORDER BY fecha_ven DESC
-            """, (emp_cod, mes_num, ano_num))
+        if not cambios_pendientes:
+            messagebox.showinfo("Sin cambios", "No hay cambios para guardar")
+            return
 
-            row = cur.fetchone()
-            if not row:
-                messagebox.showerror("Error", "No se encontró la observación")
-                return
+        self._status("Guardando observaciones...")
 
-            fecha_ven = row[0]
+        def tarea():
+            try:
+                with self.conn_lock:
+                    cur = self.conn.cursor()
 
-            # Actualizar cada campo
-            cambios = 0
-            for widget_info in self._obs_widgets:
-                campo_num = widget_info['campo']
-                texto_nuevo = widget_info['widget'].get(1.0, 'end').strip()
-                columna = f'refer{campo_num}'
-
-                # Actualizar solo si cambió
-                if texto_nuevo != widget_info['valor_original']:
+                    # Obtener la fecha_ven de la observación actual
                     cur.execute(f"""
-                        UPDATE RPEMPOBSERV
-                        SET {columna} = ?
-                        WHERE empleado = ? AND fecha_ven = ? AND CODEMP='10' AND CODSUC='10'
-                    """, (texto_nuevo, emp_cod, fecha_ven))
-                    cambios += 1
+                        SELECT fecha_ven FROM RPEMPOBSERV
+                        WHERE empleado = ? AND MONTH(fecha_ven) = ? AND YEAR(fecha_ven) = ?
+                          AND CODEMP='10' AND CODSUC='10'
+                        ORDER BY fecha_ven DESC
+                    """, (emp_cod, mes_num, ano_num))
 
-            self.conn.commit()
-            messagebox.showinfo("✅ Guardado", f"Se guardaron {cambios} cambios en observaciones")
-            self._mostrar_obs()  # Recargar para confirmar
+                    row = cur.fetchone()
+                    if not row:
+                        self.root.after(0, lambda: messagebox.showerror("Error", "No se encontró la observación"))
+                        self.root.after(0, lambda: self._status("Error al guardar"))
+                        return
 
+                    fecha_ven = row[0]
+
+                    cambios = 0
+                    for campo_num, texto_nuevo in cambios_pendientes:
+                        columna = f'refer{campo_num}'
+                        cur.execute(f"""
+                            UPDATE TOP (1) RPEMPOBSERV
+                            SET {columna} = ?
+                            WHERE empleado = ? AND fecha_ven = ? AND CODEMP='10' AND CODSUC='10'
+                        """, (texto_nuevo, emp_cod, fecha_ven))
+                        cambios += 1
+
+                    self.conn.commit()
+                self.root.after(0, lambda: self._guardar_obs_ok(cambios))
+            except Exception as e:
+                LOG.error("Error guardando observaciones: %s", e)
+                self.root.after(0, lambda msg=str(e): messagebox.showerror("Error", f"No se pudo guardar: {msg}"))
+                self.root.after(0, lambda: self._status("Error al guardar"))
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _guardar_obs_ok(self, cambios):
+        messagebox.showinfo("✅ Guardado", f"Se guardaron {cambios} cambios en observaciones")
+        self._mostrar_obs()  # Recargar para confirmar
+
+    def _imprimir_observaciones(self):
+        """Genera un HTML con TODO el historial de observaciones del empleado
+        (todas las fechas, no solo el período mostrado) y lo abre en el
+        navegador para imprimir desde ahí (Ctrl+P)."""
+        if not self.empleado_actual:
+            messagebox.showwarning("ATENCIÓN", "Seleccione un empleado primero")
+            return
+        emp_cod = self.empleado_actual.get('EMPLEADO', '')
+        nom = f"{self.empleado_actual.get('NOMBRES', '')} {self.empleado_actual.get('APELLIDOS', '')}".strip()
+        ced = self.empleado_actual.get('CEDULA', '')
+
+        self._status("Generando historial de observaciones...")
+
+        def tarea():
+            try:
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"""
+                        SELECT refer1, refer2, refer3, refer4, refer5, refer6, refer7, fecha_ven
+                        FROM RPEMPOBSERV
+                        WHERE empleado = ? AND CODEMP='10' AND CODSUC='10'
+                        ORDER BY fecha_ven DESC
+                    """, (emp_cod,))
+                    rows = cur.fetchall()
+                self.root.after(0, lambda: self._generar_imprimir_obs(rows, emp_cod, nom, ced))
+                self.root.after(0, lambda: self._status("Listo"))
+            except Exception as e:
+                LOG.error("Error obteniendo historial para imprimir: %s", e)
+                self.root.after(0, lambda msg=str(e): messagebox.showerror("Error", f"No se pudo obtener el historial: {msg}"))
+                self.root.after(0, lambda: self._status("Error"))
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _generar_imprimir_obs(self, rows, emp_cod, nom, ced):
+        if not rows:
+            messagebox.showinfo("Sin datos", "Este empleado no tiene observaciones registradas")
+            return
+
+        secciones = []
+        for row in rows:
+            fecha_ven = row[7]
+            campos = [row[i] for i in range(7) if row[i]]
+            if not campos:
+                continue
+            items = "".join(f"<li>{html.escape(str(c))}</li>" for c in campos)
+            secciones.append(
+                f'<div class="fecha">{fecha_ven.strftime("%d/%m/%Y")}</div>'
+                f'<ul>{items}</ul>'
+            )
+
+        contenido = "\n".join(secciones) if secciones else "<p>Sin observaciones con contenido.</p>"
+
+        html_doc = f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Historial de Observaciones — {html.escape(nom)}</title>
+<style>
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 32px; color: #222; }}
+  h1 {{ font-size: 18px; margin-bottom: 2px; }}
+  .info {{ color: #555; margin-bottom: 20px; font-size: 13px; }}
+  .fecha {{ background: #0D1B2A; color: #fff; padding: 6px 10px; margin-top: 16px;
+            font-weight: bold; border-radius: 3px; }}
+  ul {{ margin: 6px 0 0 0; padding-left: 24px; }}
+  li {{ margin-bottom: 6px; line-height: 1.4; }}
+  @media print {{ .fecha {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }} }}
+</style></head>
+<body>
+  <h1>INSEVIG — Historial de Observaciones</h1>
+  <div class="info">
+    Empleado: <b>{html.escape(nom)}</b> &nbsp;|&nbsp; Código: {html.escape(str(emp_cod))}
+    &nbsp;|&nbsp; C.I.: {html.escape(str(ced))}<br>
+    Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+  </div>
+  {contenido}
+</body></html>"""
+
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
+            tmp.write(html_doc)
+            tmp.close()
+            webbrowser.open(f'file:///{tmp.name}')
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo guardar: {str(e)}")
+            messagebox.showerror("Error", f"No se pudo generar la vista de impresión: {e}")
 
     # ── Pestaña: Otros Datos ────────────────────────────────────────
     def _build_tab_otros(self):
@@ -754,6 +1025,10 @@ class SistemaGestionEmpleados10:
                                        command=lambda: self._toggle_check('INCL_ROL'))
         self._chk_rol.pack(side='left', padx=(0, 24))
         self._check_widgets['INCL_ROL'] = self._chk_rol
+        ToolTip(self._chk_rol, "Columna RPEMPLEA.INCL_ROL ('S'/'N'). No aparece como condición "
+                                "en SP_RP_PREPARA_ROL (el que corre Procesar Rol) — solo se exporta "
+                                "como columna en reportes generales de empleados (SP_RP_EMPLEADOS, "
+                                "SP_RP_EMPLEADOS_X_DEPTO), no filtra el cálculo de nómina en sí.")
         self._chk_ban = tk.Checkbutton(check_frame, text="Acreditar",
                                        variable=tk.BooleanVar(),
                                        font=FONT_LABEL,
@@ -762,6 +1037,10 @@ class SistemaGestionEmpleados10:
                                        command=lambda: self._toggle_check('INCL_BAN'))
         self._chk_ban.pack(side='left')
         self._check_widgets['INCL_BAN'] = self._chk_ban
+        ToolTip(self._chk_ban, "Columna RPEMPLEA.INCL_BAN ('S'/'N'). Confirmado en "
+                                "SP_RP_ANEXO_BANCO_INSEVIG: WHERE INCL_BAN='S' — solo estos "
+                                "empleados entran en el archivo/anexo que se envía al banco para "
+                                "acreditar el sueldo.")
 
         def field(container, row, col, label, key, width=14, is_combo=False, values=None):
             tk.Label(container, text=label, font=FONT_LABEL,
@@ -769,19 +1048,20 @@ class SistemaGestionEmpleados10:
             var = tk.StringVar()
             self._ot_vars[key] = var
             if is_combo:
-                w = ttk.Combobox(container, textvariable=var, values=values, width=width, state='readonly')
+                w = ttk.Combobox(container, textvariable=var, values=values, width=width, state='readonly', font=FONT_DEFAULT)
                 self._combos_widgets[key] = w
             else:
-                w = ttk.Entry(container, textvariable=var, width=width)
+                w = ttk.Entry(container, textvariable=var, width=width, font=FONT_DEFAULT)
             w.grid(row=row, column=col * 2 + 1, sticky='w', padx=4, pady=2)
             self._form_widgets[f'ot_{key}'] = w
 
         field(g1, 1, 0, 'Cargas:', 'CARGAS', 10)
         field(g1, 2, 0, 'Últ. Liquidación:', 'ULTLIQ', 16)
+        field(g1, 2, 1, 'Últ. Día Trabajado:', 'ULTDIATRA', 16)
         field(g1, 3, 0, 'Días Trab.:', 'DIAS_TRA', 10)
         field(g1, 4, 0, 'Grupo Sang.:', 'TIP_SAN', 12, is_combo=True,
               values=['O+','O-','A+','A-','B+','B-','AB+','AB-'])
-        field(g1, 5, 0, 'Forma Pago:', 'TIPO_PGO', 12, is_combo=True, values=['1','2','3','4'])
+        field(g1, 5, 0, 'Período de Pago:', 'TIPO_PGO', 12, is_combo=True, values=['1', '2', '3'])
 
         g2 = ttk.LabelFrame(f, text="Cuentas Contables", padding=8)
         g2.pack(fill='x', padx=6, pady=4)
@@ -880,7 +1160,7 @@ class SistemaGestionEmpleados10:
                      bg=COL_BG).grid(row=row, column=0, sticky='w', padx=4, pady=2)
             var = tk.StringVar()
             self._ref_vars[key] = var
-            w = ttk.Entry(container, textvariable=var, width=width)
+            w = ttk.Entry(container, textvariable=var, width=width, font=FONT_DEFAULT)
             w.grid(row=row, column=1, sticky='w', padx=4, pady=2)
             self._form_widgets[f'ref_{key}'] = w
 
@@ -889,12 +1169,14 @@ class SistemaGestionEmpleados10:
         field(g1, 0, 'Cédula Militar:', 'CED_MIL', 20)
         tk.Label(g1, text='Edad:', font=FONT_LABEL, bg=COL_BG).grid(row=0, column=2, sticky='w', padx=4, pady=2)
         self._ref_vars['EDAD'] = tk.StringVar()
-        w = ttk.Entry(g1, textvariable=self._ref_vars['EDAD'], width=10); w.grid(row=0, column=3, sticky='w', padx=4, pady=2)
+        w = ttk.Entry(g1, textvariable=self._ref_vars['EDAD'], width=10, font=FONT_DEFAULT); w.grid(row=0, column=3, sticky='w', padx=4, pady=2)
         self._form_widgets['ref_EDAD'] = w
         field(g1, 1, 'Tipo Sangre:', 'TIP_SAN', 12)
         field(g1, 2, 'Nro Cert. Votación:', 'IDVOTA', 20)
         field(g1, 3, 'Licencia Conducir:', 'LICCOND', 16)
         field(g1, 4, 'Código IESS:', 'CODIESS', 20)
+        field(g1, 5, 'Carnet Conadis:', 'ID_CONADIS', 20)
+        field(g1, 6, 'Visita Domiciliaria:', 'OBSERV', 60)
 
         g2 = ttk.LabelFrame(sf, text="Estudios", padding=8)
         g2.grid(row=1, column=0, columnspan=2, sticky='ew', padx=4, pady=3)
@@ -929,11 +1211,28 @@ class SistemaGestionEmpleados10:
         field(g3, 5, 'Reentrenamiento:', 'reentrenamiento', 38)
         field(g3, 6, 'Vacuna:', 'vacuna', 38)
 
+        self._ref_vars['FZA_PUB'] = tk.BooleanVar()
+        chk = tk.Checkbutton(g3, text='Miembro activo de la Fuerza Pública', variable=self._ref_vars['FZA_PUB'],
+                       font=FONT_LABEL, bg=COL_BG, fg=COL_TEXT,
+                       selectcolor=COL_ACCENT, activebackground=COL_BG)
+        chk.grid(row=7, column=0, columnspan=2, sticky='w', padx=4, pady=2)
+        self._check_widgets['FZA_PUB'] = chk
+
+        self._ref_vars['SER_MIL'] = tk.BooleanVar()
+        chk = tk.Checkbutton(g3, text='Realizó el Servicio Militar', variable=self._ref_vars['SER_MIL'],
+                       font=FONT_LABEL, bg=COL_BG, fg=COL_TEXT,
+                       selectcolor=COL_ACCENT, activebackground=COL_BG)
+        chk.grid(row=8, column=0, columnspan=2, sticky='w', padx=4, pady=2)
+        self._check_widgets['SER_MIL'] = chk
+
         g4 = ttk.LabelFrame(sf, text="Información Adicional", padding=8)
         g4.grid(row=3, column=0, columnspan=2, sticky='ew', padx=4, pady=3)
         field(g4, 0, 'Cert. Violencia Intraf.:', 'CERTVINF', 50)
         field(g4, 1, 'Maniobras:', 'MANIOBRAS', 50)
         field(g4, 2, 'No. Afiliación IESS:', 'NUM_AFIL', 20)
+
+        _bind_scroll_rueda(canvas, canvas)
+        _bind_scroll_rueda(sf, canvas)
 
     # ── Lazy Refresh ────────────────────────────────────────────────
     def _on_tab_change(self, ev=None):
@@ -971,6 +1270,7 @@ class SistemaGestionEmpleados10:
                 self._cargar_catalogos()
                 self.root.after(100, self._actualizar_combos_catalogos)
                 self.root.after(200, self._cargar_lista)
+                self.root.after(250, self._cargar_autocomplete_empleados)
                 self.root.after(0, lambda: self._status("Conectado a SQL Server"))
             except Exception as e:
                 self.root.after(0, lambda msg=f"Error BD: {str(e)}": self._status(msg))
@@ -981,21 +1281,26 @@ class SistemaGestionEmpleados10:
         if not self.conn or self._catalogos_cargados:
             return
         try:
-            cur = self.conn.cursor()
-            for tipo, dest in [('CAR', self.cargos), ('SEC', self.secciones), ('DPT', self.departamentos),
-                               ('SEX', self.sexos), ('ECS', self.estados_civiles),
-                               ('TTR', self.tipos_trabajo), ('FPA', self.formas_pago),
-                               ('BCO', self.bancos)]:
-                try:
-                    cur.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO = ? ORDER BY NOMBRE", (tipo,))
-                    dest.clear()
-                    for r in cur.fetchall():
-                        dest[str(r[0]).strip()] = r[1]
-                except Exception:
-                    dest.clear()
+            with self.conn_lock:
+                cur = self.conn.cursor()
+                # ECS, TTR y FPF no se cargan aquí: no existe catálogo real para
+                # Estado Civil/Tipo Trabajo en DBTABLAS, y FPF es un catálogo
+                # de forma de pago de facturación que no corresponde a
+                # RPEMPLEA.TIPO_PGO (ver self.estados_civiles/tipos_trabajo/
+                # periodos_pago en __init__ para el detalle).
+                for tipo, dest in [('FNC', self.cargos), ('SEC', self.secciones), ('DPT', self.departamentos),
+                                   ('BAN', self.bancos)]:
+                    try:
+                        cur.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO = ? AND CODEMP = '10' ORDER BY NOMBRE", (tipo,))
+                        dest.clear()
+                        for r in cur.fetchall():
+                            dest[str(r[0]).strip()] = r[1]
+                    except Exception as e:
+                        LOG.error("Error cargando catalogo TIPO='%s': %s", tipo, e)
+                        dest.clear()
             self._catalogos_cargados = True
-        except Exception:
-            pass
+        except Exception as e:
+            LOG.error("Error general cargando catalogos: %s", e)
 
     def _obtener_nombre(self, codigo, catalogo):
         if not codigo:
@@ -1007,6 +1312,28 @@ class SistemaGestionEmpleados10:
             return val.split(' - ')[0].strip()
         return val
 
+    # ── Flags de nómina (CAT_PROYECT_7/8, RPCAM2) ─────────────────────
+    # Columnas varchar genéricas reutilizadas que usan '1'/'0' como texto
+    # (ver 14_FONDO_RESERVA_DECIMOS_APORTE_CONYUGE.txt). NUM_AFIL (afiliado
+    # IESS / aplica Fondo de Reserva) NO vive aquí: es un número real, no
+    # un booleano, así que se muestra aparte como casillero de solo lectura
+    # calculado directo de NUM_AFIL, y se edita en Referencias.
+    def _cargar_flag_vars(self, datos):
+        for k, v in self._flag_vars.items():
+            v.set(str(datos.get(k)) == '1')
+        num_afil = datos.get('NUM_AFIL')
+        try:
+            # Misma condición exacta de SP_RP_PREPARA_ROL (IF @MNUMAFI <> 9999999999):
+            # NUM_AFIL=0 SÍ cuenta como afiliado aquí (es el valor por defecto en la
+            # gran mayoría de empleados activos) — solo 9999999999 es "no afiliado".
+            afiliado = num_afil is not None and float(num_afil) != 9999999999
+        except (TypeError, ValueError):
+            afiliado = False
+        self._afil_iess_var.set(afiliado)
+
+    def _flag_vars_a_datos(self):
+        return {k: ('1' if v.get() else '0') for k, v in self._flag_vars.items()}
+
     def _match_combo_val(self, codigo, items):
         if not codigo:
             return ""
@@ -1017,36 +1344,176 @@ class SistemaGestionEmpleados10:
         return cod
 
     def _actualizar_combos_catalogos(self):
-        mapa = {
-            '_combo_depto': self.departamentos,
-            '_combo_cargo': self.cargos,
-            '_combo_seccion': self.secciones,
-        }
-        for attr, cat in mapa.items():
-            combo = getattr(self, attr, None)
-            if combo and cat:
-                items = sorted([f"{k} - {v}" for k, v in cat.items()])
-                combo['values'] = items
+        for key, cat in [('DEPTO', self.departamentos), ('CARGO', self.cargos), ('SECCION', self.secciones)]:
+            if cat:
+                self._combo_full_values[key] = sorted([f"{k} - {v}" for k, v in cat.items()])
         for key, cat in [('SEXO', self.sexos), ('ESTADO_CI', self.estados_civiles),
-                          ('TIPO_TRA', self.tipos_trabajo), ('TIPO_PGO', self.formas_pago),
+                          ('TIPO_TRA', self.tipos_trabajo), ('TIPO_PGO', self.periodos_pago),
                           ('RUTA4', self.bancos)]:
             combo = self._combos_widgets.get(key)
             if combo and cat:
                 items = sorted([f"{k} - {v}" for k, v in cat.items()])
                 combo['values'] = items
 
-    def _actualizar_nombre_desc(self, campo):
-        mapa = {'DEPTO': (self._dg_vars['DEPTO'], self.departamentos, self._ent_depto),
-                'CARGO': (self._dg_vars['CARGO'], self.cargos, self._ent_cargo),
-                'SECCION': (self._dg_vars['SECCION'], self.secciones, self._ent_seccion)}
-        var, cat, ent = mapa.get(campo, (None, None, None))
-        if var:
-            cod = self._extraer_codigo(var.get())
-            nombre = self._obtener_nombre(cod, cat)
-            ent.configure(state='normal')
-            ent.delete(0, 'end')
-            ent.insert(0, nombre if nombre else "")
-            ent.configure(state='readonly')
+    def _crear_selector_catalogo(self, parent, row, label, key, tooltip):
+        """Campo de texto ancho + lista desplegable propia (no ttk.Combobox
+        nativo: su lista interna no se refresca de forma confiable mientras
+        está abierta y se está escribiendo). Al escribir filtra en vivo
+        self._combo_full_values[key] ('código - descripción'); al elegir un
+        resultado actualiza self._dg_vars[key] igual que antes."""
+        tk.Label(parent, text=label, font=FONT_LABEL,
+                 bg=COL_BG).grid(row=row, column=0, sticky='w', padx=4, pady=2)
+        self._dg_vars[key] = tk.StringVar()
+        entry = ttk.Entry(parent, textvariable=self._dg_vars[key], width=68, font=FONT_DEFAULT)
+        entry.grid(row=row, column=1, columnspan=2, sticky='w', padx=4, pady=2)
+        self._form_widgets[key] = entry
+        ToolTip(entry, tooltip)
+
+        sug_frame = tk.Frame(parent, bg=COL_CARD, relief='solid', borderwidth=1)
+        sug_list = tk.Listbox(sug_frame, font=FONT_DEFAULT, bg=COL_ENTRY_BG, fg=COL_TEXT,
+                               selectbackground=COL_ACCENT, selectforeground=COL_HEADER,
+                               height=8, borderwidth=0, highlightthickness=0, activestyle='none')
+        sug_list.pack(fill='both', expand=True, padx=2, pady=2)
+        estado = {'visible': False}
+
+        def mostrar():
+            if not estado['visible']:
+                x = entry.winfo_x()
+                y = entry.winfo_y() + entry.winfo_height()
+                ancho = max(420, entry.winfo_width())
+                sug_frame.place(in_=parent, x=x, y=y, width=ancho)
+                sug_frame.lift()
+                estado['visible'] = True
+
+        def ocultar():
+            if estado['visible']:
+                sug_frame.place_forget()
+                estado['visible'] = False
+
+        def on_key(event):
+            if not self.modo_edicion:
+                return
+            if event.keysym in ('Up', 'Down', 'Return', 'Escape', 'Tab'):
+                return
+            texto = entry.get().strip().lower()
+            full = self._combo_full_values.get(key, [])
+            if not texto:
+                ocultar()
+                return
+            filtrado = [v for v in full if texto in v.lower()][:30]
+            if not filtrado:
+                ocultar()
+                return
+            sug_list.delete(0, 'end')
+            for v in filtrado:
+                sug_list.insert('end', v)
+            mostrar()
+
+        def elegir(_event=None):
+            sel = sug_list.curselection()
+            if not sel:
+                return
+            self._dg_vars[key].set(sug_list.get(sel[0]))
+            ocultar()
+            self._marcar_modificado()
+
+        def on_focus_out(_event):
+            entry.after(150, _validar)
+
+        def _validar():
+            ocultar()
+            texto = entry.get()
+            full = self._combo_full_values.get(key, [])
+            if texto and texto not in full:
+                cod = self._extraer_codigo(texto)
+                match = self._match_combo_val(cod, full)
+                self._dg_vars[key].set(match if match else '')
+
+        entry.bind('<KeyRelease>', on_key)
+        entry.bind('<FocusOut>', on_focus_out)
+        entry.bind('<Escape>', lambda e: ocultar())
+        entry.bind('<Down>', lambda e: sug_list.focus_set() if estado['visible'] else None)
+        sug_list.bind('<<ListboxSelect>>', elegir)
+        sug_list.bind('<Return>', elegir)
+        return entry
+
+    # ── Autocompletar ───────────────────────────────────────────────
+    def _cargar_autocomplete_empleados(self):
+        def tarea():
+            try:
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"SELECT EMPLEADO, CEDULA, APELLIDOS, NOMBRES FROM RPEMPLEA "
+                                f"WHERE {SQL_FILTER} ORDER BY APELLIDOS")
+                    self._autocomplete_empleados = cur.fetchall()
+            except Exception as e:
+                LOG.error("Error cargando lista para autocompletar: %s", e)
+                self._autocomplete_empleados = []
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _debounce_autocomplete_change(self, *_args):
+        # Filtrar sobre ~2450 empleados en cada tecla presionada bloqueaba
+        # el hilo principal y hacía sentir la escritura "trabada"/con
+        # letras perdidas. Se espera una pausa breve antes de filtrar.
+        if getattr(self, '_autocomplete_debounce_id', None):
+            self.root.after_cancel(self._autocomplete_debounce_id)
+        self._autocomplete_debounce_id = self.root.after(180, self._on_autocomplete_change)
+
+    def _on_autocomplete_change(self, *_args):
+        texto = self._autocomplete_var.get().strip().lower()
+        if not texto:
+            self._autocomplete_ocultar()
+            return
+        matches = []
+        for emp in self._autocomplete_empleados:
+            cod, ced, ape, nom = emp
+            hay = f"{cod} {ced} {ape} {nom}".lower()
+            if texto in hay:
+                matches.append(emp)
+                if len(matches) >= 30:
+                    break
+        if not matches:
+            self._autocomplete_ocultar()
+            return
+        self._autocomplete_sug_list.delete(0, 'end')
+        self._autocomplete_map = {}
+        for i, (cod, ced, ape, nom) in enumerate(matches):
+            self._autocomplete_sug_list.insert('end', f"{cod}  |  {ape} {nom}  |  C.I. {ced}")
+            self._autocomplete_map[i] = cod
+        self._autocomplete_mostrar()
+
+    def _autocomplete_mostrar(self):
+        if not self._autocomplete_sug_visible:
+            self._autocomplete_sug_frame.pack(fill='x', pady=(2, 0))
+            self._autocomplete_sug_visible = True
+
+    def _autocomplete_ocultar(self):
+        if self._autocomplete_sug_visible:
+            self._autocomplete_sug_frame.pack_forget()
+            self._autocomplete_sug_visible = False
+
+    def _autocomplete_focus_listbox(self, _event=None):
+        if self._autocomplete_sug_visible and self._autocomplete_sug_list.size() > 0:
+            self._autocomplete_sug_list.focus_set()
+            self._autocomplete_sug_list.selection_set(0)
+
+    def _autocomplete_select_first(self, _event=None):
+        if self._autocomplete_sug_visible and self._autocomplete_sug_list.size() > 0:
+            self._autocomplete_sug_list.selection_clear(0, 'end')
+            self._autocomplete_sug_list.selection_set(0)
+            self._autocomplete_on_click()
+
+    def _autocomplete_on_click(self, _event=None):
+        sel = self._autocomplete_sug_list.curselection()
+        if not sel:
+            return
+        cod = self._autocomplete_map.get(sel[0])
+        if cod is None:
+            return
+        self._autocomplete_var.set("")
+        self._autocomplete_ocultar()
+        self._codigo_var.set(str(cod))
+        self._buscar_por_codigo()
 
     # ── BD: Búsquedas ───────────────────────────────────────────────
     def _buscar_por_cedula(self):
@@ -1057,13 +1524,14 @@ class SistemaGestionEmpleados10:
         self._status("Buscando...")
         def tarea():
             try:
-                cur = self.conn.cursor()
-                cur.execute(f"SELECT * FROM RPEMPLEA WHERE CEDULA=? AND {SQL_FILTER}", (ced,))
-                emp = cur.fetchone()
-                cols = [c[0] for c in cur.description]
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"SELECT * FROM RPEMPLEA WHERE CEDULA=? AND {SQL_FILTER}", (ced,))
+                    emp = cur.fetchone()
+                    cols = [c[0] for c in cur.description]
                 self.root.after(0, lambda: self._procesar_busqueda(emp, cols, "cédula", ced))
             except Exception as e:
-                self.root.after(0, lambda: self._status(f"Error: {e}"))
+                self.root.after(0, lambda msg=str(e): self._status(f"Error: {msg}"))
         threading.Thread(target=tarea, daemon=True).start()
 
     def _buscar_por_codigo(self):
@@ -1074,13 +1542,14 @@ class SistemaGestionEmpleados10:
         self._status("Buscando...")
         def tarea():
             try:
-                cur = self.conn.cursor()
-                cur.execute(f"SELECT * FROM RPEMPLEA WHERE EMPLEADO=? AND {SQL_FILTER}", (cod,))
-                emp = cur.fetchone()
-                cols = [c[0] for c in cur.description]
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"SELECT * FROM RPEMPLEA WHERE EMPLEADO=? AND {SQL_FILTER}", (cod,))
+                    emp = cur.fetchone()
+                    cols = [c[0] for c in cur.description]
                 self.root.after(0, lambda: self._procesar_busqueda(emp, cols, "código", cod))
             except Exception as e:
-                self.root.after(0, lambda: self._status(f"Error: {e}"))
+                self.root.after(0, lambda msg=str(e): self._status(f"Error: {msg}"))
         threading.Thread(target=tarea, daemon=True).start()
 
     def _procesar_busqueda(self, emp, cols, tipo, valor):
@@ -1102,21 +1571,20 @@ class SistemaGestionEmpleados10:
             if val is not None:
                 texto = str(val) if not isinstance(val, datetime) else val.strftime("%d/%m/%Y")
                 combo = self._combos_widgets.get(k)
-                if combo:
-                    items = combo.cget('values')
+                items = combo.cget('values') if combo else self._combo_full_values.get(k)
+                if items:
                     match = self._match_combo_val(texto, items)
                     if match:
                         texto = match
                 v.set(texto)
             else:
                 v.set("")
-        for campo in ['DEPTO', 'CARGO', 'SECCION']:
-            self._actualizar_nombre_desc(campo)
 
         # Ingresos
         for k, v in self._ing_vars.items():
             val = datos.get(k)
             v.set(str(val) if val is not None else "")
+        self._cargar_flag_vars(datos)
 
         # Otros
         for k, v in self._ot_vars.items():
@@ -1126,7 +1594,12 @@ class SistemaGestionEmpleados10:
                 v.set(sv)
                 self._check_states[k] = (sv == 'S')
             else:
-                texto = str(val) if val is not None else ""
+                if val is None:
+                    texto = ""
+                elif isinstance(val, datetime):
+                    texto = val.strftime("%d/%m/%Y")
+                else:
+                    texto = str(val)
                 combo = self._combos_widgets.get(k)
                 if combo and texto:
                     items = combo.cget('values')
@@ -1144,7 +1617,7 @@ class SistemaGestionEmpleados10:
         # Referencias
         for k, v in self._ref_vars.items():
             val = datos.get(k)
-            if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP']:
+            if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP', 'FZA_PUB', 'SER_MIL']:
                 if isinstance(v, tk.BooleanVar):
                     v.set(bool(val) if val else False)
             else:
@@ -1186,19 +1659,41 @@ class SistemaGestionEmpleados10:
                 elif f == "INACTIVOS":
                     where = "AND ESTADO != 'ACT'"
                 order = "ORDER BY APELLIDOS, NOMBRES" if self._orden_var.get() == "alfabetico" else "ORDER BY DEPTO, APELLIDOS, NOMBRES"
-                cur = self.conn.cursor()
-                cur.execute(f"SELECT EMPLEADO, APELLIDOS, NOMBRES FROM RPEMPLEA WHERE {SQL_FILTER} {where} {order}")
-                rows = cur.fetchall()
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"SELECT EMPLEADO, APELLIDOS, NOMBRES, CEDULA FROM RPEMPLEA WHERE {SQL_FILTER} {where} {order}")
+                    rows = cur.fetchall()
                 self.root.after(0, lambda: self._mostrar_lista(rows))
             except Exception as e:
-                self.root.after(0, lambda: self._status(f"Error lista: {e}"))
+                self.root.after(0, lambda msg=str(e): self._status(f"Error lista: {msg}"))
         threading.Thread(target=tarea, daemon=True).start()
 
     def _mostrar_lista(self, rows):
+        self._lista_rows_cache = rows
+        self._renderizar_lista()
+
+    def _debounce_renderizar_lista(self):
+        # Reconstruir el Treeview completo (hasta ~2450 filas) en cada
+        # tecla presionada bloqueaba el hilo principal y hacía sentir la
+        # escritura "trabada"/con letras perdidas. Se espera una pausa
+        # breve antes de re-filtrar.
+        if getattr(self, '_filtro_debounce_id', None):
+            self.root.after_cancel(self._filtro_debounce_id)
+        self._filtro_debounce_id = self.root.after(180, self._renderizar_lista)
+
+    def _renderizar_lista(self):
+        texto = self._filtro_texto_var.get().strip().lower()
         self._tree.delete(*self._tree.get_children())
-        for r in rows:
+        n = 0
+        for r in getattr(self, '_lista_rows_cache', []):
+            if texto:
+                hay = f"{r[0]} {r[1] or ''} {r[2] or ''} {r[3] or ''}".lower()
+                if texto not in hay:
+                    continue
             self._tree.insert('', 'end', values=(r[0], (r[1] or '').upper(), (r[2] or '').upper()))
-        self._status(f"Lista: {len(rows)} empleados")
+            n += 1
+        total = len(getattr(self, '_lista_rows_cache', []))
+        self._status(f"Lista: {n} de {total} empleados" if texto else f"Lista: {n} empleados")
 
     # ── Navegación lista ────────────────────────────────────────────
     def _on_tree_select(self, ev=None):
@@ -1269,17 +1764,15 @@ class SistemaGestionEmpleados10:
         for v in list(self._cert_vars.values()):
             v.set("")
         for k, v in self._ref_vars.items():
-            if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP']:
+            if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP', 'FZA_PUB', 'SER_MIL']:
                 v.set(False)
             else:
                 v.set("")
+        for v in self._flag_vars.values():
+            v.set(False)
         # Limpiar frame de observaciones
         for widget in self._obs_frame.winfo_children():
             widget.destroy()
-        for ent in [self._ent_depto, self._ent_cargo, self._ent_seccion]:
-            ent.configure(state='normal')
-            ent.delete(0, 'end')
-            ent.configure(state='readonly')
         self.empleado_actual = None
         self.datos_originales = None
         self.datos_modificados = False
@@ -1397,7 +1890,7 @@ class SistemaGestionEmpleados10:
             "  • ¿Ha verificado que no hay nóminas pendientes?\n"
             "  • ¿Ha consultado con el departamento de RRHH?\n"
             "  • ¿Está seguro de que no necesitará estos datos?\n\n"
-            "  💡 SUGERENCIA: Considere marcar como INACTIVO\n"
+            "  💡 SUGERENCIA: Considere marcar como LIQUIDADO\n"
             "     en lugar de eliminar permanentemente.\n\n"
             "═══════════════════════════════════════════════════════════════\n"
             "  ¿DESEA CONTINUAR CON LA ELIMINACIÓN?\n"
@@ -1450,21 +1943,22 @@ class SistemaGestionEmpleados10:
         self._status(f"Eliminando empleado {cod}...")
         def tarea():
             try:
-                cur = self.conn.cursor()
-                cur.execute("DELETE FROM RPEMPLEA WHERE EMPLEADO=? AND " + SQL_FILTER, (cod,))
-                if cur.rowcount == 0:
-                    self.root.after(0, lambda: messagebox.showerror(
-                        "ERROR AL ELIMINAR",
-                        "═══════════════════════════════════════════════\n"
-                        "  No se pudo eliminar el empleado.\n\n"
-                        "  Posibles causas:\n"
-                        "  • El empleado ya fue eliminado\n"
-                        "    por otro usuario\n"
-                        "  • Error de conexión a la BD\n"
-                        "═══════════════════════════════════════════════"
-                    ))
-                    return
-                self.conn.commit()
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute("DELETE FROM RPEMPLEA WHERE EMPLEADO=? AND " + SQL_FILTER, (cod,))
+                    if cur.rowcount == 0:
+                        self.root.after(0, lambda: messagebox.showerror(
+                            "ERROR AL ELIMINAR",
+                            "═══════════════════════════════════════════════\n"
+                            "  No se pudo eliminar el empleado.\n\n"
+                            "  Posibles causas:\n"
+                            "  • El empleado ya fue eliminado\n"
+                            "    por otro usuario\n"
+                            "  • Error de conexión a la BD\n"
+                            "═══════════════════════════════════════════════"
+                        ))
+                        return
+                    self.conn.commit()
                 self.root.after(0, lambda: messagebox.showinfo(
                     "ELIMINACIÓN EXITOSA",
                     "═══════════════════════════════════════════════\n"
@@ -1479,11 +1973,11 @@ class SistemaGestionEmpleados10:
                 self.root.after(0, self._cargar_lista)
                 self.root.after(0, self._nuevo_empleado)
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror(
+                self.root.after(0, lambda msg=str(e): messagebox.showerror(
                     "ERROR CRÍTICO",
                     "═══════════════════════════════════════════════\n"
                     f"  Error al eliminar empleado:\n\n"
-                    f"  {str(e)}\n\n"
+                    f"  {msg}\n\n"
                     "  El empleado NO ha sido eliminado.\n"
                     "  Contacte al administrador.\n"
                     "═══════════════════════════════════════════════"
@@ -1571,6 +2065,7 @@ class SistemaGestionEmpleados10:
                             datos[k] = val
                     else:
                         datos[k] = None
+                datos.update(self._flag_vars_a_datos())
                 for k, v in self._ot_vars.items():
                     if k in ['INCL_ROL', 'INCL_BAN']:
                         datos[k] = v.get() if v.get() in ['S', 'N'] else 'N'
@@ -1580,41 +2075,40 @@ class SistemaGestionEmpleados10:
                 for k, v in self._cert_vars.items():
                     datos[k] = v.get() if v.get() else None
                 for k, v in self._ref_vars.items():
-                    if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP']:
+                    if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP', 'FZA_PUB', 'SER_MIL']:
                         datos[k] = 1 if v.get() else 0
                     else:
                         datos[k] = v.get() if v.get() else None
-                # Las observaciones se guardan en RPEMPOBSERV, no en OBSERV de RPEMPLEA
-                datos['OBSERV'] = None
 
-                cur = self.conn.cursor()
-                if self.empleado_actual:
-                    campos = [f"{k}=?" for k in datos if k != 'EMPLEADO']
-                    vals = [datos[k] for k in datos if k != 'EMPLEADO'] + [cod]
-                    cur.execute(f"UPDATE RPEMPLEA SET {', '.join(campos)} WHERE EMPLEADO=? AND {SQL_FILTER}", vals)
-                else:
-                    # Verificar duplicados antes de INSERT
-                    cur.execute(f"SELECT COUNT(*) FROM RPEMPLEA WHERE EMPLEADO=? AND {SQL_FILTER}", (cod,))
-                    if cur.fetchone()[0] > 0:
-                        self.root.after(0, lambda: messagebox.showerror("ERROR",
-                            f"═══════════════════════════════════════════════\n"
-                            f"  Ya existe un empleado con código {cod}.\n\n"
-                            f"  Verifique que el código sea único.\n"
-                            f"═══════════════════════════════════════════════"))
-                        return
-                    cur.execute(f"SELECT COUNT(*) FROM RPEMPLEA WHERE CEDULA=? AND {SQL_FILTER}", (ced,))
-                    if cur.fetchone()[0] > 0:
-                        self.root.after(0, lambda: messagebox.showerror("ERROR",
-                            f"═══════════════════════════════════════════════\n"
-                            f"  Ya existe un empleado con cédula {ced}.\n\n"
-                            f"  Verifique que la cédula sea única.\n"
-                            f"═══════════════════════════════════════════════"))
-                        return
-                    cols = list(datos.keys())
-                    ph = ', '.join(['?'] * len(cols))
-                    vals = [datos[k] for k in cols]
-                    cur.execute(f"INSERT INTO RPEMPLEA ({', '.join(cols)}) VALUES ({ph})", vals)
-                self.conn.commit()
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    if self.empleado_actual:
+                        campos = [f"{k}=?" for k in datos if k != 'EMPLEADO']
+                        vals = [datos[k] for k in datos if k != 'EMPLEADO'] + [cod]
+                        cur.execute(f"UPDATE RPEMPLEA SET {', '.join(campos)} WHERE EMPLEADO=? AND {SQL_FILTER}", vals)
+                    else:
+                        # Verificar duplicados antes de INSERT
+                        cur.execute(f"SELECT COUNT(*) FROM RPEMPLEA WHERE EMPLEADO=? AND {SQL_FILTER}", (cod,))
+                        if cur.fetchone()[0] > 0:
+                            self.root.after(0, lambda: messagebox.showerror("ERROR",
+                                f"═══════════════════════════════════════════════\n"
+                                f"  Ya existe un empleado con código {cod}.\n\n"
+                                f"  Verifique que el código sea único.\n"
+                                f"═══════════════════════════════════════════════"))
+                            return
+                        cur.execute(f"SELECT COUNT(*) FROM RPEMPLEA WHERE CEDULA=? AND {SQL_FILTER}", (ced,))
+                        if cur.fetchone()[0] > 0:
+                            self.root.after(0, lambda: messagebox.showerror("ERROR",
+                                f"═══════════════════════════════════════════════\n"
+                                f"  Ya existe un empleado con cédula {ced}.\n\n"
+                                f"  Verifique que la cédula sea única.\n"
+                                f"═══════════════════════════════════════════════"))
+                            return
+                        cols = list(datos.keys())
+                        ph = ', '.join(['?'] * len(cols))
+                        vals = [datos[k] for k in cols]
+                        cur.execute(f"INSERT INTO RPEMPLEA ({', '.join(cols)}) VALUES ({ph})", vals)
+                    self.conn.commit()
 
                 self.root.after(0, lambda: messagebox.showinfo(
                     "OPERACIÓN EXITOSA",
@@ -1631,11 +2125,11 @@ class SistemaGestionEmpleados10:
                 self.root.after(0, lambda: self._set_form_state('view'))
                 self.root.after(0, self._actualizar_label_empleado)
             except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror(
+                self.root.after(0, lambda msg=str(e): messagebox.showerror(
                     "ERROR AL GUARDAR",
                     "═══════════════════════════════════════════════\n"
                     f"  Ocurrió un error al guardar:\n\n"
-                    f"  {str(e)}\n\n"
+                    f"  {msg}\n\n"
                     "  Los cambios NO han sido aplicados.\n"
                     "  Intente nuevamente.\n"
                     "═══════════════════════════════════════════════"
@@ -1688,16 +2182,16 @@ class SistemaGestionEmpleados10:
             val = datos.get(k)
             texto = str(val) if val is not None else ""
             combo = self._combos_widgets.get(k)
-            if combo and texto:
-                match = self._match_combo_val(texto, combo.cget('values'))
+            items = combo.cget('values') if combo else self._combo_full_values.get(k)
+            if items and texto:
+                match = self._match_combo_val(texto, items)
                 if match:
                     texto = match
             v.set(texto)
-        for campo in ['DEPTO', 'CARGO', 'SECCION']:
-            self._actualizar_nombre_desc(campo)
         for k, v in self._ing_vars.items():
             val = datos.get(k)
             v.set(str(val) if val is not None else "")
+        self._cargar_flag_vars(datos)
         for k, v in self._ot_vars.items():
             val = datos.get(k)
             if k in ['INCL_ROL', 'INCL_BAN']:
@@ -1718,7 +2212,7 @@ class SistemaGestionEmpleados10:
             v.set(str(val) if val is not None else "")
         for k, v in self._ref_vars.items():
             val = datos.get(k)
-            if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP']:
+            if k in ['PRIMARIA', 'SECUNDARIA', 'EST_SUP', 'FZA_PUB', 'SER_MIL']:
                 if isinstance(v, tk.BooleanVar):
                     v.set(bool(val) if val else False)
             else:
@@ -1815,26 +2309,7 @@ class SistemaGestionEmpleados10:
         dlg.transient(self.root)
         dlg.grab_set()
         dlg.configure(bg=COL_BG)
-        VistaCompletaWindow(dlg, self.conn)
-
-    # ── Edición Masiva ──────────────────────────────────────────────
-    def _edicion_masiva(self):
-        dlg = tk.Toplevel(self.root)
-        dlg.title("Edición Masiva — Excel")
-        dlg.geometry("900x700")
-        dlg.transient(self.root)
-        dlg.grab_set()
-        dlg.configure(bg=COL_BG)
-        EdicionMasivaFrame(dlg, self)
-
-    def _agregar_observaciones(self):
-        dlg = tk.Toplevel(self.root)
-        dlg.title("Agregar Observaciones Masivas — RPEMPOBSERV")
-        dlg.geometry("950x750")
-        dlg.transient(self.root)
-        dlg.grab_set()
-        dlg.configure(bg=COL_BG)
-        ObservacionesMasivasFrame(dlg, self)
+        VistaCompletaWindow(dlg, self.conn, self.conn_lock)
 
     def _abrir_buscador(self):
         dlg = tk.Toplevel(self.root)
@@ -1844,6 +2319,15 @@ class SistemaGestionEmpleados10:
         dlg.grab_set()
         dlg.configure(bg=COL_BG)
         BuscadorAvanzadoFrame(dlg, self)
+
+    def _abrir_exportador_catalogos(self):
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Exportar Catálogos — DBTABLAS")
+        dlg.geometry("520x560")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.configure(bg=COL_BG)
+        ExportadorCatalogosWindow(dlg, self.conn, self.conn_lock)
 
     # ── Cierre ──────────────────────────────────────────────────────
     def _on_close(self):
@@ -1874,253 +2358,6 @@ class SistemaGestionEmpleados10:
             pass
 
 
-# ═══════════════════════════════════════════════════════════════════
-# Edición Masiva
-# ═══════════════════════════════════════════════════════════════════
-class EdicionMasivaFrame:
-    def __init__(self, window, app):
-        self.window = window
-        self.app = app
-        self.conn = app.conn
-        self.datos_validados = None
-        self._build()
-
-    def _build(self):
-        main = ttk.Frame(self.window)
-        main.pack(fill='both', expand=True, padx=16, pady=16)
-
-        tk.Label(main, text="📊 Edición Masiva por Plantilla Excel",
-                 font=('Segoe UI', 14, 'bold'), fg=COL_HEADER, bg=COL_BG).pack(pady=(0, 8))
-
-        # Instrucciones
-        info = tk.Frame(main, bg=COL_CARD, relief='solid', borderwidth=1)
-        info.pack(fill='x', padx=8, pady=(0, 8))
-        tk.Label(info, text="ℹ️  INSTRUCCIONES:", font=FONT_LABEL, fg=COL_ACCENT, bg=COL_CARD).pack(anchor='w', padx=6, pady=(4, 2))
-        txt_info = ("1. Selecciona los campos que quieres modificar en la pestaña 'Descargar'\n"
-                   "2. Descarga la plantilla Excel con los datos actuales\n"
-                   "3. Edita los valores en Excel (solo las celdas que cambiarán)\n"
-                   "4. Sube el archivo en la pestaña 'Cargar y Aplicar'\n"
-                   "5. Valida los cambios (muestra un resumen)\n"
-                   "6. Aplica los cambios a la base de datos")
-        tk.Label(info, text=txt_info, font=FONT_SMALL, fg=COL_TEXT, bg=COL_CARD,
-                justify='left').pack(anchor='w', padx=6, pady=(2, 4))
-
-        nb = ttk.Notebook(main)
-        nb.pack(fill='both', expand=True)
-
-        # Tab 1: Descargar
-        t1 = ttk.Frame(nb)
-        nb.add(t1, text="1. Descargar Plantilla")
-        tk.Label(t1, text="Campos a incluir:", font=FONT_LABEL,
-                 bg=COL_BG).pack(anchor='w', padx=8, pady=4)
-
-        # Botones Seleccionar/Deseleccionar
-        btn_bar = ttk.Frame(t1)
-        btn_bar.pack(fill='x', padx=8, pady=4)
-        ttk.Button(btn_bar, text="✓ Seleccionar Todo", command=self._seleccionar_todo).pack(side='left', padx=2)
-        ttk.Button(btn_bar, text="✗ Deseleccionar Todo", command=self._deseleccionar_todo).pack(side='left', padx=2)
-
-        self._campos_vars = {}
-        cf = ttk.Frame(t1)
-        cf.pack(fill='x', padx=8)
-        # Campos expandidos con más opciones
-        campos = [
-            ('NOMBRES','Nombres'),('APELLIDOS','Apellidos'),('CEDULA','Cédula'),
-            ('SEXO','Sexo'),('ESTADO_CI','E.Civil'),('LUGAR_NAC','Lugar Nac.'),
-            ('FECHA_NAC','F.Nacimiento'),('DIRECCION','Dirección'),('PROVINCIA','Provincia'),
-            ('CANTON','Cantón'),('PARROQUIA','Parroquia'),('NACIONAL','Nacionalidad'),
-            ('TELEFONO','Teléfono'),('RPCAM','2do Teléfono'),('emp_mail','Email'),
-            ('FECHA_ING','F.Ingreso'),('DEPTO','Depto'),('SECCION','Sección'),
-            ('CARGO','Cargo'),('ESTADO','Estado'),('ACTIVIDAD','Actividad'),
-            ('CONYUGUE','Cónyuge'),('TIPO_TRA','Tipo Trab.'),
-            ('SUELDO','Sueldo'),('BONIFI','Bonif.'),('COMPEN','Compens.'),
-            ('TRANSP','Transporte'),('LUNCH','Lunch'),('HOR25','H.25%'),
-            ('HOR50','H.50%'),('HOR100','H.100%'),('DECIMO3','D3'),('DECIMO4','D4'),
-            ('VACACION','Vacaciones'),('CARGAS','Cargas'),('ULTLIQ','Últ.Líq.'),
-            ('DIAS_TRA','Días Trab.'),('TIP_SAN','T.Sangre'),('TIPO_PGO','T.Pago'),
-            ('CODCTA','Cód.Cuenta'),('CTADPT','C.Depto'),('CTAAUX','C.Aux'),
-            ('RUTA4','Ruta'),('CTA_CTE','C.Corriente'),('CTA_AHO','C.Ahorros'),
-            ('INCL_ROL','Incl.Rol'),('INCL_BAN','Incl.Banco'),
-            ('NOM_FAM','Familiares'),('DIR_FAM','Dir.Fam'),('TEL_FAM','Tel.Fam'),
-            ('NOM_NO_FAM','No Familiares'),('DIR_NO_FAM','Dir.NoFam'),('TEL_NO_FAM','Tel.NoFam'),
-            ('CED_MIL','C.Militar'),('EDAD','Edad'),('IDVOTA','C.Votación'),
-            ('LICCOND','L.Conducir'),('CODIESS','C.IESS'),('TITULO','Título'),
-            ('ANIO_EST','Años Est.'),('CERTVINF','Cert.Violencia'),('MANIOBRAS','Maniobras'),
-            ('NUM_AFIL','Afil.IESS'),('OBSERV','Observaciones')
-        ]
-        for i, (k, n) in enumerate(campos):
-            v = tk.BooleanVar(value=(i < 10))  # Primeros 10 por defecto
-            self._campos_vars[k] = v
-            tk.Checkbutton(cf, text=n, variable=v, font=FONT_SMALL,
-                           bg=COL_BG, fg=COL_TEXT, selectcolor=COL_ACCENT).grid(row=i//6, column=i%6, sticky='w', padx=4, pady=1)
-
-        btnf = ttk.Frame(t1)
-        btnf.pack(pady=8)
-        ttk.Button(btnf, text="⬇ Descargar Plantilla Excel",
-                   command=self._descargar, style='Accent.TButton').pack(side='left', padx=4)
-
-        # Tab 2: Cargar
-        t2 = ttk.Frame(nb)
-        nb.add(t2, text="2. Cargar y Aplicar")
-        t2_content = ttk.Frame(t2)
-        t2_content.pack(fill='both', expand=True, padx=8, pady=8)
-
-        # Archivo
-        tk.Label(t2_content, text="Archivo Excel:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w', pady=(0, 4))
-        self._archivo_var = tk.StringVar()
-        rf = ttk.Frame(t2_content)
-        rf.pack(fill='x', pady=(0, 4))
-        ttk.Entry(rf, textvariable=self._archivo_var, width=50).pack(side='left', padx=(0, 4))
-        ttk.Button(rf, text="📁 Seleccionar", command=self._seleccionar).pack(side='left', padx=2)
-
-        # Botones
-        bf = ttk.Frame(t2_content)
-        bf.pack(fill='x', pady=(0, 8))
-        ttk.Button(bf, text="✓ Validar Cambios", command=self._validar,
-                  style='Accent.TButton').pack(side='left', padx=2)
-        self._btn_aplicar = ttk.Button(bf, text="⚡ Aplicar Cambios",
-                                       command=self._aplicar, state='disabled',
-                                       style='Accent.TButton')
-        self._btn_aplicar.pack(side='left', padx=2)
-
-        # Resultado
-        tk.Label(t2_content, text="Resumen de Cambios:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w', pady=(8, 4))
-        res_frame = ttk.Frame(t2_content)
-        res_frame.pack(fill='both', expand=True)
-        self._resultado = tk.Text(res_frame, font=('Consolas', 9),
-                                  bg=COL_ENTRY_BG, fg=COL_TEXT, wrap='word', relief='solid', borderwidth=1)
-        self._resultado.pack(side='left', fill='both', expand=True)
-        vsb = ttk.Scrollbar(res_frame, orient='vertical', command=self._resultado.yview)
-        vsb.pack(side='right', fill='y')
-        self._resultado.configure(yscrollcommand=vsb.set)
-
-        ttk.Button(main, text="Cerrar", command=self.window.destroy).pack(pady=8)
-
-    def _seleccionar_todo(self):
-        for v in self._campos_vars.values():
-            v.set(True)
-
-    def _deseleccionar_todo(self):
-        for v in self._campos_vars.values():
-            v.set(False)
-
-    def _descargar(self):
-        if not self.conn:
-            messagebox.showerror("Error", "Sin conexión a BD")
-            return
-        campos_sel = [k for k, v in self._campos_vars.items() if v.get()]
-        if not campos_sel:
-            messagebox.showwarning("Aviso", "Seleccione al menos un campo")
-            return
-        def tarea():
-            try:
-                cur = self.conn.cursor()
-                cols = ['EMPLEADO'] + campos_sel
-                cur.execute(f"SELECT {', '.join(cols)} FROM RPEMPLEA WHERE {SQL_FILTER} ORDER BY EMPLEADO")
-                rows = cur.fetchall()
-                from openpyxl import Workbook
-                from openpyxl.styles import Font
-                wb = Workbook()
-                ws = wb.active
-                ws.title = "EMPLEADOS"
-                for ci, h in enumerate(cols, 1):
-                    ws.cell(row=1, column=ci, value=h).font = Font(bold=True)
-                for ri, r in enumerate(rows, 2):
-                    for ci, v in enumerate(r, 1):
-                        ws.cell(row=ri, column=ci, value=v)
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                fn = f"PLANTILLA_EMPLEADOS_{ts}.xlsx"
-                wb.save(fn)
-                self.window.after(0, lambda: messagebox.showinfo("Éxito", f"Plantilla creada:\n{fn}"))
-            except ImportError:
-                self.window.after(0, lambda: messagebox.showerror("Error", "Requiere openpyxl:\npip install openpyxl"))
-            except Exception as e:
-                self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", msg))
-        threading.Thread(target=tarea, daemon=True).start()
-
-    def _seleccionar(self):
-        f = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
-        if f:
-            self._archivo_var.set(f)
-            self._btn_aplicar.config(state='disabled')
-
-    def _validar(self):
-        arch = self._archivo_var.get()
-        if not arch:
-            messagebox.showwarning("Aviso", "Seleccione un archivo")
-            return
-        def tarea():
-            try:
-                from openpyxl import load_workbook
-                wb = load_workbook(arch, data_only=True)
-                ws = wb['EMPLEADOS']
-                headers = [c.value for c in ws[1]]
-                if 'EMPLEADO' not in headers:
-                    self.window.after(0, lambda: messagebox.showerror("Error", "Columna EMPLEADO requerida"))
-                    return
-                datos = []
-                for row in ws.iter_rows(min_row=2, values_only=True):
-                    if row[0]:
-                        datos.append(row)
-                if not datos:
-                    self.window.after(0, lambda: messagebox.showerror("Error", "Sin datos"))
-                    return
-                ei = headers.index('EMPLEADO')
-                cambios = []
-                for row in datos:
-                    emp = row[ei]
-                    cur = self.conn.cursor()
-                    cur.execute("SELECT COUNT(*) FROM RPEMPLEA WHERE EMPLEADO=?", (emp,))
-                    if cur.fetchone()[0] == 0:
-                        continue
-                    cambios_emp = {}
-                    for i, h in enumerate(headers):
-                        if h != 'EMPLEADO' and i < len(row) and row[i] is not None and str(row[i]).strip():
-                            cambios_emp[h] = row[i]
-                    if cambios_emp:
-                        cambios.append({'codigo': emp, 'cambios': cambios_emp})
-                self.datos_validados = cambios
-                self.window.after(0, lambda: self._mostrar_validacion(cambios))
-            except Exception as e:
-                self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", msg))
-        threading.Thread(target=tarea, daemon=True).start()
-
-    def _mostrar_validacion(self, cambios):
-        self._resultado.delete(1.0, 'end')
-        t = sum(len(c['cambios']) for c in cambios)
-        self._resultado.insert('end', f"Empleados con cambios: {len(cambios)}\n")
-        self._resultado.insert('end', f"Total cambios: {t}\n\n")
-        for c in cambios:
-            self._resultado.insert('end', f"  {c['codigo']}: {', '.join(c['cambios'].keys())}\n")
-        if cambios:
-            self._btn_aplicar.config(state='normal')
-
-    def _aplicar(self):
-        if not self.datos_validados:
-            return
-        if not messagebox.askyesno("Confirmar", "¿Aplicar cambios masivos?", icon='warning'):
-            return
-        self._btn_aplicar.config(state='disabled')
-        def tarea():
-            try:
-                ok, err = 0, 0
-                for emp in self.datos_validados:
-                    try:
-                        sets = '=?, '.join(emp['cambios'].keys()) + '=?'
-                        vals = list(emp['cambios'].values()) + [emp['codigo']]
-                        self.conn.cursor().execute(
-                            f"UPDATE RPEMPLEA SET {sets} WHERE EMPLEADO=? AND {SQL_FILTER}", vals)
-                        ok += 1
-                    except Exception:
-                        err += 1
-                self.conn.commit()
-                self.window.after(0, lambda: messagebox.showinfo(
-                    "Completado", f"Actualizados: {ok}, Errores: {err}"))
-                self.window.after(0, self.app._cargar_lista)
-                self.datos_validados = None
-            except Exception as e:
-                self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", msg))
-        threading.Thread(target=tarea, daemon=True).start()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2162,7 +2399,7 @@ class BuscadorAvanzadoFrame:
         tk.Label(g, text="Cédula:", font=FONT_LABEL, bg=COL_BG).grid(row=1, column=0, sticky='e', padx=6, pady=4)
         ttk.Entry(g, textvariable=self._cedula_var_b, width=20).grid(row=1, column=1, sticky='w', padx=6, pady=4)
         tk.Label(g, text="Estado:", font=FONT_LABEL, bg=COL_BG).grid(row=1, column=2, sticky='e', padx=(14,6), pady=4)
-        ttk.Combobox(g, textvariable=self._estado_var_b, values=["TODOS", "ACTIVO", "INACTIVO"],
+        ttk.Combobox(g, textvariable=self._estado_var_b, values=["TODOS", "ACTIVO", "LIQUIDADO", "SUSPENDIDO"],
                      width=12, state='readonly').grid(row=1, column=3, sticky='w', padx=6, pady=4)
 
         tk.Label(g, text="Departamento:", font=FONT_LABEL, bg=COL_BG).grid(row=2, column=0, sticky='e', padx=6, pady=4)
@@ -2248,7 +2485,6 @@ class BuscadorAvanzadoFrame:
         self.window.update_idletasks()
         def tarea():
             try:
-                cur = self.conn.cursor()
                 q = ("SELECT EMPLEADO, APELLIDOS, NOMBRES, CEDULA, CARGO, "
                      "'' as CARGO_NOM, DEPTO, '' as DEPTO_NOM, SUELDO, "
                      "TELEFONO, emp_mail, ESTADO "
@@ -2267,8 +2503,10 @@ class BuscadorAvanzadoFrame:
                     params.append(ced)
                 if est == "ACTIVO":
                     q += " AND ESTADO = 'ACT'"
-                elif est == "INACTIVO":
-                    q += " AND ESTADO != 'ACT'"
+                elif est == "LIQUIDADO":
+                    q += " AND ESTADO = 'LIQ'"
+                elif est == "SUSPENDIDO":
+                    q += " AND ESTADO = 'SUS'"
                 if dep:
                     q += " AND DEPTO = ?"
                     params.append(dep)
@@ -2276,22 +2514,25 @@ class BuscadorAvanzadoFrame:
                     q += " AND CARGO = ?"
                     params.append(car)
                 q += " ORDER BY APELLIDOS, NOMBRES"
-                cur.execute(q, params)
-                rows = cur.fetchall()
 
-                # Obtener nombres descriptivos para cargos y deptos
                 nombres_cargo = {}
                 nombres_depto = {}
-                try:
-                    cur2 = self.conn.cursor()
-                    cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='CAR'")
-                    for r in cur2.fetchall():
-                        nombres_cargo[str(r[0]).strip()] = r[1]
-                    cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='DPT'")
-                    for r in cur2.fetchall():
-                        nombres_depto[str(r[0]).strip()] = r[1]
-                except Exception:
-                    pass
+                with self.app.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(q, params)
+                    rows = cur.fetchall()
+
+                    # Obtener nombres descriptivos para cargos y deptos
+                    try:
+                        cur2 = self.conn.cursor()
+                        cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='FNC' AND CODEMP='10'")
+                        for r in cur2.fetchall():
+                            nombres_cargo[str(r[0]).strip()] = r[1]
+                        cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='DPT' AND CODEMP='10'")
+                        for r in cur2.fetchall():
+                            nombres_depto[str(r[0]).strip()] = r[1]
+                    except Exception as e:
+                        LOG.error("Error cargando nombres de cargo/depto en busqueda avanzada: %s", e)
 
                 resultados = []
                 for r in rows:
@@ -2337,26 +2578,27 @@ class BuscadorAvanzadoFrame:
         self.window.update_idletasks()
         def tarea():
             try:
-                cur = self.conn.cursor()
-                cur.execute(
-                    "SELECT EMPLEADO, APELLIDOS, NOMBRES, CEDULA, CARGO, "
-                    "'' as CARGO_NOM, DEPTO, '' as DEPTO_NOM, SUELDO, "
-                    "TELEFONO, emp_mail, ESTADO "
-                    f"FROM RPEMPLEA WHERE {SQL_FILTER} ORDER BY APELLIDOS, NOMBRES"
-                )
-                rows = cur.fetchall()
                 nombres_cargo = {}
                 nombres_depto = {}
-                try:
-                    cur2 = self.conn.cursor()
-                    cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='CAR'")
-                    for r in cur2.fetchall():
-                        nombres_cargo[str(r[0]).strip()] = r[1]
-                    cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='DPT'")
-                    for r in cur2.fetchall():
-                        nombres_depto[str(r[0]).strip()] = r[1]
-                except Exception:
-                    pass
+                with self.app.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(
+                        "SELECT EMPLEADO, APELLIDOS, NOMBRES, CEDULA, CARGO, "
+                        "'' as CARGO_NOM, DEPTO, '' as DEPTO_NOM, SUELDO, "
+                        "TELEFONO, emp_mail, ESTADO "
+                        f"FROM RPEMPLEA WHERE {SQL_FILTER} ORDER BY APELLIDOS, NOMBRES"
+                    )
+                    rows = cur.fetchall()
+                    try:
+                        cur2 = self.conn.cursor()
+                        cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='FNC' AND CODEMP='10'")
+                        for r in cur2.fetchall():
+                            nombres_cargo[str(r[0]).strip()] = r[1]
+                        cur2.execute("SELECT CODIGO, NOMBRE FROM DBTABLAS WHERE TIPO='DPT' AND CODEMP='10'")
+                        for r in cur2.fetchall():
+                            nombres_depto[str(r[0]).strip()] = r[1]
+                    except Exception as e:
+                        LOG.error("Error cargando nombres de cargo/depto en busqueda avanzada: %s", e)
                 resultados = []
                 for r in rows:
                     r = list(r)
@@ -2465,8 +2707,9 @@ class BuscadorAvanzadoFrame:
 # Vista Completa — Todos los Empleados
 # ═══════════════════════════════════════════════════════════════════
 class VistaCompletaWindow:
-    def __init__(self, parent, conn):
+    def __init__(self, parent, conn, conn_lock):
         self.conn = conn
+        self.conn_lock = conn_lock
         self.window = parent
         self._crear_interfaz()
         self._cargar_empleados()
@@ -2529,10 +2772,11 @@ class VistaCompletaWindow:
     def _cargar_empleados(self):
         def tarea():
             try:
-                cur = self.conn.cursor()
-                cur.execute(f"SELECT EMPLEADO, CEDULA, APELLIDOS, NOMBRES, CARGO, DEPTO, ESTADO, SUELDO, TELEFONO, emp_mail "
-                           f"FROM RPEMPLEA WHERE {SQL_FILTER} ORDER BY APELLIDOS, NOMBRES")
-                rows = cur.fetchall()
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"SELECT EMPLEADO, CEDULA, APELLIDOS, NOMBRES, CARGO, DEPTO, ESTADO, SUELDO, TELEFONO, emp_mail "
+                               f"FROM RPEMPLEA WHERE {SQL_FILTER} ORDER BY APELLIDOS, NOMBRES")
+                    rows = cur.fetchall()
                 self.window.after(0, lambda: self._mostrar_empleados(rows))
             except Exception as e:
                 self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", msg))
@@ -2604,259 +2848,158 @@ class VistaCompletaWindow:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Agregar Observaciones Masivas
+# Exportador de Catálogos (DBTABLAS) — adaptado de SACAR_TABLAS_SEC.pyw
 # ═══════════════════════════════════════════════════════════════════
-class ObservacionesMasivasFrame:
-    def __init__(self, window, app):
-        self.window = window
-        self.app = app
-        self.conn = app._get_sql_conn()
-        self.datos_validados = None
+class ExportadorCatalogosWindow:
+    """Exporta tipos de DBTABLAS (CODEMP='10') a Excel, una hoja por tipo
+    más una hoja 'TODOS'. Reutiliza la conexión ya abierta de la app
+    (self.conn) en vez de crear una nueva — el script original tenía un
+    connection string roto (SERVER=SERVER\\server, placeholder sin
+    reemplazar)."""
 
-        nb = ttk.Notebook(window)
-        nb.pack(fill='both', expand=True, padx=8, pady=8)
+    def __init__(self, parent, conn, conn_lock):
+        self.window = parent
+        self.conn = conn
+        self.conn_lock = conn_lock
+        self.check_vars = {}
+        self._crear_interfaz()
+        self._cargar_tipos()
 
-        t1 = ttk.Frame(nb)
-        nb.add(t1, text="Descargar Plantilla")
-        self._build_tab1(t1)
+    def _crear_interfaz(self):
+        frame = ttk.Frame(self.window)
+        frame.pack(fill='both', expand=True, padx=14, pady=14)
 
-        t2 = ttk.Frame(nb)
-        nb.add(t2, text="Cargar Observaciones")
-        self._build_tab2(t2)
+        tk.Label(frame, text="📤 Exportar Catálogos", font=FONT_TITLE,
+                 fg=COL_HEADER, bg=COL_BG).pack(anchor='w')
+        tk.Label(frame, text="Tipos de DBTABLAS filtrados por CODEMP='10'",
+                 font=FONT_SMALL, fg=COL_GRAY, bg=COL_BG).pack(anchor='w', pady=(0, 10))
 
-    def _build_tab1(self, parent):
-        """Pestaña para descargar plantilla"""
-        inst = tk.Label(parent,
-            text="1. Selecciona empleados\n2. Elige una fecha\n3. Descarga la plantilla\n4. Agrega observaciones en la columna 'texto_obs'",
-            font=FONT_LABEL, bg=COL_BG, justify='left')
-        inst.pack(anchor='w', padx=12, pady=10)
+        tipos_frame = ttk.LabelFrame(frame, text="Seleccione los TIPOS a exportar", padding=8)
+        tipos_frame.pack(fill='both', expand=True, pady=(0, 10))
 
-        # Filtro de empleados
-        row1 = tk.Frame(parent, bg=COL_BG)
-        row1.pack(fill='x', padx=10, pady=8)
-        tk.Label(row1, text="Empleados:", font=FONT_LABEL, bg=COL_BG).pack(side='left')
-        self._filtro_emp_var = tk.StringVar(value="ACTIVOS")
-        cb = ttk.Combobox(row1, textvariable=self._filtro_emp_var,
-                         values=["ACTIVOS", "INACTIVOS", "TODOS"], width=15, state='readonly')
-        cb.pack(side='left', padx=(6, 0))
+        self._catalogos_canvas = canvas = tk.Canvas(tipos_frame, bg=COL_BG, highlightthickness=0)
+        vsb = ttk.Scrollbar(tipos_frame, orient='vertical', command=canvas.yview)
+        self._frame_checks = tk.Frame(canvas, bg=COL_BG)
+        self._frame_checks.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.create_window((0, 0), window=self._frame_checks, anchor='nw')
+        canvas.configure(yscrollcommand=vsb.set)
+        canvas.pack(side='left', fill='both', expand=True)
+        vsb.pack(side='right', fill='y')
+        _bind_scroll_rueda(canvas, canvas)
 
-        # Fecha
-        row2 = tk.Frame(parent, bg=COL_BG)
-        row2.pack(fill='x', padx=10, pady=8)
-        tk.Label(row2, text="Fecha Obs:", font=FONT_LABEL, bg=COL_BG).pack(side='left')
-        self._fecha_obs_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
-        e = ttk.Entry(row2, textvariable=self._fecha_obs_var, width=15)
-        e.pack(side='left', padx=(6, 0))
-        tk.Label(row2, text="(YYYY-MM-DD)", font=FONT_SMALL, bg=COL_BG).pack(side='left', padx=(6, 0))
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', pady=(0, 8))
+        ttk.Button(btn_frame, text="Solo SEC y DPT", command=self._solo_sec_dpt).pack(side='left', padx=(0, 4))
+        ttk.Button(btn_frame, text="Todos", command=self._seleccionar_todos).pack(side='left', padx=4)
+        ttk.Button(btn_frame, text="Ninguno", command=self._deseleccionar_todos).pack(side='left', padx=4)
 
-        # Botón descargar
-        ttk.Button(parent, text="⬇ Descargar Plantilla",
-                  command=self._descargar_plantilla).pack(fill='x', padx=10, pady=10)
+        ttk.Button(frame, text="⬇ EXPORTAR A EXCEL", command=self._exportar,
+                   style='Accent.TButton').pack(fill='x', pady=(0, 8))
 
-        # Área de resultado
-        tk.Label(parent, text="Estado:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w', padx=10, pady=(10, 0))
-        self._resultado_t1 = tk.Text(parent, height=10, width=80, font=FONT_SMALL, bg=COL_ENTRY_BG, fg=COL_WHITE)
-        self._resultado_t1.pack(fill='both', expand=True, padx=10, pady=(6, 10))
+        self.status = tk.StringVar(value="Cargando tipos...")
+        tk.Label(frame, textvariable=self.status, font=FONT_SMALL,
+                 fg=COL_GRAY, bg=COL_BG, anchor='w').pack(fill='x')
 
-    def _build_tab2(self, parent):
-        """Pestaña para cargar observaciones"""
-        t2_content = ttk.Frame(parent)
-        t2_content.pack(fill='both', expand=True, padx=8, pady=8)
+    def _cargar_tipos(self):
+        def tarea():
+            try:
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute("SELECT DISTINCT TIPO FROM DBTABLAS WHERE CODEMP = '10' ORDER BY TIPO")
+                    tipos = [r[0] for r in cur.fetchall()]
+                self.window.after(0, lambda: self._mostrar_tipos(tipos))
+            except Exception as e:
+                self.window.after(0, lambda msg=str(e): self.status.set(f"Error: {msg}"))
+        threading.Thread(target=tarea, daemon=True).start()
 
-        tk.Label(t2_content, text="Archivo Excel:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w', pady=(0, 4))
+    def _mostrar_tipos(self, tipos):
+        tipos_defecto = ('SEC', 'DPT')
+        for i, tipo in enumerate(tipos):
+            var = tk.BooleanVar(value=(tipo in tipos_defecto))
+            self.check_vars[tipo] = var
+            cb = tk.Checkbutton(self._frame_checks, text=tipo, variable=var, font=FONT_DEFAULT,
+                                 bg=COL_BG, fg=COL_TEXT, selectcolor=COL_ACCENT,
+                                 activebackground=COL_BG, activeforeground=COL_TEXT)
+            cb.grid(row=i // 3, column=i % 3, sticky='w', padx=10, pady=2)
+        self.status.set(f"Tipos cargados: {len(tipos)}")
+        _bind_scroll_rueda(self._frame_checks, self._catalogos_canvas)
 
-        row = tk.Frame(t2_content, bg=COL_BG)
-        row.pack(fill='x', pady=(0, 8))
-        self._archivo_obs_var = tk.StringVar()
-        e = ttk.Entry(row, textvariable=self._archivo_obs_var, width=50)
-        e.pack(side='left', fill='x', expand=True)
-        ttk.Button(row, text="📁 Seleccionar", command=self._seleccionar_obs_archivo).pack(side='left', padx=(6, 0))
+    def _solo_sec_dpt(self):
+        for tipo, var in self.check_vars.items():
+            var.set(tipo in ('SEC', 'DPT'))
 
-        btn_row = tk.Frame(t2_content, bg=COL_BG)
-        btn_row.pack(fill='x', pady=(0, 12))
-        ttk.Button(btn_row, text="✓ Validar Cambios", command=self._validar_obs).pack(side='left', padx=(0, 6))
-        self._btn_aplicar_obs = ttk.Button(btn_row, text="⚡ Aplicar Observaciones",
-                                          command=self._aplicar_obs, state='disabled')
-        self._btn_aplicar_obs.pack(side='left')
+    def _seleccionar_todos(self):
+        for var in self.check_vars.values():
+            var.set(True)
 
-        tk.Label(t2_content, text="Resumen:", font=FONT_LABEL, bg=COL_BG).pack(anchor='w', pady=(6, 4))
-        self._resultado_t2 = tk.Text(t2_content, height=18, width=90, font=FONT_SMALL, bg=COL_ENTRY_BG, fg=COL_WHITE)
-        self._resultado_t2.pack(fill='both', expand=True)
+    def _deseleccionar_todos(self):
+        for var in self.check_vars.values():
+            var.set(False)
 
-    def _descargar_plantilla(self):
-        """Descargar plantilla Excel"""
-        if not self.conn:
-            messagebox.showerror("Error", "Sin conexión a BD")
+    def _exportar(self):
+        tipos_sel = [t for t, v in self.check_vars.items() if v.get()]
+        if not tipos_sel:
+            messagebox.showwarning("Aviso", "Seleccione al menos un TIPO")
             return
 
-        filtro = self._filtro_emp_var.get()
-        fecha_str = self._fecha_obs_var.get()
-
-        try:
-            fecha_obs = datetime.strptime(fecha_str, '%Y-%m-%d')
-        except ValueError:
-            messagebox.showerror("Error", "Formato de fecha inválido. Use YYYY-MM-DD")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        tipos_txt = "_".join(tipos_sel[:3]) + ("_etc" if len(tipos_sel) > 3 else "")
+        archivo = filedialog.asksaveasfilename(
+            defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")],
+            initialfile=f"DBTABLAS_{tipos_txt}_{ts}.xlsx")
+        if not archivo:
             return
+
+        self.status.set("Exportando...")
 
         def tarea():
             try:
-                cur = self.conn.cursor()
-
-                # Obtener empleados
-                if filtro == "ACTIVOS":
-                    estado_filter = "ESTADO='A'"
-                elif filtro == "INACTIVOS":
-                    estado_filter = "ESTADO='I'"
-                else:
-                    estado_filter = "1=1"
-
-                cur.execute(f"SELECT EMPLEADO, APELLIDOS, NOMBRES FROM RPEMPLEA WHERE {SQL_FILTER} AND {estado_filter} ORDER BY APELLIDOS")
-                rows = cur.fetchall()
-
                 from openpyxl import Workbook
                 from openpyxl.styles import Font
+                tipos_str = ",".join(f"'{t}'" for t in tipos_sel)
+                with self.conn_lock:
+                    cur = self.conn.cursor()
+                    cur.execute(f"SELECT TIPO, CODIGO, NOMBRE, FACTOR, T_C, T_P FROM DBTABLAS "
+                                f"WHERE CODEMP='10' AND TIPO IN ({tipos_str}) ORDER BY TIPO, CODIGO")
+                    cols = [c[0] for c in cur.description]
+                    rows = cur.fetchall()
+
+                if not rows:
+                    self.window.after(0, lambda: messagebox.showwarning("Aviso", "No se encontraron datos"))
+                    self.window.after(0, lambda: self.status.set("Sin datos"))
+                    return
+
                 wb = Workbook()
-                ws = wb.active
-                ws.title = "OBSERVACIONES"
+                wb.remove(wb.active)
+                por_tipo = {}
+                for r in rows:
+                    por_tipo.setdefault(r[0], []).append(r)
 
-                headers = ['empleado', 'apellidos', 'nombres', 'fecha_ven', 'texto_obs']
-                for ci, h in enumerate(headers, 1):
-                    ws.cell(row=1, column=ci, value=h).font = Font(bold=True)
+                def escribir_hoja(ws, filas):
+                    for ci, h in enumerate(cols, 1):
+                        ws.cell(row=1, column=ci, value=h).font = Font(bold=True)
+                    for ri, r in enumerate(filas, 2):
+                        for ci, v in enumerate(r, 1):
+                            ws.cell(row=ri, column=ci, value=v)
 
-                for ri, r in enumerate(rows, 2):
-                    ws.cell(row=ri, column=1, value=r[0])  # empleado
-                    ws.cell(row=ri, column=2, value=r[1])  # apellidos
-                    ws.cell(row=ri, column=3, value=r[2])  # nombres
-                    ws.cell(row=ri, column=4, value=fecha_obs)  # fecha_ven
-                    ws.cell(row=ri, column=5, value="")  # texto_obs
+                for tipo in tipos_sel:
+                    filas_tipo = por_tipo.get(tipo)
+                    if filas_tipo:
+                        escribir_hoja(wb.create_sheet(tipo[:31]), filas_tipo)
+                escribir_hoja(wb.create_sheet('TODOS'), rows)
+                wb.save(archivo)
 
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                fn = f"PLANTILLA_OBSERVACIONES_{ts}.xlsx"
-                wb.save(fn)
-
-                self.window.after(0, lambda: messagebox.showinfo("Éxito", f"Plantilla creada:\n{fn}"))
-                self.window.after(0, lambda: self._resultado_t1.insert('end', f"✓ Plantilla descargada: {fn}\n  Empleados: {len(rows)}\n  Fecha: {fecha_str}\n"))
-
+                n = len(rows)
+                self.window.after(0, lambda: self.status.set(f"Exportado: {n} registros"))
+                self.window.after(0, lambda: messagebox.showinfo(
+                    "Éxito", f"Archivo creado:\n{archivo}\n\nRegistros: {n}\nTipos: {', '.join(tipos_sel)}"))
+                self.window.after(0, lambda: os.startfile(os.path.dirname(archivo) or '.'))
             except ImportError:
                 self.window.after(0, lambda: messagebox.showerror("Error", "Requiere openpyxl:\npip install openpyxl"))
             except Exception as e:
-                self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", msg))
-
+                self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", f"Error al exportar: {msg}"))
+                self.window.after(0, lambda msg=str(e): self.status.set(f"Error: {msg}"))
         threading.Thread(target=tarea, daemon=True).start()
-
-    def _seleccionar_obs_archivo(self):
-        f = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
-        if f:
-            self._archivo_obs_var.set(f)
-            self._btn_aplicar_obs.config(state='disabled')
-
-    def _validar_obs(self):
-        """Validar observaciones del Excel"""
-        arch = self._archivo_obs_var.get()
-        if not arch:
-            messagebox.showwarning("Aviso", "Seleccione un archivo")
-            return
-
-        def tarea():
-            try:
-                from openpyxl import load_workbook
-                wb = load_workbook(arch, data_only=True)
-                ws = wb['OBSERVACIONES']
-                headers = [c.value for c in ws[1]]
-
-                if not all(h in headers for h in ['empleado', 'fecha_ven', 'texto_obs']):
-                    self.window.after(0, lambda: messagebox.showerror("Error",
-                        "Faltan columnas requeridas: empleado, fecha_ven, texto_obs"))
-                    return
-
-                datos = []
-                for row in ws.iter_rows(min_row=2, values_only=True):
-                    if row[0] and row[2]:  # empleado y texto_obs no vacíos
-                        datos.append(row)
-
-                if not datos:
-                    self.window.after(0, lambda: messagebox.showerror("Error", "Sin datos válidos"))
-                    return
-
-                ei = headers.index('empleado')
-                efe = headers.index('fecha_ven')
-                et = headers.index('texto_obs')
-
-                cambios = []
-                for row in datos:
-                    emp = str(row[ei]).strip()
-                    fecha = row[efe]
-                    texto = str(row[et]).strip()
-                    if emp and texto:
-                        cambios.append({'empleado': emp, 'fecha_ven': fecha, 'texto_obs': texto})
-
-                self.datos_validados = cambios
-                self.window.after(0, lambda: self._mostrar_validacion_obs(cambios))
-
-            except Exception as e:
-                self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", msg))
-
-        threading.Thread(target=tarea, daemon=True).start()
-
-    def _mostrar_validacion_obs(self, cambios):
-        self._resultado_t2.delete(1.0, 'end')
-        self._resultado_t2.insert('end', f"Observaciones a agregar: {len(cambios)}\n\n")
-        for c in cambios[:20]:  # Mostrar primeras 20
-            self._resultado_t2.insert('end', f"• {c['empleado']} ({c['fecha_ven']}): {c['texto_obs'][:60]}{'...' if len(c['texto_obs']) > 60 else ''}\n")
-        if len(cambios) > 20:
-            self._resultado_t2.insert('end', f"\n... y {len(cambios) - 20} más\n")
-        self._btn_aplicar_obs.config(state='normal')
-
-    def _aplicar_obs(self):
-        """Aplicar observaciones"""
-        if not self.datos_validados:
-            return
-        if not messagebox.askyesno("Confirmar", f"¿Agregar {len(self.datos_validados)} observaciones?", icon='warning'):
-            return
-
-        self._btn_aplicar_obs.config(state='disabled')
-
-        def tarea():
-            try:
-                from agregar_observaciones_masivas import procesar_carga
-                stats = procesar_carga(self.datos_validados, force_new_row=True)
-
-                self.window.after(0, lambda: self._mostrar_resultado_obs(stats))
-
-            except Exception as e:
-                self.window.after(0, lambda msg=str(e): messagebox.showerror("Error", msg))
-
-        threading.Thread(target=tarea, daemon=True).start()
-
-    def _mostrar_resultado_obs(self, stats):
-        self._resultado_t2.delete(1.0, 'end')
-        self._resultado_t2.insert('end', f"""
-╔═══════════════════════════════════════════════════════╗
-║             RESULTADO DE AGREGACIÓN                   ║
-╚═══════════════════════════════════════════════════════╝
-
-✓ Insertados:     {stats['insertados']}
-⚠ Duplicados:     {stats['duplicados']}
-❌ Sin espacio:    {stats['sin_espacio']}
-🔴 Errores:       {stats['errores']}
-
-Detalles:
-───────────────────────────────────────────────────────
-""")
-        for d in stats['detalles'][:30]:
-            if d['tipo'] == 'INSERTADO':
-                self._resultado_t2.insert('end', f"✓ {d['empleado']} → {d['campo']}: {d['texto']}\n")
-            elif d['tipo'] == 'DUPLICADO':
-                self._resultado_t2.insert('end', f"⚠ {d['empleado']}: Duplicado (ya existe)\n")
-            elif d['tipo'] == 'ERROR':
-                self._resultado_t2.insert('end', f"❌ {d['empleado']}: {d.get('error', 'Error desconocido')}\n")
-
-        if len(stats['detalles']) > 30:
-            self._resultado_t2.insert('end', f"\n... y {len(stats['detalles']) - 30} más\n")
-
-        messagebox.showinfo("Completado",
-            f"Insertados: {stats['insertados']}\nDuplicados: {stats['duplicados']}\nErrores: {stats['errores']}")
-        self.datos_validados = None
 
 
 # ═══════════════════════════════════════════════════════════════════
