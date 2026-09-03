@@ -215,13 +215,15 @@ class EmpleadosState(rx.State):
 
 
     async def _cargar_catalogos_editor(self):
-        if self.edit_catalogos:
+        if any(self.edit_catalogos.values()):
             return
         fuente = await self._fuente()
         try:
-            self.edit_catalogos = await asyncio.to_thread(repo_emp.catalogos, fuente)
+            cat = await asyncio.to_thread(repo_emp.catalogos, fuente)
         except Exception:  # noqa: BLE001
-            self.edit_catalogos = {}
+            cat = {}
+        # cap por catálogo: el datalist con ~1000 opciones ralentiza el navegador.
+        self.edit_catalogos = {k: (v or [])[:400] for k, v in cat.items()} or self.edit_catalogos
 
     cargando_editor: bool = False
 
