@@ -55,6 +55,37 @@ docs/modulos/<mod>.md
   `datasource_state`, que son compartidos).
 - La app Reflex compila (`reflex export --backend-only`).
 
+## Reglas de datos (obligatorias para todos los módulos)
+
+### SQL Server 2008 R2 — escribir lo MÍNIMO
+Es un sistema obsoleto y frágil (parche TLS 1.0) y a futuro se retira. Por tanto:
+
+- La app **lee** de SQL Server; **escribe solo lo imprescindible**, nunca "por modificar".
+- Superficie de escritura permitida: **exactamente** `RPEMPLEA`, `RPEMPOBSERV`,
+  `RPINGDES`. Ninguna otra tabla. Ningún `ALTER`, ningún cambio de esquema.
+- Toda escritura: **vista previa obligatoria** + `core/audit` + (en lotes) `dry-run`.
+- Nada de `UPDATE`/`DELETE` masivos sin filtro por empleado y sin confirmación.
+- Siempre `WHERE ... AND CODEMP='10' AND CODSUC='10'` y parámetros, nunca concatenación.
+- Escrituras con el login `insevig_rw` (permisos mínimos), no `sa`.
+
+### Fuente de datos
+- El selector (`DataSourceState.fuente_de(modulo)`) solo afecta **lecturas**.
+- Escrituras: siempre SQL Server (en v1). Ver "Futuro" abajo.
+
+### Futuro (post-v1): Supabase-nube como fuente de verdad + operación offline
+Decidido: a futuro todo migra a **Supabase en la nube**, pero el servidor de la
+empresa tiene Internet intermitente → la app debe seguir funcionando offline.
+Esto NO se construye en v1, pero **el diseño no debe cerrarse esa puerta**:
+
+- Todo acceso a datos va por `core/repos/*` (nunca queries sueltas en la UI), para
+  que añadir una tercera fuente `"local"` sea un cambio de capa repo, no de la app.
+- Las tablas propias de la app que a futuro se sincronizarán llevan desde ya:
+  PK `uuid` estable (no solo autoincrement), `updated_at`, `synced_at`, `origen`,
+  borrado lógico (`deleted_at`), para permitir sync bidireccional / last-write-wins.
+- Patrón previsto: Postgres **local** en el servidor como BD operativa + worker
+  `core/sync/` que reconcilia con Supabase-nube (pull cuando hay Internet; push de
+  un *outbox* de escrituras encoladas). Cola de conflictos para revisión humana.
+
 ## Cómo se pide un cambio de contrato
 
 Abrir tarea aparte: qué se cambia, por qué, y **qué consumidores hay que actualizar**
