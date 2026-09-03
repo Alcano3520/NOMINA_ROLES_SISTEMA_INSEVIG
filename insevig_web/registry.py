@@ -66,6 +66,10 @@ MODULES: list[ModuleSpec] = [
          NavItem("Registro manual", "/registrador/manual", "registrar_rpingdes")],
     ),
     ModuleSpec(
+        "bitacora", "Agenda de liquidaciones", "calendar-clock",
+        [NavItem("Agenda de cobro", "/bitacora")],
+    ),
+    ModuleSpec(
         "admin", "Administración", "settings",
         [NavItem("Usuarios", "/admin/usuarios"),
          NavItem("Roles y permisos", "/admin/roles"),

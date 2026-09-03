@@ -30,7 +30,7 @@ ACCIONES = (
 # Permisos por defecto (los siembra seed.py en RolePermission; admin puede editarlos).
 _TODOS_MODULOS = (
     "reportes", "prestamos", "observaciones", "empleados", "roles",
-    "registrador", "admin",
+    "registrador", "bitacora", "admin",
 )
 
 PERMISOS_POR_DEFECTO: dict[str, dict[str, set[str]]] = {
@@ -42,6 +42,7 @@ PERMISOS_POR_DEFECTO: dict[str, dict[str, set[str]]] = {
         "empleados": {"ver", "exportar", "crear", "editar", "cargar_masivo"},
         "roles": {"ver", "generar_pdf", "enviar_email"},
         "registrador": {"ver", "registrar_rpingdes"},
+        "bitacora": {"ver", "crear", "editar"},
     },
     "consulta": {
         "reportes": {"ver", "exportar"},
@@ -50,6 +51,7 @@ PERMISOS_POR_DEFECTO: dict[str, dict[str, set[str]]] = {
         "empleados": {"ver"},
         "roles": {"ver"},
         "registrador": {"ver"},
+        "bitacora": {"ver"},
     },
 }
 

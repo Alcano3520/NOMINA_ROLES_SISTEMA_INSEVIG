@@ -45,6 +45,7 @@ _RUTAS_MIGRADAS = {
     "/admin/roles",
     "/admin/auditoria",
     "/admin/config",
+    "/bitacora",
 }
 
 for _spec in MODULES:
