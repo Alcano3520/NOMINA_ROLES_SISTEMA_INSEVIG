@@ -20,11 +20,14 @@ BG = "#f5f7fa"
 SIDEBAR_BREAKPOINT = "1024px"
 
 theme = rx.theme(
-    color_mode="light",  # fuerza modo claro (ignora prefers-color-scheme)
+    color_mode="light",  # fuerza modo claro
     accent_color="blue",
     gray_color="slate",
     radius="medium",
     scaling="100%",
+    # reflex-components-radix elimina el prop `appearance` al renderizar; forzamos
+    # la escala clara de Radix con el data-attribute directamente.
+    custom_attrs={"data-appearance": "light"},
 )
 
 # Estilo global mínimo: fondo claro y sin scroll horizontal del body.
