@@ -62,11 +62,15 @@ venv/
 .env.*
 !.env.example
 .web/
-insevig_web/.web/
+.states/
 .reflex/
+reflex.lock/
+assets/external/
+*.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 htmlcov/
 .coverage
 node_modules/
+var/

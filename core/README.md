@@ -17,8 +17,21 @@ Plan completo: `~/.claude/plans/wise-soaring-turing.md`.
 | `db/sqlserver.py` (fallback de drivers) | ✅ básico — falta pool | `_get_sql_conn` copiado en cada módulo |
 | `db/supabase_client.py` | ✅ | `create_client(...)` con JWT hardcodeado ×10 |
 | `db/health.py` | ✅ | `shared/detect_db.py` |
+| `db/appdb.py` (engine + session de la BD de la app) | ✅ | nuevo |
 | `logging_setup.py` | ✅ | — |
 | `repos/`, `audit/`, `excel/`, `pdf/`, `email/`, `narrativa/`, `jobs/`, `storage.py` | ⬜ pendiente | reportes/, empleados/, roles/, envio_roles/, ... |
+
+App web (`insevig_web/`): esqueleto Reflex con shell responsive (sidebar fijo/drawer),
+`registry.py` (auto-registro de módulos), `models.py`, `auth.py` + `AuthState` (login,
+roles, permisos), `DataSourceState`, sistema de diseño `components/ui/`, login + dashboard
++ 7 módulos placeholder. Contratos congelados en `docs/CONTRATOS.md`; ficha por módulo en
+`docs/modulos/`.
+
+```bash
+python -m insevig_web.seed          # crea tablas + admin/admin (¡cambiar!)
+reflex run                          # dev server
+reflex export --backend-only --no-zip   # compila (lo verifica test_arquitectura)
+```
 
 ## Uso
 
