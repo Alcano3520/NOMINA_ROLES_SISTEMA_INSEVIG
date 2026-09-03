@@ -52,6 +52,8 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501", "SIM300", "SIM117"]
+"insevig_web/pages/**" = ["E501"]
+"insevig_web/components/**" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

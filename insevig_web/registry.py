@@ -38,18 +38,15 @@ MODULES: list[ModuleSpec] = [
         "reportes", "Reportes", "file-bar-chart",
         [NavItem("Consolidado de nómina", "/reportes/consolidado"),
          NavItem("Comparador SQL vs Supabase", "/reportes/comparador", "exportar")],
-        disponible=False,
     ),
     ModuleSpec(
         "prestamos", "Préstamos", "hand-coins",
         [NavItem("Historial", "/prestamos/historial"),
          NavItem("Saldos", "/prestamos/saldos")],
-        disponible=False,
     ),
     ModuleSpec(
         "observaciones", "Observaciones", "clipboard-list",
         [NavItem("Observaciones / Multas / Faltas", "/observaciones")],
-        disponible=False,
     ),
     ModuleSpec(
         "empleados", "Gestión de empleados", "users",

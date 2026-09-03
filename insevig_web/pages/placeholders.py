@@ -25,13 +25,20 @@ def _hacer_pagina(titulo_item: str, modulo: str, accion: str, titulo_mod: str):
     return _p
 
 
-# Módulos con páginas reales (no generar placeholder para sus rutas).
-_YA_MIGRADOS = {"reportes"}
+# Rutas con página real ya implementada (no generar placeholder).
+_RUTAS_MIGRADAS = {
+    "/reportes/consolidado",
+    "/reportes/comparador",
+    "/prestamos/historial",
+    "/prestamos/saldos",
+    "/observaciones",
+    "/empleados/historial",
+}
 
 for _spec in MODULES:
-    if _spec.nombre in _YA_MIGRADOS:
-        continue
     for _item in _spec.items:
+        if _item.ruta in _RUTAS_MIGRADAS:
+            continue
         _fn = _hacer_pagina(_item.label, _spec.nombre, _item.permiso, _spec.titulo)
         _fn.__name__ = "pg_" + _item.ruta.strip("/").replace("/", "_").replace("-", "_")
         rx.page(
