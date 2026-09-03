@@ -27,7 +27,7 @@ def comparador() -> rx.Component:
                         rx.text("Período (YYYY-MM)", size="2", weight="bold"),
                         rx.input(
                             value=ReportesState.periodo,
-                            on_change=ReportesState.setvar("periodo"),
+                            on_change=ReportesState.set_periodo,
                             placeholder="2026-06",
                             width="140px",
                         ),

@@ -47,6 +47,10 @@ class ReportesState(rx.State):
             self.periodo = _periodo_actual()
 
     @rx.event
+    def set_periodo(self, value: str):
+        self.periodo = value.strip()
+
+    @rx.event
     def set_alcance(self, etiqueta: str):
         self.historico = etiqueta.startswith("Histórico")
 
@@ -60,17 +64,21 @@ class ReportesState(rx.State):
         if "reportes:ver" not in auth.permisos_flat:
             return rx.toast.error("Sin permiso para generar reportes.")
         fuente = await self._fuente()
+        # Capturar TODO como locales: el fn corre en un hilo del pool, sin acceso al state.
+        periodo, historico = self.periodo_efectivo, self.historico
+        usuario, roles = auth.username, set(auth.roles)
         self._reset_job()
-        runner = get_runner()
-        job_id = runner.encolar(
+
+        def _fn(ctx):
+            nomina.job_consolidado(ctx, periodo, historico, fuente)
+
+        job_id = get_runner().encolar(
             "reporte_consolidado",
-            {"periodo": self.periodo_efectivo, "historico": self.historico, "fuente": fuente},
-            creado_por=auth.username,
-            fn=lambda ctx: nomina.job_consolidado(
-                ctx, self.periodo_efectivo, self.historico, fuente
-            ),
+            {"periodo": periodo, "historico": historico, "fuente": fuente},
+            creado_por=usuario,
+            fn=_fn,
         )
-        registrar_evento("reportes", "generar", usuario=auth.username, roles=set(auth.roles), fuente=fuente)
+        registrar_evento("reportes", "generar", usuario=usuario, roles=roles, fuente=fuente)
         self.job_id = job_id
         self.job_status = "pendiente"
         return ReportesState.vigilar
@@ -80,12 +88,17 @@ class ReportesState(rx.State):
         auth = await self.get_state(AuthState)
         if "reportes:exportar" not in auth.permisos_flat:
             return rx.toast.error("Sin permiso.")
+        periodo, historico, usuario = self.periodo_efectivo, self.historico, auth.username
         self._reset_job()
+
+        def _fn(ctx):
+            nomina.job_comparador(ctx, periodo, historico)
+
         job_id = get_runner().encolar(
             "reporte_comparador",
-            {"periodo": self.periodo_efectivo, "historico": self.historico},
-            creado_por=auth.username,
-            fn=lambda ctx: nomina.job_comparador(ctx, self.periodo_efectivo, self.historico),
+            {"periodo": periodo, "historico": historico},
+            creado_por=usuario,
+            fn=_fn,
         )
         self.job_id = job_id
         self.job_status = "pendiente"

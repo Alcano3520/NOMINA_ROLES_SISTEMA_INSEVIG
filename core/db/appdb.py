@@ -19,10 +19,19 @@ from core.config import get_settings
 @lru_cache
 def get_engine():
     url = get_settings().app_db_url
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    if url.startswith("sqlite:///") and "/" in url[10:]:
-        Path(url.replace("sqlite:///", "", 1)).parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(url, echo=False, connect_args=connect_args)
+    kwargs: dict = {"echo": False}
+    if url.startswith("sqlite"):
+        # NullPool: una conexión nueva por sesión. Necesario con el JobRunner
+        # (hilos) + SQLite (un solo escritor); evita bloqueos del pool.
+        from sqlalchemy.pool import NullPool
+
+        kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+        kwargs["poolclass"] = NullPool
+        if "/" in url[10:]:
+            Path(url.replace("sqlite:///", "", 1)).parent.mkdir(parents=True, exist_ok=True)
+    else:
+        kwargs["pool_pre_ping"] = True
+    return create_engine(url, **kwargs)
 
 
 def crear_tablas() -> None:
