@@ -67,11 +67,8 @@ def index() -> rx.Component:
                                     _tabla(
                                         ["Fecha", "Texto"],
                                         ObservacionesState.observaciones,
-                                        lambda o: rx.foreach(
-                                            o["textos"],
-                                            lambda t: rx.table.row(
-                                                rx.table.cell(o["fecha_ven"]), rx.table.cell(t)
-                                            ),
+                                        lambda o: rx.table.row(
+                                            rx.table.cell(o["fecha_ven"]), rx.table.cell(o["texto"])
                                         ),
                                     ),
                                     value="obs",

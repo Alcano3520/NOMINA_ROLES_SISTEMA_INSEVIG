@@ -51,8 +51,13 @@ class ObservacionesState(rx.State):
         fuente = await self._fuente()
 
         def _cargar():
+            obs = [
+                {"fecha_ven": x.fecha_ven, "texto": " · ".join(x.textos)}
+                for x in observaciones.observaciones(empleado, fuente)
+                if x.textos
+            ]
             return (
-                [asdict(x) for x in observaciones.observaciones(empleado, fuente)],
+                obs,
                 [asdict(x) for x in observaciones.multas(empleado, fuente)],
                 [asdict(x) for x in observaciones.faltas(empleado, fuente)],
                 [asdict(x) for x in observaciones.faltas(empleado, fuente, historicas=True)],

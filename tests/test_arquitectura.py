@@ -76,10 +76,26 @@ def test_states_de_feature_no_se_importan_entre_si():
         assert not cruces, f"{p.name} importa otro state de feature: {cruces}"
 
 
-def test_la_app_reflex_compila():
-    """Importar el módulo de la app ejecuta los @rx.page (registro + validación)."""
-    import insevig_web.insevig_web  # noqa: F401
-    from insevig_web import pages  # noqa: F401
+def test_todas_las_paginas_compilan():
+    """Cada @rx.page se convierte a componente sin error (lo que hace `reflex run`).
+
+    `reflex export --backend-only` NO valida el JSX de las páginas; esto sí.
+    """
+    from reflex.app import RegistrationContext
+    from reflex.compiler.compiler import into_component
+
+    import insevig_web.insevig_web  # noqa: F401  crea la app
+    from insevig_web import pages  # noqa: F401  registra las páginas
+
+    decoradas = RegistrationContext.ensure_context().decorated_pages
+    assert len(decoradas) >= 20
+    fallos = []
+    for render_fn, kwargs in decoradas:
+        try:
+            into_component(render_fn)
+        except Exception as e:  # noqa: BLE001
+            fallos.append(f"{kwargs.get('route', render_fn.__name__)}: {type(e).__name__}: {e}")
+    assert not fallos, "Páginas que no compilan:\n" + "\n".join(fallos)
 
 
 def test_registry_coherente():
