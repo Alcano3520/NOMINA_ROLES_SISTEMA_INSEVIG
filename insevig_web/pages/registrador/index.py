@@ -240,6 +240,18 @@ def _tab_consulta() -> rx.Component:
                                 rx.table.cell(rx.cond(c["asentado"], "SÍ", "")),
                             ),
                         ),
+                        rx.cond(
+                            AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
+                            rx.hstack(
+                                rx.text("Mover cuotas pendientes desde:", size="1", weight="bold"),
+                                rx.input(value=_S.mover_fecha, on_change=_S.set_mover_fecha,
+                                         type="date", width="150px"),
+                                rx.button("Mover", on_click=_S.mover_cuotas, variant="soft", size="1"),
+                                spacing="2",
+                                align="center",
+                                wrap="wrap",
+                            ),
+                        ),
                         spacing="2", width="100%",
                     ),
                 ),

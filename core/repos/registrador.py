@@ -402,6 +402,42 @@ def eliminar_movimiento(numero: str, empleado: str, clase: str, *, usuario: str,
     return n
 
 
+def mover_cuotas_pendientes(
+    numero: str, empleado: str, nueva_fecha_inicio: str, *, usuario: str, roles: set[str],
+) -> int:
+    """Reprograma TODAS las cuotas NO asentadas de un préstamo para que empiecen en
+    `nueva_fecha_inicio` (último día de ese mes) y sigan mes a mes, conservando los
+    valores. Diálogo 'mover cuotas pendientes' del legado. Devuelve cuántas movió.
+    """
+    flt = get_settings().sqlserver_filter
+    inicio = dt.date.fromisoformat(nueva_fecha_inicio)
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=f"{numero}/{empleado}",
+        after={"nueva_fecha_inicio": nueva_fecha_inicio},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT SECUENCIA FROM dbo.RPINGDES
+                WHERE {flt} AND NUMERO = ? AND EMPLEADO = ? AND CLASE = '205' AND ASENTADO = 0
+                ORDER BY SECUENCIA""",
+            (numero, str(empleado)),
+        )
+        secs = [int(r[0]) for r in cur.fetchall()]
+        anio, mes = inicio.year, inicio.month
+        for sec in secs:
+            venc = _ultimo_dia(anio, mes).isoformat()
+            cur.execute(
+                f"""UPDATE dbo.RPINGDES SET FECHA_VEN = ?
+                    WHERE {flt} AND NUMERO = ? AND EMPLEADO = ? AND CLASE = '205'
+                      AND SECUENCIA = ? AND ASENTADO = 0""",
+                (venc, numero, str(empleado), sec),
+            )
+            anio, mes = _mes_siguiente(anio, mes)
+        conn.commit()
+    return len(secs)
+
+
 def editar_cuota(
     numero: str, empleado: str, secuencia: int, nuevo_valor: float, nueva_fecha: str,
     *, usuario: str, roles: set[str],

@@ -275,12 +275,43 @@ class RegistradorState(rx.State):
         yield
         await self._recargar_movimientos()
 
+    detalle_numero: str = ""
+    detalle_empleado: str = ""
+    mover_fecha: str = ""
+
+    @rx.event
+    def set_mover_fecha(self, v: str):
+        self.mover_fecha = v
+
     @rx.event
     async def ver_cuotas(self, numero: str, empleado: str, nombre: str):
         fuente = await self._fuente()
         self.detalle_titulo = f"Préstamo N° {numero} — {nombre}"
+        self.detalle_numero, self.detalle_empleado = numero, empleado
         self.detalle_cuotas = await asyncio.to_thread(
             registrador.cuotas_prestamo, numero, empleado, fuente
+        )
+
+    @rx.event
+    async def mover_cuotas(self):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        if not self.mover_fecha or not self.detalle_numero:
+            self.error = "Indica la nueva fecha de inicio."
+            return
+        try:
+            n = await asyncio.to_thread(
+                registrador.mover_cuotas_pendientes,
+                self.detalle_numero, self.detalle_empleado, self.mover_fecha,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+            self.resultado = f"Se reprogramaron {n} cuota(s)."
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+        fuente = await self._fuente()
+        self.detalle_cuotas = await asyncio.to_thread(
+            registrador.cuotas_prestamo, self.detalle_numero, self.detalle_empleado, fuente
         )
 
     @rx.event
