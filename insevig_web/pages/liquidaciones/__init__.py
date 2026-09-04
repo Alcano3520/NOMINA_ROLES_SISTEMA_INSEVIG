@@ -1,1 +1,1 @@
-from insevig_web.pages.liquidaciones import index  # noqa: F401
+from insevig_web.pages.liquidaciones import guardadas, index  # noqa: F401

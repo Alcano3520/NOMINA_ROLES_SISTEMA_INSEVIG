@@ -48,6 +48,7 @@ _RUTAS_MIGRADAS = {
     "/admin/parametros",
     "/bitacora",
     "/liquidaciones",
+    "/liquidaciones/guardadas",
 }
 
 for _spec in MODULES:

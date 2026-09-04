@@ -261,20 +261,26 @@ Módulo a paridad.
 
 # 8. Liquidaciones (finiquitos)
 
-Legado: `LIQUIDACIONES_SISTEMA_INSEVIG/Liquidaciones_generador_CON_VACACIONES.pyw`.
+Legado: `LIQUIDACIONES_SISTEMA_INSEVIG/Generador_Liquidaciones_INSEVIG.pyw` (16 216
+líneas — 4 pantallas: Generar / Editor / Gestión de pagos / Descuentos pendientes).
 
 | # | Función | Estado |
 |---|---|---|
 | 1 | Entrada: cédula, dd/mm/aaaa, motivo (una línea por empleado) | ✅ |
-| 2 | Cálculo legal completo (vacaciones, décimo 13/14 COSTA/SIERRA, desahucio, indemnización, IESS, fondo reserva, DIAS360, split anticipos, descuentos multi-mes) | ✅ |
+| 2 | Cálculo legal completo (vacaciones, décimo 13/14 COSTA/SIERRA, desahucio, indemnización, IESS, fondo reserva, DIAS360, split anticipos, descuentos multi-mes) | ✅ reemplazado por la extracción fiel del `.pyw` de producción (`nucleo_modular`), con correcciones reales incorporadas — ver `docs/modulos/liquidaciones.md` |
 | 3 | Excel hoja FORMATO (~62 columnas) | ✅ |
 | 4 | Selección de región | ✅ |
 | 5 | Configuración de SBU por año editable (hoy: valores por defecto) | ✅ `/admin/parametros` (`config_liquidacion` mezcla los SBU guardados) |
 | 6 | Columnas mensuales dinámicas de remuneración (col 62+) del Excel | ⬜ |
 | 7 | Fecha de ingreso override cuando FECHA_ING > FECHA_SAL | ✅ 4º dato de la línea |
-| 8 | **Validar montos contra el `.pyw` con empleados reales** | ⬜ **bloqueante para producción** |
+| 8 | **Validar montos contra el `.pyw` con empleados reales** | ⬜ **bloqueante para producción** — sigue sin acceso a SQL Server real |
+| 9 | **Generar PDF individual** (1 hoja, ReportLab) | ✅ `core/pdf/liquidacion_individual.py`, botón "PDF" por fila previsualizada |
+| 10 | **Guardar liquidación** en Supabase (`liquidaciones` + `liquidaciones_detalle`) | ✅ botón "Guardar" por fila; detecta si ya existe un registro para esa cédula+fecha y lo actualiza en vez de duplicar |
+| 11 | **Editor + Gestión de Liquidaciones** (buscar, ver, cambiar estado, eliminar, regenerar PDF de lo guardado) | 🟡 `/liquidaciones/guardadas` — MVP funcional; falta edición manual de campos, verificación de pago contra cartas bancarias, edición/carga masiva |
+| 12 | **Generar formato Bot MRL** (exportar al bot RPA del SUT) | ⬜ lógica ya portada en `nucleo_modular/generacion_bot_mrl.py`, no conectada |
+| 13 | **Descuentos Pendientes** (pantalla propia del legado, ~400 líneas) | ⬜ no evaluada todavía |
 
-Pasos: 8 (validación) → 5 → 6 → 7.
+Pasos: 8 (validación, bloqueante) → 11 (edición manual + pago) → 12 → 13.
 
 ---
 

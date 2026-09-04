@@ -21,6 +21,8 @@ class LiquidacionesState(rx.State):
     region: str = "COSTA"
 
     previsualizacion: list[dict] = []  # resumen por empleado
+    _liqs: list[repo.Liquidacion] = []  # objetos completos, en el mismo orden (uso interno)
+    fila_msg: dict[str, str] = {}  # índice (str) -> mensaje ("Guardada", error…)
     job: int = 0
     status: str = ""
     msg: str = ""
@@ -49,22 +51,67 @@ class LiquidacionesState(rx.State):
         texto = self.entrada
 
         def _run():
-            liqs = repo.procesar_lote(texto, fuente, cfg)
-            return [
-                {
-                    "empleado": q.empleado,
-                    "nombre": q.nombre or q.cedula,
-                    "motivo": q.motivo_salida,
-                    "dias": q.dias_trabajados,
-                    "ingresos": q.campos.get("TOTAL_INGRESOS", 0.0),
-                    "descuentos": q.campos.get("TOTAL_DESCUENTOS", 0.0),
-                    "recibir": q.campos.get("TOTAL_A_RECIBIR", 0.0),
-                    "error": q.error,
-                }
-                for q in liqs
-            ]
+            return repo.procesar_lote(texto, fuente, cfg)
 
-        self.previsualizacion = await asyncio.to_thread(_run)
+        liqs = await asyncio.to_thread(_run)
+        self._liqs = liqs
+        self.fila_msg = {}
+        self.previsualizacion = [
+            {
+                "empleado": q.empleado,
+                "nombre": q.nombre or q.cedula,
+                "motivo": q.motivo_salida,
+                "dias": q.dias_trabajados,
+                "ingresos": q.campos.get("TOTAL_INGRESOS", 0.0),
+                "descuentos": q.campos.get("TOTAL_DESCUENTOS", 0.0),
+                "recibir": q.campos.get("TOTAL_A_RECIBIR", 0.0),
+                "error": q.error,
+            }
+            for q in liqs
+        ]
+
+    @rx.event
+    def generar_pdf_fila(self, idx: int):
+        if not 0 <= idx < len(self._liqs):
+            return
+        liq = self._liqs[idx]
+        if liq.error:
+            return rx.toast.error(liq.error)
+        from core.pdf.liquidacion_individual import liquidacion_pdf
+
+        data = liquidacion_pdf(liq, es_simulacion=True)
+        return rx.download(data=data, filename=f"liquidacion_{liq.empleado}_{liq.fecha_salida}.pdf")
+
+    @rx.event
+    async def guardar_fila(self, idx: int):
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:editar" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        if not 0 <= idx < len(self._liqs):
+            return
+        liq = self._liqs[idx]
+        if liq.error:
+            self.fila_msg = {**self.fila_msg, str(idx): liq.error}
+            return
+        from core.parametros import config_liquidacion
+
+        cfg = config_liquidacion(self.region)
+        usuario, roles = auth.username, set(auth.roles)
+
+        def _guardar():
+            existente = repo.buscar_liquidacion_existente(
+                liq.cedula, liq.fecha_salida, "generada", liq.fecha_ingreso
+            )
+            return repo.guardar_liquidacion(
+                liq, "generada", cfg, usuario=usuario, roles=roles,
+                liquidacion_id_existente=existente or "",
+            )
+
+        ok, resultado = await asyncio.to_thread(_guardar)
+        self.fila_msg = {
+            **self.fila_msg,
+            str(idx): "Guardada en el sistema." if ok else f"Error al guardar: {resultado}",
+        }
 
     @rx.event
     async def generar_excel(self):

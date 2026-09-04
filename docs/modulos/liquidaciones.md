@@ -84,7 +84,24 @@ función) -- ninguna es una mejora inventada en esta migración:
 - `core/repos/liquidaciones.py` (cálculo completo)
 - `core/excel/liquidaciones_builders.py` (Excel hoja FORMATO, ~62 columnas; los
   campos administrativos manuales van en blanco)
+- `core/pdf/liquidacion_individual.py` — PDF de 1 hoja (ReportLab), porta
+  `generacion_pdf.py` de `nucleo_modular` verbatim; `_a_fila` adapta
+  `Liquidacion` al dict que espera esa función.
+- Persistencia en Supabase (`core/repos/liquidaciones.py`): `guardar_liquidacion`,
+  `buscar_liquidacion_existente`, `listar_liquidaciones`, `obtener_liquidacion`,
+  `cambiar_estado_liquidacion`, `eliminar_liquidacion`, `reconstruir_liquidacion`
+  (para regenerar el PDF de un registro ya guardado sin recalcular contra SQL
+  Server) — porta `acceso_supabase.py`/`mapeo_liquidacion.py` de `nucleo_modular`,
+  adaptado a leer directamente del dataclass `Liquidacion` en vez del dict `fila`
+  del legado. Tablas: `liquidaciones`, `liquidaciones_detalle`,
+  `liquidaciones_historial_estados`, `liquidaciones_eliminadas_historial`.
 - `insevig_web/states/liquidaciones_state.py`, `insevig_web/pages/liquidaciones/index.py`
+  — "Generar PDF" y "Guardar" por fila del lote previsualizado.
+- `insevig_web/states/liquidaciones_guardadas_state.py`,
+  `insevig_web/pages/liquidaciones/guardadas.py` (`/liquidaciones/guardadas`) —
+  Editor + Gestión combinados en una pantalla: buscar (texto/estado), ver
+  detalle (conceptos), cambiar estado, regenerar PDF, eliminar (solo admin,
+  con respaldo en `liquidaciones_eliminadas_historial`).
 - `tests/unit/test_liquidaciones.py`
 
 ## Datos
@@ -107,17 +124,23 @@ Solo lectura de nómina. Por defecto **Supabase** (las tablas históricas grande
   devuelve error (se puede resolver pasando la fecha correcta como 4º dato de
   la línea); el `.pyw` original la pide con un diálogo modal.
 - Configuración de SBU/región editable desde `admin/config` (hoy: defaults + selector de región).
-- **Sin Editor de Liquidaciones / Gestión de Liquidaciones / guardado en
-  Supabase (`liquidaciones`, `liquidaciones_detalle`) / generación de Bot
-  MRL.** El `.pyw` de producción tiene estas 3 pantallas adicionales (persistir
-  la liquidación, revisarla/editarla después, exportarla al formato del bot
-  RPA del SUT) -- son ~5700 líneas de UI Tkinter con su propia lógica de
-  guardado/reconstrucción, ya extraídas sin Tkinter en
-  `nucleo_modular/acceso_supabase.py`, `mapeo_liquidacion.py` y
-  `generacion_bot_mrl.py`, pero no trasplantadas a este módulo todavía (fuera
-  del alcance de este pase: solo se hizo el cálculo batch + Excel que ya
-  existía). Si se necesitan, son la base directa para portarlas.
-- Generación de PDF individual (el `.pyw` la tiene, vía ReportLab): existe
-  fielmente en `nucleo_modular/generacion_pdf.py`, no portada aquí (esta
-  página solo genera Excel de lote).
-- **Comparar montos con el .pyw para varios empleados reales antes de usar en producción.**
+- **Guardado en Supabase + PDF individual: hechos** (ver "Rebanada" arriba).
+  `/liquidaciones/guardadas` es una versión MVP del Editor + Gestión del
+  legado (~5700 líneas de Tkinter entre ambas pantallas) — cubre buscar, ver,
+  cambiar estado y eliminar, pero NO todavía:
+  - **Edición manual de campos** de una liquidación ya guardada (el Editor
+    del legado permite corregir a mano cualquier valor antes de re-guardar;
+    aquí solo se puede cambiar el estado).
+  - **Verificación de pago contra cartas bancarias** (`pagos_cartas.py` en
+    `nucleo_modular`, carpeta `PAGOS_CARTAS/`) — columna "¿Pagado?" de
+    Gestión de Liquidaciones.
+  - **Generar Bot MRL** (exportar al formato del bot RPA del SUT) — lógica ya
+    portada en `nucleo_modular/generacion_bot_mrl.py`, no conectada aquí.
+  - **Edición masiva / carga masiva de ajuste de cuadre** (diálogos del
+    legado, ~825 líneas de Tkinter entre los dos) — no evaluados todavía.
+  - Desglose mensual de vacaciones/décimos en el PDF regenerado desde un
+    registro guardado (`reconstruir_liquidacion` no lo tiene porque no se
+    guarda ese detalle en Supabase; el total sale bien, falta el detalle).
+- Columnas mensuales dinámicas de remuneración (col 62+) del Excel de lote: no incluidas aún.
+- **Comparar montos con el .pyw para varios empleados reales antes de usar en producción**
+  (bloqueante — sigue sin hacerse, no hay acceso a SQL Server real desde acá).

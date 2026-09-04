@@ -21,6 +21,7 @@ casos reales en el `.pyw` de producción).
 from __future__ import annotations
 
 import calendar
+import contextlib
 import datetime as dt
 from dataclasses import dataclass, field
 
@@ -500,6 +501,9 @@ class Liquidacion:
     campos: dict[str, float] = field(default_factory=dict)
     alertas: list[str] = field(default_factory=list)
     error: str = ""
+    apellidos: str = ""
+    nombres: str = ""
+    detalle_vacaciones: list[DetalleVacacionesPeriodo] = field(default_factory=list)
 
 
 def _parse_linea(linea: str) -> tuple[str, str, str, str] | None:
@@ -545,7 +549,9 @@ def procesar_empleado(
                   "correcta como 4º dato de la línea (cédula, salida, motivo, ingreso)",
         )
     sueldo = a_float(emp.get("SUELDO"))
-    nombre = f"{(emp.get('APELLIDOS') or '').strip()} {(emp.get('NOMBRES') or '').strip()}".strip()
+    apellidos_emp = (emp.get("APELLIDOS") or "").strip()
+    nombres_emp = (emp.get("NOMBRES") or "").strip()
+    nombre = f"{apellidos_emp} {nombres_emp}".strip()
     dias_trab = (fsal - fing).days
 
     # 1. Movimientos del mes de salida (+ fallback mes anterior)
@@ -623,7 +629,7 @@ def procesar_empleado(
     sumatorias_brutas = [_suma_base(cod, i, f, fuente) for i, f in pv]
     vac_ant = sumatorias_brutas[-2] if len(sumatorias_brutas) >= 2 else 0.0
     vac_ult = sumatorias_brutas[-1] if sumatorias_brutas else 0.0
-    suma_pendiente, alertas_vac, _detalle_vac = total_vacaciones_a_pagar(ced, sumatorias_brutas, pv)
+    suma_pendiente, alertas_vac, detalle_vac = total_vacaciones_a_pagar(ced, sumatorias_brutas, pv)
     vac_calc = round(suma_pendiente / 24, 2) if suma_pendiente > 0 else 0.0
 
     # 5. Décima tercera (total periodo / 12)
@@ -724,6 +730,7 @@ def procesar_empleado(
         seccion=str(emp.get("SECCION") or ""), sueldo_base=sueldo,
         fecha_ingreso=str(fing), fecha_salida=str(fsal), motivo_salida=motivo,
         dias_trabajados=dias_trab, campos=campos, alertas=alertas_vac,
+        apellidos=apellidos_emp, nombres=nombres_emp, detalle_vacaciones=detalle_vac,
     )
 
 
@@ -740,3 +747,378 @@ def procesar_lote(texto: str, fuente: str, cfg: ConfigLiquidacion) -> list[Liqui
         ced, fecha, motivo, fecha_ing = parsed
         out.append(procesar_empleado(ced, fecha, motivo, fuente, cfg, fecha_ingreso=fecha_ing))
     return out
+
+
+# ── Persistencia en Supabase (Editor / Gestión de liquidaciones) ────────────
+# Porta `_mapear_fila_a_liquidacion`/`_construir_conceptos_liquidacion`/
+# `guardar_liquidacion`/`eliminar_liquidacion_con_historial` de
+# `Generador_Liquidaciones_INSEVIG.pyw` vía `LIQUIDACIONES_SISTEMA_INSEVIG/
+# nucleo_modular/{mapeo_liquidacion,acceso_supabase}.py`, adaptado para leer
+# directamente de `Liquidacion` (nuestro dataclass) en vez del dict `fila`
+# del legado. Tablas: `liquidaciones`, `liquidaciones_detalle`,
+# `liquidaciones_periodos_calculo`, `liquidaciones_historial_estados`,
+# `liquidaciones_eliminadas_historial`.
+
+TABLA_LIQ = "liquidaciones"
+TABLA_LIQ_DETALLE = "liquidaciones_detalle"
+TABLA_LIQ_HISTORIAL = "liquidaciones_historial_estados"
+TABLA_LIQ_ELIMINADAS = "liquidaciones_eliminadas_historial"
+
+ESTADOS_LIQUIDACION = ("borrador", "generada", "pagada", "anulada")
+
+
+def clasificar_tipo_liquidacion(motivo: str | None) -> str:
+    """Deriva 'tipo_liquidacion' (para filtrar en el listado) del texto libre
+    de MOTIVO_SALIDA. Clasificación por palabras clave, no exhaustiva."""
+    m = (motivo or "").upper()
+    if "DESPID" in m:
+        return "despido"
+    if "RENUNCIA" in m:
+        return "renuncia"
+    if "VISTO BUEN" in m:
+        return "visto_bueno"
+    if any(p in m for p in ("CONTRATO", "PRUEBA", "TERMINO", "TÉRMINO", "TERMINACION", "TERMINACIÓN")):
+        return "termino_contrato"
+    if "MUERTE" in m or "FALLEC" in m:
+        return "muerte"
+    if "JUBILAC" in m:
+        return "jubilacion"
+    return "otro"
+
+
+def _mapear_registro(liq: Liquidacion, estado: str, cfg: ConfigLiquidacion, *, usuario: str) -> dict:
+    """`Liquidacion` -> columnas de la tabla `liquidaciones`."""
+    c = liq.campos
+    anios_servicio = None
+    try:
+        d_ing = dt.date.fromisoformat(liq.fecha_ingreso)
+        d_sal = dt.date.fromisoformat(liq.fecha_salida)
+        anios_servicio = round((d_sal - d_ing).days / 365.25, 2)
+    except ValueError:
+        pass
+
+    def g(k: str) -> float:
+        return float(c.get(k) or 0)
+
+    decimo_tercero = round(g("DECIMA_TERCERA_ANTERIOR") + g("DECIMA_TERCERA_ACTUAL"), 2)
+    decimo_cuarto = round(g("DECIMA_CUARTA_ANTERIOR") + g("DECIMA_CUARTA_ACTUAL"), 2)
+    horas_extras = round(g("VAL_SOBT_25") + g("VAL_SOBT_50") + g("VAL_SOBT_100"), 2)
+
+    def _horas_col(cant_key: str, valor_key: str) -> tuple[float, float]:
+        cantidad = c.get(cant_key) or 0
+        valor_total = g(valor_key)
+        return cantidad, (round(valor_total / cantidad, 2) if cantidad else 0.0)
+
+    h25c, h25v = _horas_col("HORAS_25", "VAL_SOBT_25")
+    h50c, h50v = _horas_col("HORAS_50", "VAL_SOBT_50")
+    h100c, h100v = _horas_col("HORAS_100", "VAL_SOBT_100")
+
+    otros_ingresos = round(g("REEMBOLSOS") + g("MANIOBRAS") + g("BONIFICACION") + g("MOVILIZACION"), 2)
+    anticipos = round(g("ANTICIPO_SUELDO") + g("ANTICIPOS_OTROS") + g("ANTICIPO_L_DESAHUCIO"), 2)
+    prestamos = round(g("PRESTAMOS_QUIROGRAFARIOS") + g("PRESTAMOS_COMPANIA") + g("PRESTAMO_HIPOTECARIO"), 2)
+    otros_descuentos = round(
+        g("PENSION_ALIMENTICIA") + g("APORT_IESS_CONYUGE") + g("IMPUESTO_RENTA") + g("APORT_IESS"), 2
+    )
+
+    sbu_ref = None
+    with contextlib.suppress(ValueError):
+        sbu_ref = cfg.sbu(dt.date.fromisoformat(liq.fecha_salida).year)
+
+    usuario = usuario or "Sistema"
+    return {
+        "empleado_codigo": liq.empleado,
+        "empleado_cedula": liq.cedula,
+        "empleado_nombres": liq.nombres,
+        "empleado_apellidos": liq.apellidos,
+        "cargo": liq.cargo or None,
+        "puesto_servicio": liq.depto or None,
+        "seccion": liq.seccion or None,
+        "sueldo_basico_unificado": sbu_ref,
+        "tipo_liquidacion": clasificar_tipo_liquidacion(liq.motivo_salida),
+        "motivo": liq.motivo_salida or None,
+        "fecha_ingreso": liq.fecha_ingreso or None,
+        "fecha_salida": liq.fecha_salida or None,
+        "dias_trabajados": liq.dias_trabajados,
+        "anios_servicio": anios_servicio,
+        "decimo_tercero": decimo_tercero,
+        "decimo_cuarto": decimo_cuarto,
+        "vacaciones_pendientes": round(g("VACACIONES_CALCULADAS"), 2),
+        "fondo_reserva": round(g("FONDO_RESERVA"), 2),
+        "bonificacion_desahucio": round(g("DESAHUCIO"), 2),
+        "horas_extras": horas_extras,
+        "horas_25_cantidad": h25c, "horas_25_valor_hora": h25v,
+        "horas_50_cantidad": h50c, "horas_50_valor_hora": h50v,
+        "horas_100_cantidad": h100c, "horas_100_valor_hora": h100v,
+        "otros_ingresos": otros_ingresos,
+        "anticipos": anticipos,
+        "prestamos": prestamos,
+        "multas": round(g("MULTAS"), 2),
+        "otros_descuentos": otros_descuentos,
+        "total_ingresos": round(g("TOTAL_INGRESOS"), 2),
+        "total_descuentos": round(g("TOTAL_DESCUENTOS"), 2),
+        "total_liquido": round(g("TOTAL_A_RECIBIR"), 2),
+        "estado": estado,
+        "observaciones": (
+            "Simulación / borrador generado desde PDF individual."
+            if estado == "borrador" else
+            "Liquidación generada y guardada en el sistema."
+        ),
+        "created_by": usuario,
+        "updated_by": usuario,
+    }
+
+
+# concepto_codigo -> (nombre, tipo, clave en Liquidacion.campos)
+_CONCEPTOS_DETALLE: tuple[tuple[str, str, str, str], ...] = (
+    ("SUELDO", "Sueldo", "ingreso", "SUELDO"),
+    ("BONIFICACION", "Bonificación", "ingreso", "BONIFICACION"),
+    ("MANIOBRAS", "Maniobras", "ingreso", "MANIOBRAS"),
+    ("MOVILIZACION", "Movilización", "ingreso", "MOVILIZACION"),
+    ("REEMBOLSOS", "Reembolsos", "ingreso", "REEMBOLSOS"),
+    ("SOBT_25", "Sobretiempo 25%", "ingreso", "VAL_SOBT_25"),
+    ("SOBT_50", "Sobretiempo 50%", "ingreso", "VAL_SOBT_50"),
+    ("SOBT_100", "Sobretiempo 100%", "ingreso", "VAL_SOBT_100"),
+    ("FONDO_RESERVA", "Fondo de Reserva 8,33%", "ingreso", "FONDO_RESERVA"),
+    ("VACACIONES", "Vacaciones pendientes", "ingreso", "VACACIONES_CALCULADAS"),
+    ("DEC_TERCERA_ANT", "Décima Tercera (anterior)", "ingreso", "DECIMA_TERCERA_ANTERIOR"),
+    ("DEC_TERCERA_ACT", "Décima Tercera (actual)", "ingreso", "DECIMA_TERCERA_ACTUAL"),
+    ("DEC_CUARTA_ANT", "Décima Cuarta (anterior)", "ingreso", "DECIMA_CUARTA_ANTERIOR"),
+    ("DEC_CUARTA_ACT", "Décima Cuarta (actual)", "ingreso", "DECIMA_CUARTA_ACTUAL"),
+    ("DESAHUCIO", "Bonificación Desahucio 25%", "ingreso", "DESAHUCIO"),
+    ("INDEM_DESPIDO", "Indemnización por despido", "ingreso", "INDEM_DESPIDO"),
+    ("IESS", "Aporte IESS personal", "descuento", "APORT_IESS"),
+    ("IESS_CONYUGE", "Aporte IESS cónyuge", "descuento", "APORT_IESS_CONYUGE"),
+    ("PREST_QUIROGRAFARIO", "Préstamo quirografario", "descuento", "PRESTAMOS_QUIROGRAFARIOS"),
+    ("PREST_COMPANIA", "Préstamo compañía", "descuento", "PRESTAMOS_COMPANIA"),
+    ("PREST_HIPOTECARIO", "Préstamo hipotecario", "descuento", "PRESTAMO_HIPOTECARIO"),
+    ("ANTICIPO_SUELDO", "Anticipo de sueldo", "descuento", "ANTICIPO_SUELDO"),
+    ("ANTICIPOS_OTROS", "Anticipos otros", "descuento", "ANTICIPOS_OTROS"),
+    ("ANTICIPOS_SURTIDOS", "Anticipos surtidos", "descuento", "ANTICIPOS_SURTIDOS"),
+    ("ANTICIPOS_OTROS_L", "Anticipo otros (liquidado)", "descuento", "ANTICIPOS_OTROS_L"),
+    ("ANTICIPO_L_DESAHUCIO", "Anticipo liquidado (desahucio)", "descuento", "ANTICIPO_L_DESAHUCIO"),
+    ("MULTAS", "Multas", "descuento", "MULTAS"),
+    ("PENSION_ALIMENTICIA", "Pensión alimenticia", "descuento", "PENSION_ALIMENTICIA"),
+    ("IMPUESTO_RENTA", "Impuesto a la renta", "descuento", "IMPUESTO_RENTA"),
+)
+
+
+def _construir_conceptos(liq: Liquidacion) -> list[dict]:
+    """Arma `liquidaciones_detalle` a partir de `Liquidacion.campos`."""
+    conceptos = []
+    for codigo, nombre, tipo, clave in _CONCEPTOS_DETALLE:
+        valor = float(liq.campos.get(clave) or 0)
+        if valor == 0:
+            continue
+        conceptos.append({
+            "concepto_codigo": codigo, "concepto_nombre": nombre,
+            "concepto_tipo": tipo, "valor_total": round(valor, 2),
+        })
+    for idx, concepto in enumerate(conceptos):
+        concepto["orden"] = idx
+    return conceptos
+
+
+def buscar_liquidacion_existente(cedula: str, fecha_salida_iso: str, estado: str,
+                                  fecha_ingreso_iso: str = "") -> str | None:
+    """Busca en `liquidaciones` un registro previo del mismo empleado + fecha
+    de salida (+ ingreso si se da), para avisar antes de guardar por si ya
+    existe. 'borrador' se busca aparte de todo estado real."""
+    if not fecha_salida_iso:
+        return None
+    ced = normalizar_cedula(cedula)
+    sb = supabase_client.get_client()
+    q = sb.table(TABLA_LIQ).select("id").eq("empleado_cedula", ced).eq("fecha_salida", fecha_salida_iso)
+    q = q.eq("estado", "borrador") if estado == "borrador" else q.neq("estado", "borrador")
+    if fecha_ingreso_iso:
+        q = q.eq("fecha_ingreso", fecha_ingreso_iso)
+    filas = q.execute().data or []
+    return filas[0]["id"] if filas else None
+
+
+def guardar_liquidacion(
+    liq: Liquidacion, estado: str, cfg: ConfigLiquidacion, *,
+    usuario: str, roles: set[str], liquidacion_id_existente: str = "",
+) -> tuple[bool, str]:
+    """Inserta (o actualiza) una liquidación en `liquidaciones` + sus
+    conceptos en `liquidaciones_detalle` (reemplazando los anteriores al
+    actualizar). Devuelve (True, id) o (False, mensaje de error)."""
+    if liq.error:
+        return False, liq.error
+    if estado not in ESTADOS_LIQUIDACION:
+        return False, f"Estado inválido: {estado}"
+    registro = _mapear_registro(liq, estado, cfg, usuario=usuario)
+    conceptos = _construir_conceptos(liq)
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "guardar_liquidacion", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=f"{liq.cedula}/{liq.fecha_salida}",
+        after={"estado": estado, "total_liquido": registro["total_liquido"]},
+    ):
+        try:
+            sb = supabase_client.get_client()
+            if liquidacion_id_existente:
+                sb.table(TABLA_LIQ).update(registro).eq("id", liquidacion_id_existente).execute()
+                sb.table(TABLA_LIQ_DETALLE).delete().eq(
+                    "liquidacion_id", liquidacion_id_existente
+                ).execute()
+                liquidacion_id = liquidacion_id_existente
+            else:
+                resultado = sb.table(TABLA_LIQ).insert(registro).execute()
+                liquidacion_id = resultado.data[0]["id"]
+            if conceptos:
+                for c in conceptos:
+                    c["liquidacion_id"] = liquidacion_id
+                sb.table(TABLA_LIQ_DETALLE).insert(conceptos).execute()
+            with contextlib.suppress(Exception):
+                sb.table(TABLA_LIQ_HISTORIAL).insert({
+                    "liquidacion_id": liquidacion_id, "estado": estado,
+                    "usuario": usuario, "observacion": None,
+                }).execute()
+            return True, liquidacion_id
+        except Exception as e:  # noqa: BLE001
+            return False, str(e)
+
+
+def listar_liquidaciones(
+    *, texto: str = "", estado: str = "", tipo: str = "", limite: int = 200,
+) -> list[dict]:
+    """Lista de `liquidaciones` para el Editor/Gestión — más recientes primero."""
+    sb = supabase_client.get_client()
+    q = sb.table(TABLA_LIQ).select(
+        "id,empleado_codigo,empleado_cedula,empleado_nombres,empleado_apellidos,"
+        "cargo,fecha_salida,tipo_liquidacion,estado,total_liquido,created_at"
+    )
+    if estado:
+        q = q.eq("estado", estado)
+    if tipo:
+        q = q.eq("tipo_liquidacion", tipo)
+    if texto.strip():
+        t = texto.strip()
+        if t.isdigit() or normalizar_cedula(t) == t.zfill(10):
+            q = q.or_(f"empleado_cedula.eq.{normalizar_cedula(t)},empleado_codigo.eq.{t}")
+        else:
+            q = q.or_(f"empleado_apellidos.ilike.%{t}%,empleado_nombres.ilike.%{t}%")
+    filas = q.order("created_at", desc=True).limit(limite).execute().data or []
+    for f in filas:
+        f["nombre"] = f"{f.get('empleado_apellidos', '')} {f.get('empleado_nombres', '')}".strip()
+    return filas
+
+
+def obtener_liquidacion(liquidacion_id: str) -> tuple[dict | None, list[dict]]:
+    """(registro, conceptos) de una liquidación guardada, o (None, [])."""
+    sb = supabase_client.get_client()
+    r = sb.table(TABLA_LIQ).select("*").eq("id", liquidacion_id).limit(1).execute()
+    registro = r.data[0] if r.data else None
+    if registro is None:
+        return None, []
+    conceptos = (
+        sb.table(TABLA_LIQ_DETALLE).select("*").eq("liquidacion_id", liquidacion_id)
+        .order("orden").execute().data or []
+    )
+    return registro, conceptos
+
+
+def cambiar_estado_liquidacion(
+    liquidacion_id: str, estado: str, *, usuario: str, roles: set[str], observacion: str = "",
+) -> None:
+    if estado not in ESTADOS_LIQUIDACION:
+        raise ValueError(f"Estado inválido: {estado}")
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "cambiar_estado", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id, after={"estado": estado},
+    ):
+        sb = supabase_client.get_client()
+        sb.table(TABLA_LIQ).update(
+            {"estado": estado, "updated_by": usuario}
+        ).eq("id", liquidacion_id).execute()
+        with contextlib.suppress(Exception):
+            sb.table(TABLA_LIQ_HISTORIAL).insert({
+                "liquidacion_id": liquidacion_id, "estado": estado,
+                "usuario": usuario, "observacion": observacion or None,
+            }).execute()
+
+
+def eliminar_liquidacion(
+    liquidacion_id: str, motivo: str, *, usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """Elimina una liquidación guardando antes un snapshot completo en
+    `liquidaciones_eliminadas_historial` (mismo criterio que
+    `eliminar_liquidacion_con_historial` del legado: no elimina si el estado
+    ya es 'pagada'). `liquidaciones_detalle` cae solo por ON DELETE CASCADE."""
+    from core.audit.writer import audit_scope
+
+    sb = supabase_client.get_client()
+    registro, conceptos = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    if registro.get("estado") == "pagada":
+        return False, "No se puede eliminar una liquidación ya marcada como pagada."
+    with audit_scope(
+        "liquidaciones", "eliminar_liquidacion", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id,
+        antes={"estado": registro.get("estado"), "total_liquido": registro.get("total_liquido")},
+    ):
+        try:
+            with contextlib.suppress(Exception):
+                sb.table(TABLA_LIQ_ELIMINADAS).insert({
+                    "liquidacion_id": liquidacion_id, "registro": registro,
+                    "conceptos": conceptos, "motivo": motivo or None, "usuario": usuario,
+                }).execute()
+            sb.table(TABLA_LIQ).delete().eq("id", liquidacion_id).execute()
+            return True, ""
+        except Exception as e:  # noqa: BLE001
+            return False, str(e)
+
+
+# concepto_codigo -> clave de Liquidacion.campos, para reconstruir (inverso de
+# _CONCEPTOS_DETALLE, colapsando los que comparten clave, ej. FONDO_RESERVA).
+_CODIGO_A_CLAVE_CAMPO: dict[str, str] = {cod: clave for cod, _n, _t, clave in _CONCEPTOS_DETALLE}
+
+
+def reconstruir_liquidacion(registro: dict, conceptos: list[dict]) -> Liquidacion:
+    """Reconstruye una `Liquidacion` aproximada a partir de lo ya guardado en
+    Supabase (`liquidaciones` + `liquidaciones_detalle`), para regenerar el
+    PDF/Excel de un registro guardado sin volver a calcular contra SQL
+    Server. El desglose mensual (vacaciones/décimos) no se guarda, así que
+    no se reconstruye — el total sí sale bien, solo falta el detalle mes a
+    mes si se pide "mostrar insumos"."""
+    valores: dict[str, float] = {}
+    for c in conceptos:
+        cod = str(c.get("concepto_codigo") or "")
+        clave = _CODIGO_A_CLAVE_CAMPO.get(cod)
+        if clave:
+            valores[clave] = valores.get(clave, 0.0) + float(c.get("valor_total") or 0)
+
+    campos = dict(valores)
+    campos.setdefault("FONDO_RESERVA", float(registro.get("fondo_reserva") or 0))
+    campos.setdefault("VACACIONES_CALCULADAS", float(registro.get("vacaciones_pendientes") or 0))
+    campos.setdefault("DESAHUCIO", float(registro.get("bonificacion_desahucio") or 0))
+    campos["HORAS_25"] = registro.get("horas_25_cantidad") or 0
+    campos["HORAS_50"] = registro.get("horas_50_cantidad") or 0
+    campos["HORAS_100"] = registro.get("horas_100_cantidad") or 0
+    total_ingresos = round(sum(campos.get(k, 0) for k in (
+        "SUELDO", "VAL_SOBT_25", "VAL_SOBT_50", "VAL_SOBT_100", "FONDO_RESERVA",
+        "MANIOBRAS", "MOVILIZACION", "REEMBOLSOS", "BONIFICACION",
+    )), 2)
+    campos["TOTAL_INGRESOS"] = total_ingresos
+    campos["TOTAL_DESCUENTOS"] = round(float(registro.get("total_descuentos") or 0), 2)
+    campos["TOTAL_A_RECIBIR"] = round(float(registro.get("total_liquido") or 0), 2)
+
+    apellidos = str(registro.get("empleado_apellidos") or "")
+    nombres = str(registro.get("empleado_nombres") or "")
+    return Liquidacion(
+        empleado=str(registro.get("empleado_codigo") or ""),
+        nombre=f"{apellidos} {nombres}".strip(),
+        cedula=str(registro.get("empleado_cedula") or ""),
+        cargo=str(registro.get("cargo") or ""), depto=str(registro.get("puesto_servicio") or ""),
+        seccion=str(registro.get("seccion") or ""),
+        sueldo_base=float(campos.get("SUELDO", 0)),
+        fecha_ingreso=str(registro.get("fecha_ingreso") or ""),
+        fecha_salida=str(registro.get("fecha_salida") or ""),
+        motivo_salida=str(registro.get("motivo") or ""),
+        dias_trabajados=int(registro.get("dias_trabajados") or 0),
+        campos=campos, apellidos=apellidos, nombres=nombres,
+    )

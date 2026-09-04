@@ -53,14 +53,15 @@ def index() -> rx.Component:
                             rx.table.row(
                                 *[
                                     rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
-                                    for c in ("Empleado", "Nombre", "Motivo", "Días", "Ingresos", "Descuentos", "A recibir", "Error")
+                                    for c in ("Empleado", "Nombre", "Motivo", "Días", "Ingresos",
+                                             "Descuentos", "A recibir", "Error", "")
                                 ]
                             )
                         ),
                         rx.table.body(
                             rx.foreach(
                                 LiquidacionesState.previsualizacion,
-                                lambda q: rx.table.row(
+                                lambda q, i: rx.table.row(
                                     rx.table.cell(q["empleado"]),
                                     rx.table.cell(q["nombre"]),
                                     rx.table.cell(q["motivo"]),
@@ -69,6 +70,28 @@ def index() -> rx.Component:
                                     rx.table.cell(q["descuentos"].to_string()),
                                     rx.table.cell(q["recibir"].to_string()),
                                     rx.table.cell(q["error"]),
+                                    rx.table.cell(
+                                        rx.cond(
+                                            q["error"] == "",
+                                            rx.vstack(
+                                                rx.hstack(
+                                                    rx.button("PDF", on_click=lambda: LiquidacionesState.generar_pdf_fila(i),
+                                                              size="1", variant="soft"),
+                                                    rx.cond(
+                                                        AuthState.permisos_flat.contains("liquidaciones:editar"),
+                                                        rx.button("Guardar", on_click=lambda: LiquidacionesState.guardar_fila(i),
+                                                                  size="1", color_scheme="blue"),
+                                                    ),
+                                                    spacing="1",
+                                                ),
+                                                rx.cond(
+                                                    LiquidacionesState.fila_msg.contains(i.to_string()),
+                                                    rx.text(LiquidacionesState.fila_msg[i.to_string()], size="1", color_scheme="gray"),
+                                                ),
+                                                spacing="1", align="start",
+                                            ),
+                                        )
+                                    ),
                                 ),
                             )
                         ),

@@ -43,7 +43,7 @@ PERMISOS_POR_DEFECTO: dict[str, dict[str, set[str]]] = {
         "roles": {"ver", "generar_pdf", "enviar_email"},
         "registrador": {"ver", "registrar_rpingdes"},
         "bitacora": {"ver", "crear", "editar"},
-        "liquidaciones": {"ver", "exportar", "generar_pdf"},
+        "liquidaciones": {"ver", "exportar", "generar_pdf", "editar"},
     },
     "consulta": {
         "reportes": {"ver", "exportar"},

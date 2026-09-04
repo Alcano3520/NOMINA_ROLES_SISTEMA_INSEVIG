@@ -204,3 +204,141 @@ def test_excel_liquidaciones_valido():
     assert "INDEM. DESPIDO" in headers
     assert "TOTAL VALORES A LIQUIDAR" in headers
     assert ws.max_row == 2
+
+
+def _liq_ejemplo(**overrides) -> "lq.Liquidacion":
+    base = dict(
+        empleado="1012", nombre="PEREIRA JUAN", cedula="0920116811",
+        cargo="GUARDIA", depto="OPERACIONES", seccion="SEC1", sueldo_base=460.0,
+        fecha_ingreso="2020-03-15", fecha_salida="2026-06-30", motivo_salida="RENUNCIA VOLUNTARIA",
+        dias_trabajados=2298, apellidos="PEREIRA", nombres="JUAN",
+        campos={
+            "SUELDO": 460.0, "HORAS_25": 10, "HORAS_50": 0, "HORAS_100": 0,
+            "VAL_SOBT_25": 15.6, "VAL_SOBT_50": 0.0, "VAL_SOBT_100": 0.0,
+            "FONDO_RESERVA": 38.3, "MANIOBRAS": 0.0, "MOVILIZACION": 0.0,
+            "REEMBOLSOS": 0.0, "BONIFICACION": 0.0,
+            "VACACIONES_ANTERIOR": 200.0, "VACACIONES_ULTIMO": 220.0, "VACACIONES_CALCULADAS": 18.33,
+            "DECIMA_TERCERA_ANTERIOR": 38.3, "DECIMA_TERCERA_ACTUAL": 38.3,
+            "DECIMA_CUARTA_ANTERIOR": 0.0, "DECIMA_CUARTA_ACTUAL": 240.0,
+            "DESAHUCIO": 690.0, "INDEM_DESPIDO": 0.0,
+            "APORT_IESS": 43.47, "PRESTAMOS_QUIROGRAFARIOS": 0.0, "PRESTAMOS_COMPANIA": 0.0,
+            "ANTICIPO_SUELDO": 0.0, "ANTICIPOS_OTROS": 0.0, "ANTICIPOS_SURTIDOS": 0.0,
+            "APORT_IESS_CONYUGE": 0.0, "PENSION_ALIMENTICIA": 0.0, "PRESTAMO_HIPOTECARIO": 0.0,
+            "IMPUESTO_RENTA": 0.0, "ANTICIPOS_OTROS_L": 0.0, "ANTICIPO_L_DESAHUCIO": 0.0,
+            "TOTAL_INGRESOS": 1000.0, "TOTAL_DESCUENTOS": 43.47, "TOTAL_A_RECIBIR": 956.53,
+        },
+    )
+    base.update(overrides)
+    return lq.Liquidacion(**base)
+
+
+def test_clasificar_tipo_liquidacion():
+    assert lq.clasificar_tipo_liquidacion("RENUNCIA VOLUNTARIA") == "renuncia"
+    assert lq.clasificar_tipo_liquidacion("DESPIDO INTEMPESTIVO") == "despido"
+    assert lq.clasificar_tipo_liquidacion("VISTO BUENO") == "visto_bueno"
+    assert lq.clasificar_tipo_liquidacion("FIN DE CONTRATO") == "termino_contrato"
+    assert lq.clasificar_tipo_liquidacion("FALLECIMIENTO") == "muerte"
+    assert lq.clasificar_tipo_liquidacion("JUBILACION") == "jubilacion"
+    assert lq.clasificar_tipo_liquidacion(None) == "otro"
+    assert lq.clasificar_tipo_liquidacion("motivo raro") == "otro"
+
+
+def test_mapear_registro_totales_y_horas():
+    liq = _liq_ejemplo()
+    cfg = lq.ConfigLiquidacion()
+    registro = lq._mapear_registro(liq, "generada", cfg, usuario="tester")
+    assert registro["empleado_codigo"] == "1012"
+    assert registro["empleado_cedula"] == "0920116811"
+    assert registro["empleado_apellidos"] == "PEREIRA" and registro["empleado_nombres"] == "JUAN"
+    assert registro["tipo_liquidacion"] == "renuncia"
+    assert registro["estado"] == "generada"
+    assert registro["total_liquido"] == 956.53
+    assert registro["decimo_tercero"] == 76.6  # 38.3 + 38.3
+    assert registro["horas_25_cantidad"] == 10
+    assert registro["horas_25_valor_hora"] == round(15.6 / 10, 2)
+    assert registro["created_by"] == "tester" and registro["updated_by"] == "tester"
+
+
+def test_mapear_registro_sin_usuario_usa_sistema():
+    registro = lq._mapear_registro(_liq_ejemplo(), "borrador", lq.ConfigLiquidacion(), usuario="")
+    assert registro["created_by"] == "Sistema"
+    assert "Simulación" in registro["observaciones"]
+
+
+def test_construir_conceptos_omite_valores_en_cero():
+    conceptos = lq._construir_conceptos(_liq_ejemplo())
+    codigos = {c["concepto_codigo"] for c in conceptos}
+    assert "SUELDO" in codigos and "DESAHUCIO" in codigos
+    assert "MANIOBRAS" not in codigos  # viene en 0.0 -> se omite
+    assert all(c["valor_total"] != 0 for c in conceptos)
+    assert [c["orden"] for c in conceptos] == list(range(len(conceptos)))
+
+
+def test_guardar_liquidacion_rechaza_estado_invalido():
+    ok, msg = lq.guardar_liquidacion(
+        _liq_ejemplo(), "estado_invalido", lq.ConfigLiquidacion(), usuario="t", roles=set()
+    )
+    assert not ok and "inválido" in msg
+
+
+def test_guardar_liquidacion_rechaza_si_hay_error():
+    liq = _liq_ejemplo(error="empleado no encontrado")
+    ok, msg = lq.guardar_liquidacion(liq, "borrador", lq.ConfigLiquidacion(), usuario="t", roles=set())
+    assert not ok and msg == "empleado no encontrado"
+
+
+def test_liquidacion_pdf_genera_documento_valido():
+    from core.pdf.liquidacion_individual import liquidacion_pdf
+
+    liq = _liq_ejemplo(detalle_vacaciones=[
+        lq.DetalleVacacionesPeriodo("2024-2025", "PAGADO", 0.0, 200.0, False),
+        lq.DetalleVacacionesPeriodo("2025-2026", "GOZADO_PARCIAL", 5.0, 220.0, True),
+    ])
+    data = liquidacion_pdf(liq, mostrar_insumos=True, es_simulacion=True)
+    assert data[:4] == b"%PDF"
+    assert len(data) > 500
+
+    data_real = liquidacion_pdf(liq, es_simulacion=False)
+    assert data_real[:4] == b"%PDF"
+
+
+def test_reconstruir_liquidacion_desde_supabase():
+    registro = {
+        "empleado_codigo": "1012", "empleado_cedula": "0920116811",
+        "empleado_apellidos": "PEREIRA", "empleado_nombres": "JUAN",
+        "cargo": "GUARDIA", "puesto_servicio": "OPERACIONES", "seccion": "SEC1",
+        "fecha_ingreso": "2020-03-15", "fecha_salida": "2026-06-30",
+        "motivo": "RENUNCIA VOLUNTARIA", "dias_trabajados": 2298,
+        "fondo_reserva": 38.3, "vacaciones_pendientes": 18.33,
+        "bonificacion_desahucio": 690.0, "total_descuentos": 43.47, "total_liquido": 956.53,
+        "horas_25_cantidad": 10, "horas_50_cantidad": 0, "horas_100_cantidad": 0,
+    }
+    conceptos = [
+        {"concepto_codigo": "SUELDO", "valor_total": 460.0},
+        {"concepto_codigo": "SOBT_25", "valor_total": 15.6},
+        {"concepto_codigo": "DESAHUCIO", "valor_total": 690.0},
+        {"concepto_codigo": "IESS", "valor_total": 43.47},
+    ]
+    liq = lq.reconstruir_liquidacion(registro, conceptos)
+    assert liq.empleado == "1012" and liq.cedula == "0920116811"
+    assert liq.nombre == "PEREIRA JUAN"
+    assert liq.campos["SUELDO"] == 460.0
+    assert liq.campos["VAL_SOBT_25"] == 15.6
+    assert liq.campos["DESAHUCIO"] == 690.0
+    assert liq.campos["APORT_IESS"] == 43.47
+    assert liq.campos["TOTAL_A_RECIBIR"] == 956.53
+    assert liq.campos["HORAS_25"] == 10
+
+    from core.pdf.liquidacion_individual import liquidacion_pdf
+
+    data = liquidacion_pdf(liq, es_simulacion=False)
+    assert data[:4] == b"%PDF"
+
+
+def test_liquidacion_pdf_con_error_no_revienta():
+    from core.pdf.liquidacion_individual import liquidacion_pdf
+
+    liq = lq.Liquidacion("", "", "0900000000", "", "", "", 0.0, "", "", "", 0,
+                         error="empleado no encontrado")
+    data = liquidacion_pdf(liq)
+    assert data[:4] == b"%PDF"
