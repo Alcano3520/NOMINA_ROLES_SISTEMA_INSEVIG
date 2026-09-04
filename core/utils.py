@@ -31,6 +31,31 @@ def normalizar_cedula(valor: object) -> str:
     return digitos.zfill(10) if digitos else s
 
 
+def cedula_valida(cedula: object) -> bool:
+    """Valida el dígito verificador de una cédula ecuatoriana (módulo 10).
+
+    >>> cedula_valida("0926815564")
+    True
+    >>> cedula_valida("1234567890")
+    False
+    """
+    c = "".join(ch for ch in str(cedula or "") if ch.isdigit())
+    if len(c) == 9:
+        c = "0" + c
+    if len(c) != 10:
+        return False
+    if not 1 <= int(c[:2]) <= 24:
+        return False
+    if int(c[2]) > 6:
+        return False
+    coef = (2, 1, 2, 1, 2, 1, 2, 1, 2)
+    suma = 0
+    for i in range(9):
+        v = int(c[i]) * coef[i]
+        suma += v - 9 if v >= 10 else v
+    return (10 - suma % 10) % 10 == int(c[9])
+
+
 def a_int(valor: object, default: int = 0) -> int:
     try:
         if valor is None or valor == "":

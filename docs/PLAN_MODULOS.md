@@ -268,17 +268,23 @@ Pasos: 8 (validación) → 5 → 6 → 7.
 
 # 9. Bitácora / Agenda de liquidaciones
 
-Legado: `BITACORAS_AGENDA_EGRESOS_FORMATOS/`.
+Legado: `BITACORAS_AGENDA_EGRESOS_FORMATOS/Agenda_Liquidacion_Haberes.pyw` (3 pestañas).
 
 | # | Función | Estado |
 |---|---|---|
-| 1 | Alta/edición/consulta de registros de agenda de cobro (21 campos) | ✅ |
-| 2 | Estados y cambio de estado | ✅ |
-| 3 | Historial de cambios por registro | ✅ |
-| 4 | Eliminar | ✅ |
-| 5 | Revisar los formatos/exportables del legado que no se hayan portado | ⬜ **revisar la carpeta original** |
-
-Pasos: abrir la carpeta legada y listar lo que falte.
+| 1 | Pestaña **Agenda**: alta/edición/consulta, filtros estado + período + texto | ✅ |
+| 2 | Estados EXACTOS del legado (`PENDIENTE/AGENDADO/PAGADO/CANCELADO`) + cambio rápido | ✅ (antes tenía estados inventados) |
+| 3 | Trazabilidad de cambios (`agenda_cobro_historial`, FK `registro_id`) + detalle "campo: antes → después" | ✅ (antes escribía `agenda_id`, columna inexistente) |
+| 4 | Eliminar (con entrada de historial) | ✅ |
+| 5 | "Texto para el sistema" (`texto_en_sistema`, formato RPEMPOBSERV) + botón Generar | ✅ |
+| 6 | Validación del dígito verificador de la cédula (aviso) | ✅ `core.utils.cedula_valida` |
+| 7 | Pestaña **Atención Personal** (append-only, motivos, borrar solo admin) | ✅ |
+| 8 | Pestaña **Reportes**: resumen (registros/hrs susp./QAP) + Excel con formato + trazabilidad | ✅ |
+| 9 | Paginación `.range()` para pasar el corte de 1000 filas de PostgREST | ✅ `_todas_las_filas` |
+| 10 | Cálculo de horas extra por cupo de sección | ⬜ (el `.pyw` lo marca "pendiente de subir a SQL Server") |
+| 11 | Botón "Registrar" → UPDATE a RPEMPLEA (FECHA_SAL/ESTADO/HOR*) | ⬜ (escritura a nómina; iría por `core/repos/empleados`) |
+| 12 | "Formato de Renuncia" / PDF individual del registro | ⬜ |
+| 13 | `EGRESOS/` (Google Apps Script de comprobantes de egreso) | ⬜ pieza separada, no es Python |
 
 ---
 
