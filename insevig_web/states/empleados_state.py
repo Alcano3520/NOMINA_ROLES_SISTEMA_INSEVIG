@@ -222,8 +222,8 @@ class EmpleadosState(rx.State):
             cat = await asyncio.to_thread(repo_emp.catalogos, fuente)
         except Exception:  # noqa: BLE001
             cat = {}
-        # cap por catálogo: el datalist con ~1000 opciones ralentiza el navegador.
-        self.edit_catalogos = {k: (v or [])[:400] for k, v in cat.items()} or self.edit_catalogos
+        # cap por catálogo: el datalist con cientos de opciones ralentiza el navegador.
+        self.edit_catalogos = {k: (v or [])[:120] for k, v in cat.items()} or self.edit_catalogos
 
     cargando_editor: bool = False
 
