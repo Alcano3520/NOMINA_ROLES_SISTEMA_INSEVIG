@@ -96,6 +96,17 @@ def leer_movimientos(
 # ── Catálogos de nombres ─────────────────────────────────────────────────────
 
 
+def empleados_del_periodo(periodo: str, *, historico: bool = False, fuente: str) -> list[str]:
+    """Códigos de empleado con al menos un movimiento en el período (para el lote
+    de roles: 'generar para todo el período')."""
+    codigos: set[str] = set()
+    for r in leer_movimientos(periodo, historico=historico, fuente=fuente):
+        c = str(r.get("EMPLEADO") or r.get("empleado") or "").strip()
+        if c:
+            codigos.add(c)
+    return sorted(codigos, key=lambda x: (len(x), x))
+
+
 def _catalogos(fuente: str) -> dict[str, dict[str, str]]:
     if fuente == FUENTE_SUPABASE:
         sb = supabase_client.get_client()

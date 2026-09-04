@@ -75,6 +75,52 @@ class RolesState(rx.State):
     def set_lista(self, v: str):
         self.lista_texto = v
 
+    # buscador para añadir empleados a la lista del lote
+    busca: str = ""
+    encontrados: list[dict] = []
+
+    @rx.event
+    def set_busca(self, v: str):
+        self.busca = v
+
+    @rx.event
+    async def buscar_emp(self):
+        if not self.busca.strip():
+            return
+        from core.repos import observaciones
+
+        fuente = await self._fuente()
+        self.encontrados = await asyncio.to_thread(observaciones.buscar_empleados, self.busca, fuente)
+
+    @rx.event
+    def anadir_emp(self, empleado: str):
+        actuales = {x.strip() for x in self.lista_texto.replace(",", "\n").splitlines() if x.strip()}
+        if empleado not in actuales:
+            self.lista_texto = (self.lista_texto + "\n" + empleado).strip()
+        self.encontrados = []
+
+    lote_todos_status: str = ""
+
+    @rx.event
+    async def generar_todo_periodo(self):
+        """Genera el rol de TODOS los empleados con movimientos en el período."""
+        auth = await self.get_state(AuthState)
+        if "roles:generar_pdf" not in auth.permisos_flat:
+            yield rx.toast.error("Sin permiso.")
+            return
+        from core.repos import nomina
+
+        fuente = await self._fuente()
+        periodo = self.periodo or _periodo_actual()
+        self.lote_todos_status = "Buscando empleados del período…"
+        yield
+        codigos = await asyncio.to_thread(
+            nomina.empleados_del_periodo, periodo, fuente=fuente
+        )
+        self.lote_todos_status = f"{len(codigos)} empleados"
+        self.lista_texto = "\n".join(codigos)
+        yield RolesState.generar_lote
+
     @rx.event
     def set_formato(self, v: str):
         self.formato = v
