@@ -352,6 +352,42 @@ def historial_observaciones(empleado: str, fuente: str) -> list[dict]:
     return out
 
 
+def datos_basicos_empleado(empleado: str, fuente: str) -> dict:
+    """Ficha resumida para la cabecera del visor de observaciones
+    (como `obtener_datos_empleado` del legado)."""
+    cols = "empleado,apellidos,nombres,cedula,cargo,depto,seccion,fecha_ing,fecha_sal,estado,telefono,direccion"
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        r = sb.table("rpemplea").select(cols).eq("codemp", "10").eq("empleado", str(empleado)).limit(1).execute()
+        d = r.data[0] if r.data else {}
+        g = lambda k: d.get(k)  # noqa: E731
+    else:
+        flt = get_settings().sqlserver_filter
+        filas = sqlserver.filas(
+            f"""SELECT EMPLEADO,APELLIDOS,NOMBRES,CEDULA,CARGO,DEPTO,SECCION,FECHA_ING,FECHA_SAL,
+                       ESTADO,TELEFONO,DIRECCION
+                FROM dbo.RPEMPLEA WHERE {flt} AND EMPLEADO = ?""",
+            (str(empleado),),
+        )
+        d = filas[0] if filas else {}
+        g = lambda k: d.get(k.upper()) or d.get(k)  # noqa: E731
+    if not d:
+        return {}
+    return {
+        "empleado": str(g("empleado") or empleado).strip(),
+        "nombre": f"{(g('apellidos') or '').strip()} {(g('nombres') or '').strip()}".strip(),
+        "cedula": normalizar_cedula(g("cedula")),
+        "cargo": str(g("cargo") or ""),
+        "depto": str(g("depto") or ""),
+        "seccion": str(g("seccion") or ""),
+        "fecha_ing": str(g("fecha_ing") or "")[:10],
+        "fecha_sal": str(g("fecha_sal") or "")[:10],
+        "estado": str(g("estado") or ""),
+        "telefono": str(g("telefono") or ""),
+        "direccion": str(g("direccion") or ""),
+    }
+
+
 def reporte_html(empleado: str, nombre: str, obs: list[dict], multas_: list[dict], faltas_: list[dict]) -> str:
     """HTML imprimible con observaciones + multas + faltas de un empleado
     (porta `guardar_texto` / generación de reporte del legado)."""

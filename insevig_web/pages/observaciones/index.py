@@ -48,6 +48,14 @@ def _nueva_observacion() -> rx.Component:
     )
 
 
+def _dato(etq: str, valor: rx.Var) -> rx.Component:
+    return rx.vstack(
+        rx.text(etq, size="1", weight="bold", color_scheme="gray"),
+        rx.text(valor, size="1"),
+        spacing="0",
+    )
+
+
 def _tabla(cols: list[str], filas: rx.Var, celdas) -> rx.Component:
     return scroll_x(
         rx.table.root(
@@ -100,6 +108,28 @@ def index() -> rx.Component:
                             spacing="3",
                             align="center",
                             wrap="wrap",
+                        ),
+                        rx.cond(
+                            ObservacionesState.datos_emp.contains("cedula"),
+                            rx.box(
+                                rx.grid(
+                                    _dato("Cédula", ObservacionesState.datos_emp["cedula"]),
+                                    _dato("Cargo", ObservacionesState.datos_emp["cargo"]),
+                                    _dato("Departamento", ObservacionesState.datos_emp["depto"]),
+                                    _dato("Sección", ObservacionesState.datos_emp["seccion"]),
+                                    _dato("Ingreso", ObservacionesState.datos_emp["fecha_ing"]),
+                                    _dato("Salida", ObservacionesState.datos_emp["fecha_sal"]),
+                                    _dato("Estado", ObservacionesState.datos_emp["estado"]),
+                                    _dato("Teléfono", ObservacionesState.datos_emp["telefono"]),
+                                    columns=rx.breakpoints(initial="2", sm="4"),
+                                    spacing="2",
+                                    width="100%",
+                                ),
+                                border="1px solid var(--gray-5)",
+                                border_radius="8px",
+                                padding="10px 12px",
+                                width="100%",
+                            ),
                         ),
                         rx.cond(
                             ObservacionesState.cargando,

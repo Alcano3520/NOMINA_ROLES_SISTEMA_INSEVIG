@@ -77,6 +77,46 @@ def index() -> rx.Component:
                     on_descargar=EnvioState.cancelar,
                 ),
             ),
+            rx.cond(
+                EnvioState.job > 0,
+                rx.vstack(
+                    rx.button("Ver log de envíos", on_click=EnvioState.cargar_log, variant="soft", size="1"),
+                    rx.cond(
+                        EnvioState.log.length() > 0,
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    *[rx.table.column_header_cell(c) for c in ("Empleado", "Email", "Estado", "Enviado", "Error")]
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    EnvioState.log,
+                                    lambda r: rx.table.row(
+                                        rx.table.cell(r["empleado"]),
+                                        rx.table.cell(r["email"]),
+                                        rx.table.cell(
+                                            rx.badge(
+                                                r["estado"],
+                                                color_scheme=rx.match(
+                                                    r["estado"], ("enviado", "green"), ("error", "red"), "gray"
+                                                ),
+                                            )
+                                        ),
+                                        rx.table.cell(r["enviado"]),
+                                        rx.table.cell(r["error"]),
+                                    ),
+                                )
+                            ),
+                            variant="surface",
+                            size="1",
+                            width="100%",
+                        ),
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+            ),
             spacing="4",
             width="100%",
         ),

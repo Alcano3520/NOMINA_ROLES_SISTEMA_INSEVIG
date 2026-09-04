@@ -142,6 +142,33 @@ class EnvioState(rx.State):
                 return
             await asyncio.sleep(1)
 
+    # ── Log de envíos ──────────────────────────────────────────────────
+    log: list[dict] = []
+
+    @rx.event
+    async def cargar_log(self):
+        jid = self.job
+        if not jid:
+            return
+
+        def _leer():
+            import sqlmodel
+
+            from core.db import appdb
+            from core.db.models import EmailSendLog
+
+            with appdb.session() as s:
+                filas = s.exec(
+                    sqlmodel.select(EmailSendLog).where(EmailSendLog.job_id == jid)
+                ).all()
+            return [
+                {"empleado": f.employee_code, "email": f.email, "estado": f.status,
+                 "error": f.error[:120], "enviado": str(f.sent_at or "")[:19]}
+                for f in filas
+            ]
+
+        self.log = await asyncio.to_thread(_leer)
+
     @rx.event
     def cancelar(self):
         if self.job:

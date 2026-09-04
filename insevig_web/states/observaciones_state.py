@@ -51,6 +51,8 @@ class ObservacionesState(rx.State):
         yield
         await self._cargar_todo()
 
+    datos_emp: dict = {}
+
     async def _cargar_todo(self):
         empleado = self.empleado_sel
         fuente = await self._fuente()
@@ -66,10 +68,12 @@ class ObservacionesState(rx.State):
                 [asdict(x) for x in observaciones.multas(empleado, fuente)],
                 [asdict(x) for x in observaciones.faltas(empleado, fuente)],
                 [asdict(x) for x in observaciones.faltas(empleado, fuente, historicas=True)],
+                observaciones.datos_basicos_empleado(empleado, fuente),
             )
 
-        obs, mul, fal, falh = await asyncio.to_thread(_cargar)
+        obs, mul, fal, falh, datos = await asyncio.to_thread(_cargar)
         self.observaciones, self.multas, self.faltas, self.faltas_hist = obs, mul, fal, falh
+        self.datos_emp = datos
         self.cargando = False
 
     # ── Nueva observación (primer slot libre) ─────────────────────────────
