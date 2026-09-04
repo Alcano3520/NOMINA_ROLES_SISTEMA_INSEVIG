@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import reflex as rx
 
+from core.repos.registrador import TIPOS_TRANSACCION
 from insevig_web import theme
 from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
@@ -12,6 +13,8 @@ from insevig_web.states.registrador_state import (
     CLASES_OPCIONES,
     RegistradorState,
 )
+
+_TIPOS_TRANS_OPC = list(TIPOS_TRANSACCION.items())  # [(clave, etiqueta), ...]
 
 _S = RegistradorState
 _SEL = {
@@ -164,6 +167,14 @@ def _tab_prestamo() -> rx.Component:
                 ),
                 rx.text_area(value=_S.p_observ, on_change=lambda v: _S.set_p("observ", v),
                              placeholder="Observación (opcional)", rows="2", width="100%"),
+                rx.hstack(
+                    rx.text("Tipo de transacción:", size="1", weight="bold"),
+                    rx.el.select(
+                        *[rx.el.option(etq, value=clave) for clave, etq in _TIPOS_TRANS_OPC],
+                        value=_S.p_tipo_trans, on_change=lambda v: _S.set_p("tipo_trans", v), style=_SEL,
+                    ),
+                    spacing="2", align="center",
+                ),
                 rx.cond(_S.p_aviso != "", rx.callout(_S.p_aviso, color_scheme="amber", size="1")),
                 rx.cond(
                     _S.p_preview.length() > 0,
@@ -202,9 +213,32 @@ def _tab_prestamo() -> rx.Component:
                             )
                         ),
                         rx.text("Total cuotas: $" + _S.p_preview_total.to_string(), weight="bold", size="2"),
-                        rx.cond(
-                            AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                            primary_button("Registrar préstamo", on_click=_S.guardar_prestamo),
+                        rx.hstack(
+                            rx.cond(
+                                AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
+                                rx.alert_dialog.root(
+                                    rx.alert_dialog.trigger(primary_button("Registrar préstamo")),
+                                    rx.alert_dialog.content(
+                                        rx.alert_dialog.title("Confirmar préstamo"),
+                                        rx.alert_dialog.description(
+                                            "Empleado " + _S.emp_sel + " — " + _S.emp_nombre
+                                            + " · " + _S.p_preview.length().to_string() + " cuota(s) · Total $"
+                                            + _S.p_preview_total.to_string()
+                                            + ". Se registrará en el sistema, con auditoría."
+                                        ),
+                                        rx.hstack(
+                                            rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                            rx.alert_dialog.action(
+                                                rx.button("Sí, registrar", on_click=_S.guardar_prestamo, color_scheme="blue")
+                                            ),
+                                            spacing="3", justify="end", margin_top="1rem",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            rx.button("Exportar", on_click=_S.exportar_prestamo_csv, variant="soft", size="2"),
+                            rx.button("Limpiar", on_click=_S.limpiar_prestamo, variant="ghost", size="2"),
+                            spacing="2",
                         ),
                         spacing="2", width="100%",
                     ),
@@ -292,16 +326,40 @@ def _tab_masiva() -> rx.Component:
                 ),
                 rx.hstack(
                     rx.button("Cargar en la tabla", on_click=_S.pm_cargar_pegado, variant="soft", size="1"),
+                    rx.upload(
+                        rx.button("Cargar archivo", variant="soft", size="1", type="button"),
+                        id="pm_archivo",
+                        accept={
+                            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            ".csv": "text/csv",
+                        },
+                        max_files=1, border="0", padding="0",
+                        on_drop=_S.pm_subir_archivo(rx.upload_files(upload_id="pm_archivo")),
+                    ),
                     rx.button("Agregar fila", on_click=_S.pm_nueva_fila, variant="soft", size="1"),
                     rx.button("Validar", on_click=_S.pm_validar, size="1"),
                     rx.button("Limpiar", on_click=_S.pm_limpiar, variant="ghost", size="1"),
                     rx.cond(
                         (_S.pm_grid.length() > 0)
                         & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                        primary_button("Registrar todo", on_click=_S.aplicar_masiva),
+                        rx.alert_dialog.root(
+                            rx.alert_dialog.trigger(primary_button("Registrar todo")),
+                            rx.alert_dialog.content(
+                                rx.alert_dialog.title("Confirmar carga masiva de préstamos"),
+                                rx.alert_dialog.description(_S.pm_resumen + ". Se registrarán en el sistema."),
+                                rx.hstack(
+                                    rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                    rx.alert_dialog.action(
+                                        rx.button("Sí, registrar todo", on_click=_S.aplicar_masiva, color_scheme="blue")
+                                    ),
+                                    spacing="3", justify="end", margin_top="1rem",
+                                ),
+                            ),
+                        ),
                     ),
                     spacing="2", wrap="wrap",
                 ),
+                rx.cond(_S.pm_resumen != "", rx.text(_S.pm_resumen, size="1", weight="bold")),
                 rx.cond(
                     _S.pm_grid.length() > 0,
                     _grilla(["Código / cédula", "Nombre", "Valor total", "Cuotas / $mes", "Fecha", "Observación"],
@@ -533,8 +591,25 @@ def _tab_individual() -> rx.Component:
                     rx.button("Previsualizar", on_click=_S.previsualizar_individual, variant="soft"),
                     rx.cond(
                         AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                        primary_button("Registrar", on_click=_S.guardar_individual),
+                        rx.alert_dialog.root(
+                            rx.alert_dialog.trigger(primary_button("Registrar")),
+                            rx.alert_dialog.content(
+                                rx.alert_dialog.title("Confirmar movimiento"),
+                                rx.alert_dialog.description(
+                                    "Empleado " + _S.emp_sel + " — " + _S.emp_nombre
+                                    + ". Se registrará en el sistema, con auditoría."
+                                ),
+                                rx.hstack(
+                                    rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                    rx.alert_dialog.action(
+                                        rx.button("Sí, registrar", on_click=_S.guardar_individual, color_scheme="blue")
+                                    ),
+                                    spacing="3", justify="end", margin_top="1rem",
+                                ),
+                            ),
+                        ),
                     ),
+                    rx.button("Limpiar", on_click=_S.limpiar_individual, variant="ghost"),
                     spacing="2",
                 ),
                 rx.cond(_S.ind_preview != "", rx.callout(_S.ind_preview, size="1")),
@@ -582,16 +657,40 @@ def _bulk_egr_ing() -> rx.Component:
             ),
             rx.hstack(
                 rx.button("Cargar en la tabla", on_click=_S.bulk_cargar_pegado, variant="soft", size="1"),
+                rx.upload(
+                    rx.button("Cargar archivo", variant="soft", size="1", type="button"),
+                    id="bulk_archivo",
+                    accept={
+                        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        ".csv": "text/csv",
+                    },
+                    max_files=1, border="0", padding="0",
+                    on_drop=_S.bulk_subir_archivo(rx.upload_files(upload_id="bulk_archivo")),
+                ),
                 rx.button("Agregar fila", on_click=_S.bulk_nueva_fila, variant="soft", size="1"),
                 rx.button("Validar", on_click=_S.bulk_validar, size="1"),
                 rx.button("Limpiar", on_click=_S.bulk_limpiar, variant="ghost", size="1"),
                 rx.cond(
                     (_S.bulk_grid.length() > 0)
                     & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                    primary_button("Registrar todo", on_click=_S.aplicar_bulk),
+                    rx.alert_dialog.root(
+                        rx.alert_dialog.trigger(primary_button("Registrar todo")),
+                        rx.alert_dialog.content(
+                            rx.alert_dialog.title("Confirmar carga masiva de egresos/ingresos"),
+                            rx.alert_dialog.description(_S.bulk_resumen + ". Se registrarán en el sistema."),
+                            rx.hstack(
+                                rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                rx.alert_dialog.action(
+                                    rx.button("Sí, registrar todo", on_click=_S.aplicar_bulk, color_scheme="blue")
+                                ),
+                                spacing="3", justify="end", margin_top="1rem",
+                            ),
+                        ),
+                    ),
                 ),
                 spacing="2", wrap="wrap",
             ),
+            rx.cond(_S.bulk_resumen != "", rx.text(_S.bulk_resumen, size="1", weight="bold")),
             rx.cond(
                 _S.bulk_grid.length() > 0,
                 _grilla(["Código / cédula", "Nombre", "Tipo", "Valor", "Fecha", "Observación"],
@@ -734,7 +833,25 @@ def _tab_biess() -> rx.Component:
                             rx.cond(
                                 _S.movs.length() > 0
                                 & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                                primary_button("Confirmar y registrar", on_click=_S.postear_biess),
+                                rx.alert_dialog.root(
+                                    rx.alert_dialog.trigger(primary_button("Confirmar y registrar")),
+                                    rx.alert_dialog.content(
+                                        rx.alert_dialog.title("Confirmar BIESS"),
+                                        rx.alert_dialog.description(
+                                            "Se registrarán " + _S.dry["a_insertar"].to_string()
+                                            + " empleado(s) activo(s) por un total de $"
+                                            + _S.dry["total"].to_string()
+                                            + ", todos con el mismo número de egreso."
+                                        ),
+                                        rx.hstack(
+                                            rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                            rx.alert_dialog.action(
+                                                rx.button("Sí, registrar", on_click=_S.postear_biess, color_scheme="blue")
+                                            ),
+                                            spacing="3", justify="end", margin_top="1rem",
+                                        ),
+                                    ),
+                                ),
                             ),
                             rx.cond(_S.movs.length() > 0,
                                     rx.button("Exportar CSV", on_click=_S.exportar_biess, variant="soft", size="1")),

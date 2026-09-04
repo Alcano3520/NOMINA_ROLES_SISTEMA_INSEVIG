@@ -45,6 +45,21 @@ CLASES_SIMPLIFICADAS: dict[str, dict] = {
     "110": {"concepto": "MANIOBRAS", "codigo": "ING", "tipo": "ING", "aporta": 1},
 }
 
+
+# Etiqueta libre que se antepone a la observación (del legado: TIPOS_TRANSACCION).
+# El legado guardaba el código interno (ej. "PRESTAMO_PRE01"); aquí se guarda la
+# etiqueta legible, más útil para quien lea la observación después.
+TIPOS_TRANSACCION: dict[str, str] = {
+    "": "(Sin tipo)",
+    "PRESTAMO": "Préstamo",
+    "DESCUENTO": "Descuento",
+    "EGRESO": "Egreso",
+    "DEVOLUCION": "Devolución",
+    "CUADRE": "Cuadre",
+    "DES_LIQUIDACION": "Descuento liquidación",
+    "CRUCE": "Cruce",
+}
+
 NOMBRE_CLASE: dict[str, str] = {
     "205": "Préstamo", "202": "Anticipo de sueldo", "203": "Multa",
     "204": "Quirografario", "206": "Pensión alimenticia", "207": "Préstamo hipotecario",

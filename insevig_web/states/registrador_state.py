@@ -53,6 +53,41 @@ def _fila_bi() -> dict:
             "fecha": _hoy(), "observacion": "", "valido": False}
 
 
+async def _leer_archivo_grid(files: list[rx.UploadFile], campos: tuple[str, ...], fila_vacia) -> list[dict]:
+    """Lee un .xlsx/.csv subido ('Cargar Archivo' del legado) a una grilla de
+    carga masiva: una columna por campo, en el mismo orden que `campos`. La
+    primera fila se descarta como encabezado (igual que `pd.read_excel`/
+    `read_csv` con header por defecto, que es lo que usaba el legado)."""
+    if not files:
+        return []
+    datos = await files[0].read()
+    nombre = (files[0].name or "").lower()
+    if nombre.endswith(".csv"):
+        import csv
+        import io
+
+        texto = datos.decode("utf-8-sig", errors="replace")
+        crudas = list(csv.reader(io.StringIO(texto)))
+    else:
+        import io
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(datos), read_only=True, data_only=True)
+        ws = wb[wb.sheetnames[0]]
+        crudas = [["" if c is None else str(c) for c in fila] for fila in ws.iter_rows(values_only=True)]
+    filas: list[dict] = []
+    for r in crudas[1:2501]:  # [0] = encabezado
+        if not any(str(x).strip() for x in r):
+            continue
+        fila = fila_vacia()
+        for j, campo in enumerate(campos):
+            if j < len(r) and str(r[j]).strip():
+                fila[campo] = str(r[j]).strip()
+        filas.append(fila)
+    return filas
+
+
 class RegistradorState(rx.State):
     tab: str = "prestamo"
     error: str = ""
@@ -149,6 +184,7 @@ class RegistradorState(rx.State):
     p_cuota_mensual: str = ""
     p_fecha: str = ""
     p_observ: str = ""
+    p_tipo_trans: str = ""
     p_preview: list[dict] = []      # [{'secuencia','fecha_vencimiento','valor'}]
     p_aviso: str = ""
 
@@ -217,7 +253,9 @@ class RegistradorState(rx.State):
 
         cuotas = [Cuota(c["secuencia"], c["fecha_vencimiento"], c["valor"]) for c in self.p_preview]
         total = round(sum(c.valor for c in cuotas), 2)
-        emp, fecha, obs = self.emp_sel, self.p_fecha or _hoy(), self.p_observ
+        emp, fecha = self.emp_sel, self.p_fecha or _hoy()
+        tipo_trans = registrador.TIPOS_TRANSACCION.get(self.p_tipo_trans, "")
+        obs = f"{self.p_observ} {tipo_trans}".strip() if tipo_trans else self.p_observ
         usuario, roles = auth.username, set(auth.roles)
         self.error = self.resultado = ""
         try:
@@ -234,6 +272,35 @@ class RegistradorState(rx.State):
                 await self._cargar_movimientos_emp()
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
+
+    @rx.event
+    def limpiar_prestamo(self):
+        self.p_valor = self.p_num_cuotas = self.p_cuota_mensual = ""
+        self.p_num_cuotas = "12"
+        self.p_fecha = _hoy()
+        self.p_observ = self.p_tipo_trans = self.p_aviso = ""
+        self.p_preview = []
+        self.emp_sel = self.emp_nombre = ""
+        self.p_proyeccion = []
+        self.emp_movimientos = []
+        self.error = self.resultado = ""
+
+    @rx.event
+    def exportar_prestamo_csv(self):
+        if not self.p_preview:
+            return
+        import csv
+        import io
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Cuota", "Vence", "Valor"])
+        for c in self.p_preview:
+            w.writerow([c["secuencia"], c["fecha_vencimiento"], c["valor"]])
+        return rx.download(
+            data=("﻿" + buf.getvalue()).encode("utf-8"),
+            filename=f"prestamo_{self.emp_sel or 'resumen'}.csv",
+        )
 
     # ── 2. Carga masiva de préstamos (grilla editable + pegar de Excel) ──
     pm_modo: str = "cuotas"          # "cuotas" (nº de cuotas) | "valor" (cuota mensual)
@@ -290,6 +357,29 @@ class RegistradorState(rx.State):
         if filas:
             self.pm_grid = filas
             self.pm_pegar = ""
+
+    @rx.event
+    async def pm_subir_archivo(self, files: list[rx.UploadFile]):
+        """'Cargar Archivo' del legado: Excel/CSV con código, valor total,
+        cuotas/valor, fecha, observación (una columna por campo)."""
+        filas = await _leer_archivo_grid(
+            files, ("codigo", "valor_total", "cuotas_valor", "fecha", "observacion"), _fila_pm
+        )
+        if filas:
+            self.pm_grid = filas
+
+    @rx.var
+    def pm_resumen(self) -> str:
+        con_datos = [r for r in self.pm_grid if str(r["codigo"]).strip()]
+        validas = [r for r in con_datos if r.get("valido")]
+        total = sum(float(r["valor_total"] or 0) for r in validas if str(r["valor_total"]).strip())
+        if not con_datos:
+            return ""
+        prom = f" · promedio ${total / len(validas):,.2f}" if validas else ""
+        return (
+            f"Filas con datos: {len(con_datos)} · listas para registrar: {len(validas)} "
+            f"· total ${total:,.2f}{prom}"
+        )
 
     @rx.event
     async def pm_validar(self):
@@ -547,6 +637,14 @@ class RegistradorState(rx.State):
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
 
+    @rx.event
+    def limpiar_individual(self):
+        self.ind_valor = self.ind_observ = self.ind_preview = ""
+        self.ind_fecha = _hoy()
+        self.emp_sel = self.emp_nombre = ""
+        self.emp_movimientos = []
+        self.error = self.resultado = ""
+
     # ── 4b. Carga masiva de egresos / ingresos (grilla editable) ────────
     bulk_pegar: str = ""
     bulk_grid: list[dict] = []
@@ -596,6 +694,29 @@ class RegistradorState(rx.State):
         if filas:
             self.bulk_grid = filas
             self.bulk_pegar = ""
+
+    @rx.event
+    async def bulk_subir_archivo(self, files: list[rx.UploadFile]):
+        """'Cargar Archivo' del legado: Excel/CSV con código, clase, valor,
+        fecha, observación."""
+        filas = await _leer_archivo_grid(
+            files, ("codigo", "clase", "valor", "fecha", "observacion"), _fila_bi
+        )
+        if filas:
+            self.bulk_grid = filas
+
+    @rx.var
+    def bulk_resumen(self) -> str:
+        con_datos = [r for r in self.bulk_grid if str(r["codigo"]).strip()]
+        validas = [r for r in con_datos if r.get("valido")]
+        total = sum(float(r["valor"] or 0) for r in validas if str(r["valor"]).strip())
+        if not con_datos:
+            return ""
+        prom = f" · promedio ${total / len(validas):,.2f}" if validas else ""
+        return (
+            f"Filas con datos: {len(con_datos)} · listas para registrar: {len(validas)} "
+            f"· total ${total:,.2f}{prom}"
+        )
 
     @rx.event
     async def bulk_validar(self):

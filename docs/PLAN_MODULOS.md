@@ -230,6 +230,11 @@ Legado: `registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.py
 | 15 | BIESS: override manual de fila-encabezado / columnas + "Ver Excel" + Releer | ✅ `biess_autodetectar` / `parse_biess_manual` / `biess_diagnostico` |
 | 16 | BIESS: tipo 204/207, observación autogenerada, mismo N° de egreso para todo el lote (modo agrupado), INSERT completo (21 columnas) | ✅ `postear_biess` (antes el INSERT era reducido y sin número compartido) |
 | 17 | Panel "movimientos vigentes del empleado" en Préstamo y Egresos/Ingresos | ✅ `historial_movimientos(..., empleado=...)` |
+| 18 | **"Cargar Archivo"** (Excel/CSV) en ambas grillas de carga masiva, además de pegar | ✅ `pm_subir_archivo` / `bulk_subir_archivo` |
+| 19 | **"Resumen"** del lote (filas con datos / listas / total / promedio) antes de procesar | ✅ `pm_resumen` / `bulk_resumen`, en línea sobre la grilla |
+| 20 | **Diálogo de confirmación** antes de cada escritura (préstamo individual, carga masiva de préstamos, egresos/ingresos individual y masivo, BIESS) | ✅ `rx.alert_dialog` con resumen de lo que se va a registrar |
+| 21 | **Tipo de Transacción** (combo, se antepone a la observación) en Préstamo individual | ✅ `TIPOS_TRANSACCION` |
+| 22 | **"Limpiar"** y **"Exportar"** en Préstamo individual; **"Limpiar"** en Egresos/Ingresos individual | ✅ |
 
 **6 pestañas portadas.** Falta: el modo "agrupado" exacto del legado en la carga masiva de Egresos/Ingresos (un único número + observación común para todo el lote — hoy cada fila puede tener su propia clase, BIESS sí lo tiene) y el "respaldo por operación" (que en el legado nunca existió — reemplazado por `core.audit`).
 

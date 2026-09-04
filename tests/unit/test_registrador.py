@@ -98,3 +98,35 @@ def test_split_linea_pegado_de_excel():
     assert _split_linea("1012, 600, 12, 2026-07-31") == ["1012", "600", "12", "2026-07-31"]
     assert _split_linea("PEREIRA, JUAN") == ["PEREIRA, JUAN"]  # 1 sola coma = no es CSV
     assert _split_linea("  1012  ") == ["1012"]
+
+
+def test_leer_archivo_grid_csv_descarta_encabezado():
+    import asyncio
+
+    from insevig_web.states.registrador_state import _fila_pm, _leer_archivo_grid
+
+    class _Archivo:
+        name = "lote.csv"
+
+        async def read(self):
+            return (
+                b"codigo,valor,cuotas,fecha,obs\n"
+                b"1012,600,12,2026-07-31,PRESTAMO\n"
+                b"\n"
+                b"1013,300,6,2026-08-31,\n"
+            )
+
+    campos = ("codigo", "valor_total", "cuotas_valor", "fecha", "observacion")
+    filas = asyncio.run(_leer_archivo_grid([_Archivo()], campos, _fila_pm))
+    assert len(filas) == 2
+    assert filas[0]["codigo"] == "1012" and filas[0]["valor_total"] == "600"
+    assert filas[0]["observacion"] == "PRESTAMO"
+    assert filas[1]["codigo"] == "1013" and filas[1]["observacion"] == ""
+
+
+def test_leer_archivo_grid_sin_archivos():
+    import asyncio
+
+    from insevig_web.states.registrador_state import _fila_pm, _leer_archivo_grid
+
+    assert asyncio.run(_leer_archivo_grid([], ("codigo",), _fila_pm)) == []
