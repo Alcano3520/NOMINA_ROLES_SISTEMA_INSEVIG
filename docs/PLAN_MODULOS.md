@@ -179,7 +179,7 @@ Legado: `prestamos/HISTORIAL_PRESTAMOS_10.pyw` (3158).
 | 7 | **Lectura en voz alta** de la narrativa (navegador) | ✅ |
 | 8 | **Detalle por préstamo** (ver movimientos individuales) | ✅ botón "Ver" |
 | 9 | Brechas entre cuotas, cuota promedio, estimación meses para cancelar | ✅ en `agrupar_por_numero` |
-| 10 | Excel por-empleado con estilo (banner, hojas Historial/DESCUENTOS con formato) | 🟡 2 hojas ✅ · formato/banner ⬜ |
+| 10 | Excel por-empleado con estilo (banner, hojas Historial/Resumen con formato) | ✅ banner INSEVIG, anchos de columna, bordes, fila TOTAL |
 | 11 | Config del proveedor IA desde la UI (hoy: `.env`) | ✅ `/admin/parametros` (proveedor/URL/modelo; API key sigue en `.env`) |
 
 Pasos: 10 (formato del Excel por-empleado).
@@ -257,7 +257,7 @@ Legado: `LIQUIDACIONES_SISTEMA_INSEVIG/Liquidaciones_generador_CON_VACACIONES.py
 | 2 | Cálculo legal completo (vacaciones, décimo 13/14 COSTA/SIERRA, desahucio, indemnización, IESS, fondo reserva, DIAS360, split anticipos, descuentos multi-mes) | ✅ |
 | 3 | Excel hoja FORMATO (~62 columnas) | ✅ |
 | 4 | Selección de región | ✅ |
-| 5 | Configuración de SBU por año editable (hoy: valores por defecto) | ⬜ (va en Administración) |
+| 5 | Configuración de SBU por año editable (hoy: valores por defecto) | ✅ `/admin/parametros` (`config_liquidacion` mezcla los SBU guardados) |
 | 6 | Columnas mensuales dinámicas de remuneración (col 62+) del Excel | ⬜ |
 | 7 | Fecha de ingreso override cuando FECHA_ING > FECHA_SAL | ✅ 4º dato de la línea |
 | 8 | **Validar montos contra el `.pyw` con empleados reales** | ⬜ **bloqueante para producción** |

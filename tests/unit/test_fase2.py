@@ -105,6 +105,10 @@ def test_historial_xlsx_tiene_hoja_resumen():
     data = historial_xlsx("1012", "PEREIRA", [M("2025-01-05", 500.0, "P", "9", "RPHISTOR")])
     wb = openpyxl.load_workbook(io.BytesIO(data))
     assert {"Historial", "Resumen por préstamo"} <= set(wb.sheetnames)
+    ws = wb["Historial"]
+    assert "HISTORIAL DE PRÉSTAMOS" in str(ws["A1"].value)
+    valores = [c.value for row in ws.iter_rows() for c in row]
+    assert "TOTAL" in valores
 
 
 def test_migracion_sqlite_a_appdb(app_db, tmp_path):
