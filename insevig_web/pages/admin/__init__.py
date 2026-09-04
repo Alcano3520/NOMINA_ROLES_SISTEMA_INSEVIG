@@ -1,1 +1,1 @@
-from insevig_web.pages.admin import auditoria, config, roles, usuarios  # noqa: F401
+from insevig_web.pages.admin import auditoria, config, parametros, roles, usuarios  # noqa: F401

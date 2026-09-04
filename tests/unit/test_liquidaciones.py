@@ -67,8 +67,9 @@ def test_sbu_por_anio_fallback():
 
 
 def test_parse_linea():
-    assert lq._parse_linea("0920116811, 15/02/2026, DESPIDO") == ("0920116811", "15/02/2026", "DESPIDO")
-    assert lq._parse_linea("0920116811, 15/02/2026") == ("0920116811", "15/02/2026", "")
+    assert lq._parse_linea("0920116811, 15/02/2026, DESPIDO") == ("0920116811", "15/02/2026", "DESPIDO", "")
+    assert lq._parse_linea("0920116811, 15/02/2026") == ("0920116811", "15/02/2026", "", "")
+    assert lq._parse_linea("092, 15/02/2026, RENUNCIA, 01/01/2020") == ("092", "15/02/2026", "RENUNCIA", "01/01/2020")
     assert lq._parse_linea("solo_esto") is None
 
 

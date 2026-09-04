@@ -52,6 +52,42 @@ class AdminState(rx.State):
     def set_aud(self, campo: str, v: str):
         setattr(self, f"aud_{campo}", v)
 
+    # ── Parámetros de negocio: SBU por año ─────────────────────────────
+    sbu: list[dict] = []   # [{'anio','valor'}]
+    sbu_msg: str = ""
+
+    @rx.event
+    async def cargar_sbu(self):
+        def _q():
+            from core.parametros import get_sbu
+            from core.repos.liquidaciones import SBU_DEFECTO
+
+            merged = dict(SBU_DEFECTO)
+            merged.update(get_sbu())
+            return [{"anio": a, "valor": str(v)} for a, v in sorted(merged.items())]
+
+        self.sbu = await asyncio.to_thread(_q)
+
+    @rx.event
+    def set_sbu_valor(self, anio: str, v: str):
+        self.sbu = [{**x, "valor": v} if x["anio"] == anio else x for x in self.sbu]
+
+    @rx.event
+    async def guardar_sbu(self):
+        auth_st = await self.get_state(AuthState)
+        if "admin" not in auth_st.roles:
+            self.sbu_msg = "Solo un administrador."
+            return
+        data = {x["anio"]: x["valor"] for x in self.sbu}
+
+        def _save():
+            from core.parametros import set_sbu
+
+            set_sbu({k: float(v) for k, v in data.items() if str(v).replace(".", "", 1).isdigit()})
+
+        await asyncio.to_thread(_save)
+        self.sbu_msg = "Guardado."
+
     @rx.event
     async def cargar_auditoria(self):
         f_user, f_mod = self.aud_usuario.strip(), self.aud_modulo.strip()

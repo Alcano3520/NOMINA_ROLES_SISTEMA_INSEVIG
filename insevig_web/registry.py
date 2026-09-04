@@ -77,6 +77,7 @@ MODULES: list[ModuleSpec] = [
          NavItem("Roles y permisos", "/admin/roles"),
          NavItem("Auditoría", "/admin/auditoria"),
          NavItem("Verificación de datos", "/reportes/comparador", "ver"),
+         NavItem("Parámetros", "/admin/parametros", "editar"),
          NavItem("Configuración", "/admin/config")],
     ),
 ]

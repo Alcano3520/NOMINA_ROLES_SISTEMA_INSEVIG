@@ -44,6 +44,7 @@ _RUTAS_MIGRADAS = {
     "/admin/roles",
     "/admin/auditoria",
     "/admin/config",
+    "/admin/parametros",
     "/bitacora",
     "/liquidaciones",
 }

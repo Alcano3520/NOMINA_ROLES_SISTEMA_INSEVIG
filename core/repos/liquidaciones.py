@@ -289,17 +289,20 @@ class Liquidacion:
     error: str = ""
 
 
-def _parse_linea(linea: str) -> tuple[str, str, str] | None:
+def _parse_linea(linea: str) -> tuple[str, str, str, str] | None:
+    """cédula, dd/mm/aaaa (salida), motivo[, dd/mm/aaaa (ingreso, opcional)]."""
     partes = [p.strip() for p in linea.split(",")]
     if len(partes) < 2:
         return None
     ced, fecha = partes[0], partes[1]
     motivo = partes[2] if len(partes) > 2 else ""
-    return ced, fecha, motivo
+    fecha_ing = partes[3] if len(partes) > 3 else ""
+    return ced, fecha, motivo, fecha_ing
 
 
 def procesar_empleado(
-    cedula: str, fecha_salida: str, motivo: str, fuente: str, cfg: ConfigLiquidacion
+    cedula: str, fecha_salida: str, motivo: str, fuente: str, cfg: ConfigLiquidacion,
+    fecha_ingreso: str = "",
 ) -> Liquidacion:
     emp = _empleado(cedula, fuente)
     ced = normalizar_cedula(cedula)
@@ -309,10 +312,13 @@ def procesar_empleado(
         )
     cod = str(emp["EMPLEADO"]).strip()
     fsal = _f(fecha_salida) or _f(emp.get("FECHA_SAL")) or dt.date.today()
-    fing = _f(emp.get("FECHA_ING")) or fsal
+    fing = _f(fecha_ingreso) or _f(emp.get("FECHA_ING")) or fsal
     if fing > fsal:
-        return Liquidacion(cod, "", ced, "", "", "", 0.0, "", str(fsal), motivo, 0,
-                           error="fecha de ingreso posterior a la de salida")
+        return Liquidacion(
+            cod, "", ced, "", "", "", 0.0, "", str(fsal), motivo, 0,
+            error="fecha de ingreso posterior a la de salida — añade la fecha de ingreso "
+                  "correcta como 4º dato de la línea (cédula, salida, motivo, ingreso)",
+        )
     sueldo = a_float(emp.get("SUELDO"))
     nombre = f"{(emp.get('APELLIDOS') or '').strip()} {(emp.get('NOMBRES') or '').strip()}".strip()
     dias_trab = (fsal - fing).days
@@ -478,6 +484,6 @@ def procesar_lote(texto: str, fuente: str, cfg: ConfigLiquidacion) -> list[Liqui
             out.append(Liquidacion("", "", "", "", "", "", 0.0, "", "", "", 0,
                                    error=f"línea inválida: {linea!r}"))
             continue
-        ced, fecha, motivo = parsed
-        out.append(procesar_empleado(ced, fecha, motivo, fuente, cfg))
+        ced, fecha, motivo, fecha_ing = parsed
+        out.append(procesar_empleado(ced, fecha, motivo, fuente, cfg, fecha_ingreso=fecha_ing))
     return out

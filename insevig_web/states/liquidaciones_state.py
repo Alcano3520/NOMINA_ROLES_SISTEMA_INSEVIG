@@ -44,7 +44,8 @@ class LiquidacionesState(rx.State):
         if not self.entrada.strip():
             return
         fuente = await self._fuente()
-        cfg = repo.ConfigLiquidacion(region=self.region)
+        from core.parametros import config_liquidacion
+        cfg = config_liquidacion(self.region)
         texto = self.entrada
 
         def _run():
@@ -78,7 +79,8 @@ class LiquidacionesState(rx.State):
             from core.excel.liquidaciones_builders import liquidaciones_xlsx
 
             ctx.progreso(0, 1, "Calculando liquidaciones…")
-            cfg = repo.ConfigLiquidacion(region=region)
+            from core.parametros import config_liquidacion
+            cfg = config_liquidacion(region)
             liqs = repo.procesar_lote(texto, fuente, cfg)
             data = liquidaciones_xlsx(liqs)
             ruta = storage.guardar(ctx.job_id, "LIQUIDACIONES.xlsx", data)
