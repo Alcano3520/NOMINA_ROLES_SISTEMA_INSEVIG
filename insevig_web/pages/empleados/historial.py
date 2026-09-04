@@ -10,6 +10,86 @@ from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
 
 
+def _historial_multi() -> rx.Component:
+    _S = EmpleadosState
+    return card(
+        rx.vstack(
+            rx.hstack(
+                rx.heading("Historial por período", size="3"),
+                rx.spacer(),
+                rx.button("Exportar CSV", on_click=_S.exportar_historial, variant="soft", size="1"),
+                width="100%",
+            ),
+            rx.cond(
+                _S.hist_cargando,
+                rx.center(rx.spinner(), padding="1rem"),
+                scroll_x(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(*[
+                                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                for c in ("Período", "Días", "Ingresos", "Egresos", "Neto", "")
+                            ])
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                _S.hist_periodos,
+                                lambda f: rx.table.row(
+                                    rx.table.cell(f["periodo"]),
+                                    rx.table.cell(f["dias"].to_string()),
+                                    rx.table.cell(f["ingresos"].to_string()),
+                                    rx.table.cell(f["egresos"].to_string()),
+                                    rx.table.cell(f["neto"].to_string()),
+                                    rx.table.cell(
+                                        rx.button("Conceptos", size="1", variant="soft",
+                                                  on_click=lambda: _S.ver_detalle_periodo(f["periodo"]))
+                                    ),
+                                ),
+                            )
+                        ),
+                        variant="surface",
+                        size="1",
+                        width="100%",
+                    )
+                ),
+            ),
+            rx.cond(
+                _S.hist_detalle.length() > 0,
+                rx.vstack(
+                    rx.heading("Conceptos de " + _S.hist_detalle_periodo, size="2"),
+                    scroll_x(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("Concepto", style={"background": theme.PRIMARY, "color": "white"}),
+                                    rx.table.column_header_cell("Valor", style={"background": theme.PRIMARY, "color": "white"}),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    _S.hist_detalle,
+                                    lambda c: rx.table.row(
+                                        rx.table.cell(c["concepto"]),
+                                        rx.table.cell(c["valor"].to_string()),
+                                    ),
+                                )
+                            ),
+                            variant="surface",
+                            size="1",
+                            width="100%",
+                        )
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+            ),
+            spacing="2",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
 @rx.page(
     route="/empleados/historial",
     title="INSEVIG — Historial de nómina",
@@ -40,10 +120,24 @@ def historial() -> rx.Component:
                                 placeholder="2026-06",
                                 width="120px",
                             ),
-                            rx.button("Ver", on_click=EmpleadosState.recargar),
+                            rx.button("Ver período", on_click=EmpleadosState.recargar),
+                            rx.text("Últimos", size="1"),
+                            rx.input(
+                                value=EmpleadosState.hist_n,
+                                on_change=EmpleadosState.set_hist_n,
+                                type="number",
+                                width="64px",
+                            ),
+                            rx.button(
+                                "meses", on_click=EmpleadosState.cargar_varios_periodos, variant="soft"
+                            ),
                             spacing="3",
                             align="center",
                             wrap="wrap",
+                        ),
+                        rx.cond(
+                            EmpleadosState.hist_periodos.length() > 0,
+                            _historial_multi(),
                         ),
                         rx.cond(
                             EmpleadosState.cargando,

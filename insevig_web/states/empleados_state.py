@@ -117,6 +117,83 @@ class EmpleadosState(rx.State):
             {"concepto": k, "valor": round(v, 2)} for k, v in sorted(emp.conceptos.items())
         ]
 
+    # ── Historial de varios períodos ─────────────────────────────────────
+    hist_periodos: list[dict] = []   # [{'periodo','ingresos','egresos','neto','dias'}]
+    hist_n: str = "6"
+    hist_cargando: bool = False
+    hist_detalle: list[dict] = []
+    hist_detalle_periodo: str = ""
+
+    @rx.event
+    def set_hist_n(self, v: str):
+        self.hist_n = v
+
+    @rx.event
+    async def cargar_varios_periodos(self):
+        if not self.empleado_sel:
+            return
+        self.hist_cargando = True
+        self.hist_detalle = []
+        yield
+        fuente = await self._fuente()
+        emp_cod = self.empleado_sel
+        try:
+            n = max(1, min(24, int(self.hist_n)))
+        except ValueError:
+            n = 6
+        hoy = dt.date.today()
+        periodos = []
+        y, m = hoy.year, hoy.month
+        for _ in range(n):
+            periodos.append(f"{y}-{m:02d}")
+            m -= 1
+            if m == 0:
+                m, y = 12, y - 1
+
+        def _run():
+            filas = []
+            for per in periodos:
+                e = datos_empleado(per, emp_cod, fuente)
+                if e is None:
+                    continue
+                filas.append({
+                    "periodo": per, "dias": e.dias,
+                    "ingresos": round(e.total_ingresos, 2),
+                    "egresos": round(e.total_egresos, 2),
+                    "neto": round(e.total_recibir, 2),
+                    "conceptos": [{"concepto": k, "valor": round(v, 2)} for k, v in sorted(e.conceptos.items())],
+                })
+            return filas
+
+        todo = await asyncio.to_thread(_run)
+        self.hist_periodos = [{k: v for k, v in f.items() if k != "conceptos"} for f in todo]
+        self._hist_conceptos = {f["periodo"]: f["conceptos"] for f in todo}
+        self.hist_cargando = False
+
+    _hist_conceptos: dict = {}
+
+    @rx.event
+    def ver_detalle_periodo(self, periodo: str):
+        self.hist_detalle_periodo = periodo
+        self.hist_detalle = self._hist_conceptos.get(periodo, [])
+
+    @rx.event
+    def exportar_historial(self):
+        if not self.hist_periodos:
+            return
+        import csv
+        import io
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Período", "Días", "Ingresos", "Egresos", "Neto"])
+        for f in self.hist_periodos:
+            w.writerow([f["periodo"], f["dias"], f["ingresos"], f["egresos"], f["neto"]])
+        return rx.download(
+            data=buf.getvalue().encode("utf-8"),
+            filename=f"historial_nomina_{self.empleado_sel}.csv",
+        )
+
     # ── Grid de búsqueda (página /empleados/buscar) ────────────────────────
     grid_texto: str = ""            # búsqueda contra el origen (código/cédula/nombre)
     grid_filtro_vivo: str = ""      # filtro incremental sobre lo ya cargado
