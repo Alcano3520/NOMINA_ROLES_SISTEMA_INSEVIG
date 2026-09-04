@@ -20,10 +20,9 @@ BG = "#f5f7fa"
 SIDEBAR_BREAKPOINT = "1024px"
 
 theme = rx.theme(
-    # Claro por defecto (el sistema anterior era claro), pero el usuario puede
-    # cambiar a oscuro con el botón del encabezado.
-    appearance="light",
-    has_background=True,
+    # Claro por defecto (el sistema anterior era claro); el usuario cambia a
+    # oscuro con el botón del encabezado.
+    color_mode="light",
     accent_color="blue",
     gray_color="slate",
     radius="medium",

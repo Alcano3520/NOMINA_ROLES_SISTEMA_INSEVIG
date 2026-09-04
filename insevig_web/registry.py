@@ -35,19 +35,6 @@ class ModuleSpec:
 
 MODULES: list[ModuleSpec] = [
     ModuleSpec(
-        "reportes", "Reportes", "file-bar-chart",
-        [NavItem("Consolidado de nómina", "/reportes/consolidado")],
-    ),
-    ModuleSpec(
-        "prestamos", "Préstamos", "hand-coins",
-        [NavItem("Historial", "/prestamos/historial"),
-         NavItem("Saldos", "/prestamos/saldos")],
-    ),
-    ModuleSpec(
-        "observaciones", "Observaciones", "clipboard-list",
-        [NavItem("Observaciones / Multas / Faltas", "/observaciones")],
-    ),
-    ModuleSpec(
         "empleados", "Gestión de empleados", "users",
         [NavItem("Fichas de empleados", "/empleados/buscar"),
          NavItem("Historial de nómina", "/empleados/historial"),
@@ -63,6 +50,19 @@ MODULES: list[ModuleSpec] = [
         "registrador", "Registrar egresos/ingresos", "file-plus-2",
         [NavItem("Importar BIESS", "/registrador/biess", "registrar_rpingdes"),
          NavItem("Registro manual", "/registrador/manual", "registrar_rpingdes")],
+    ),
+    ModuleSpec(
+        "reportes", "Reportes", "file-bar-chart",
+        [NavItem("Consolidado de nómina", "/reportes/consolidado")],
+    ),
+    ModuleSpec(
+        "prestamos", "Préstamos", "hand-coins",
+        [NavItem("Historial", "/prestamos/historial"),
+         NavItem("Saldos", "/prestamos/saldos")],
+    ),
+    ModuleSpec(
+        "observaciones", "Observaciones", "clipboard-list",
+        [NavItem("Observaciones / Multas / Faltas", "/observaciones")],
     ),
     ModuleSpec(
         "bitacora", "Agenda de liquidaciones", "calendar-clock",

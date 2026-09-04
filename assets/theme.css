@@ -1,8 +1,7 @@
 /* Tema INSEVIG. Claro por defecto (el sistema anterior era claro); el usuario
-   puede pasar a oscuro con el botón del encabezado. */
+   puede pasar a oscuro con el botón del encabezado (clase .dark en <html>). */
 
-/* LightningCSS convierte light-dark() de Radix en este toggle. Lo fijamos según
-   el modo activo (clase .light/.dark en <html>, la pone el selector de tema). */
+/* LightningCSS convierte light-dark() de Radix en este toggle. */
 :root,
 :root.light {
   --lightningcss-light: ;
@@ -15,11 +14,13 @@
   color-scheme: dark;
 }
 
-/* ── Modo claro ─────────────────────────────────────────────────────────── */
+/* ── Modo claro (por defecto) ───────────────────────────────────────────
+   Con !important para que se vea bien aunque el navegador tenga forzado
+   el modo oscuro. */
 :root:not(.dark) body,
 :root:not(.dark) .radix-themes {
-  background-color: #f5f7fa;
-  color: #1f2937;
+  background-color: #f5f7fa !important;
+  color: #1f2937 !important;
 }
 :root:not(.dark) .rt-Card,
 :root:not(.dark) .rt-Card::before,
@@ -28,8 +29,9 @@
 :root:not(.dark) .rt-DialogContent,
 :root:not(.dark) .rt-AlertDialogContent,
 :root:not(.dark) .rt-PopoverContent,
-:root:not(.dark) .rt-SelectContent {
-  background-color: #ffffff;
+:root:not(.dark) .rt-SelectContent,
+:root:not(.dark) .rt-HoverCardContent {
+  background-color: #ffffff !important;
 }
 :root:not(.dark) .rt-TextFieldInput,
 :root:not(.dark) .rt-TextFieldRoot,
@@ -38,15 +40,15 @@
 :root:not(.dark) input,
 :root:not(.dark) textarea,
 :root:not(.dark) select {
-  background-color: #ffffff;
-  color: #1f2937;
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
 }
 
-/* ── Modo oscuro ────────────────────────────────────────────────────────── */
+/* ── Modo oscuro (al pulsar el botón) ───────────────────────────────────── */
 :root.dark body,
 :root.dark .radix-themes {
-  background-color: #0d1117;
-  color: #e6edf3;
+  background-color: #0d1117 !important;
+  color: #e6edf3 !important;
 }
 
 .rt-Button.rt-variant-solid {
