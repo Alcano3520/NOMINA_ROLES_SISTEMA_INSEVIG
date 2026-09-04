@@ -373,6 +373,18 @@ def editor_panel() -> rx.Component:
                     align="center",
                 ),
                 rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
+                rx.badge(
+                    rx.icon(
+                        rx.cond(_S.edit_dirty, "circle-alert", rx.cond(_S.modo_edicion | _S.es_nuevo, "pencil", "lock")),
+                        size=13,
+                    ),
+                    _S.estado_barra,
+                    color_scheme=rx.cond(
+                        _S.edit_dirty, "amber", rx.cond(_S.modo_edicion | _S.es_nuevo, "blue", "gray")
+                    ),
+                    variant="soft",
+                    size="2",
+                ),
                 rx.cond(_S.edit_error != "", rx.callout(_S.edit_error, color_scheme="red", size="1")),
                 rx.cond(_S.edit_ok != "", rx.callout(_S.edit_ok, color_scheme="green", size="1")),
                 rx.cond(~_S.es_nuevo, _foto_y_documentos()),

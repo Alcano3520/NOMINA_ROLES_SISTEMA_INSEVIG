@@ -40,7 +40,7 @@ Legado: `empleados/SISTEMA_GESTION_EMPLEADOS_10.pyw` (3021 líneas),
 | 8 | **Autocompletar** (código/cédula/apellido/nombre → lista desplegable) | ⬜ | |
 | 9 | Menú **Acciones**: Nuevo · Modificar · Eliminar · Vista Completa · Exportar Catálogos | 🟡 | Nuevo/Modificar/Eliminar ✅; Vista Completa ⬜; Exportar Catálogos ⬜ |
 | 10 | **Barra inferior**: Guardar · Cancelar · Imprimir · "Empleado actual: … (cód. …)" · Salir | 🟡 | Guardar ✅, Cerrar ✅; Cancelar ⬜, Imprimir ⬜, etiqueta ⬜ |
-| 11 | Barra de estado con mensajes ("MODO EDICIÓN ACTIVO", "DATOS MODIFICADOS…") | ⬜ | |
+| 11 | Barra de estado con mensajes ("MODO EDICIÓN ACTIVO", "DATOS MODIFICADOS…") | ✅ | badge bajo el encabezado (`estado_barra` + `edit_dirty`) |
 | 12 | Aviso al salir con cambios sin guardar | ⬜ | (menos crítico en web) |
 
 ## 1.2 Ficha del empleado — las 6 pestañas

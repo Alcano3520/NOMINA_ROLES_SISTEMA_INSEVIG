@@ -337,12 +337,23 @@ class EmpleadosState(rx.State):
     edit_ok: str = ""
     edit_audit: str = ""  # "creado por X · modificado por Y"
     modo_edicion: bool = False  # como el legado: hay que pulsar "Modificar" para editar
+    edit_dirty: bool = False  # hay cambios sin guardar
     confirmar_borrado: str = ""  # el usuario reescribe el código para confirmar
     edit_catalogos: dict[str, list[dict]] = {"FNC": [], "SEC": [], "DPT": [], "BAN": []}
+
+    @rx.var
+    def estado_barra(self) -> str:
+        """Mensaje de la barra de estado del editor (como el legado)."""
+        if self.es_nuevo:
+            return "Alta de empleado — completa los datos y pulsa Guardar"
+        if not self.modo_edicion:
+            return "Solo lectura — pulsa Modificar para editar"
+        return "Datos modificados sin guardar" if self.edit_dirty else "Modo edición activo"
 
     @rx.event
     def toggle_modo_edicion(self):
         self.modo_edicion = not self.modo_edicion
+        self.edit_dirty = False
         self.edit_ok = self.edit_error = ""
 
 
@@ -371,6 +382,7 @@ class EmpleadosState(rx.State):
         self.edit_campos = {}
         self.es_nuevo = False
         self.modo_edicion = False
+        self.edit_dirty = False
         self.edit_error = self.edit_ok = self.edit_audit = ""
 
     async def _cargar_ficha(self, empleado: str):
@@ -390,6 +402,7 @@ class EmpleadosState(rx.State):
         self.edit_campos["EMPLEADO"] = e.empleado
         self.edit_token = e.token
         self.modo_edicion = False
+        self.edit_dirty = False
         self.edit_audit = (
             f"Creado por {e.creado_por or '—'} ({e.fecha_crea or '—'}) · "
             f"Últ. modif. {e.mod_por or '—'} ({e.fecha_mod or '—'})"
@@ -433,6 +446,7 @@ class EmpleadosState(rx.State):
     @rx.event
     async def set_campo_catalogo(self, campo: str, valor: str):
         self.edit_campos[campo] = valor
+        self.edit_dirty = True
         # refresca el nombre mostrado
         await self._resolver_nombres_catalogo()
 
@@ -464,6 +478,7 @@ class EmpleadosState(rx.State):
         self.edit_token = ""
         self.es_nuevo = True
         self.modo_edicion = True
+        self.edit_dirty = False
         self.edit_error = self.edit_ok = self.edit_audit = ""
         self.edit_obs_slots = ["", "", "", "", "", "", ""]
         yield
@@ -472,6 +487,7 @@ class EmpleadosState(rx.State):
     @rx.event
     def set_campo(self, campo: str, valor: str):
         self.edit_campos[campo] = valor
+        self.edit_dirty = True
 
     # ── Casilla "Fondo de Reserva" (deriva de NUM_AFIL) ──────────────────
     @rx.var
@@ -495,6 +511,7 @@ class EmpleadosState(rx.State):
             )
             return
         self.edit_campos["NUM_AFIL"] = "9999999999" if self.fdr_marcado else "0"
+        self.edit_dirty = True
 
     @rx.event
     def imprimir_ficha(self):
@@ -581,6 +598,7 @@ class EmpleadosState(rx.State):
     def toggle_campo(self, campo: str):
         actual = str(self.edit_campos.get(campo, ""))
         self.edit_campos[campo] = "" if actual in ("1", "S", "true") else "1"
+        self.edit_dirty = True
 
     @rx.event
     async def guardar(self):
@@ -612,6 +630,7 @@ class EmpleadosState(rx.State):
                 )
             self.edit_ok = "Guardado."
             self.modo_edicion = False
+            self.edit_dirty = False
             e = await asyncio.to_thread(repo_emp.obtener, self.edit_empleado, "sqlserver")
             if e:
                 self.edit_token = e.token
