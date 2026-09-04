@@ -34,6 +34,7 @@ _RUTAS_MIGRADAS = {
     "/observaciones",
     "/empleados/historial",
     "/empleados/buscar",
+    "/empleados/avanzada",
     "/empleados/editar",
     "/empleados/carga-masiva",
     "/roles/generar",

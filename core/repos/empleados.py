@@ -221,6 +221,87 @@ def buscar(
     ]
 
 
+def buscar_avanzado(
+    fuente: str, *, apellidos: str = "", nombres: str = "", cedula: str = "",
+    estado: str = "", depto: str = "", cargo: str = "", limite: int = 1000,
+) -> list[dict]:
+    """Búsqueda por múltiples criterios (como el diálogo 'Búsqueda Avanzada' del
+    legado). Devuelve filas anchas con nombre de cargo/depto, sueldo, tel, email."""
+    apellidos, nombres, cedula = apellidos.strip(), nombres.strip(), cedula.strip()
+    depto, cargo = depto.strip(), cargo.strip()
+    est = {"ACTIVO": "ACT", "LIQUIDADO": "LIQ", "SUSPENDIDO": "SUS", "ACT": "ACT",
+           "LIQ": "LIQ", "SUS": "SUS"}.get(estado.upper(), "")
+    cat = catalogos(fuente)
+    n_cargo = {x["codigo"]: x["nombre"] for x in cat.get("FNC", [])}
+    n_depto = {x["codigo"]: x["nombre"] for x in cat.get("DPT", [])}
+
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        q = sb.table("rpemplea").select(
+            "empleado,apellidos,nombres,cedula,cargo,depto,sueldo,telefono,emp_mail,estado"
+        ).eq("codemp", "10")
+        if apellidos:
+            q = q.ilike("apellidos", f"%{apellidos}%")
+        if nombres:
+            q = q.ilike("nombres", f"%{nombres}%")
+        if cedula.isdigit():
+            q = q.eq("cedula", int(cedula))
+        if est:
+            q = q.eq("estado", est)
+        if depto:
+            q = q.eq("depto", depto)
+        if cargo:
+            q = q.eq("cargo", cargo)
+        filas = q.order("apellidos").limit(limite).execute().data or []
+        get = lambda r, k: r.get(k)  # noqa: E731
+    else:
+        flt = get_settings().sqlserver_filter
+        cond = flt
+        params: list = []
+        if apellidos:
+            cond += " AND UPPER([APELLIDOS]) LIKE UPPER(?)"
+            params.append(f"%{apellidos}%")
+        for parte in nombres.split():
+            cond += " AND UPPER([NOMBRES]) LIKE UPPER(?)"
+            params.append(f"%{parte}%")
+        if cedula:
+            cond += " AND [CEDULA] = ?"
+            params.append(cedula)
+        if est:
+            cond += " AND [ESTADO] = ?"
+            params.append(est)
+        if depto:
+            cond += " AND [DEPTO] = ?"
+            params.append(depto)
+        if cargo:
+            cond += " AND [CARGO] = ?"
+            params.append(cargo)
+        filas = sqlserver.filas(
+            f"""SELECT TOP {limite} [EMPLEADO],[APELLIDOS],[NOMBRES],[CEDULA],[CARGO],[DEPTO],
+                       [SUELDO],[TELEFONO],[emp_mail],[ESTADO]
+                FROM [insevig].[dbo].[RPEMPLEA] WHERE {cond} ORDER BY [APELLIDOS],[NOMBRES]""",
+            tuple(params),
+        )
+        get = lambda r, k: r.get(k.upper()) or r.get(k)  # noqa: E731
+    out = []
+    for r in filas:
+        cg = str(get(r, "cargo") or "").strip()
+        dp = str(get(r, "depto") or "").strip()
+        out.append({
+            "empleado": str(get(r, "empleado") or "").strip(),
+            "apellidos": (get(r, "apellidos") or "").strip(),
+            "nombres": (get(r, "nombres") or "").strip(),
+            "cedula": normalizar_cedula(get(r, "cedula")),
+            "cargo": cg, "cargo_nombre": n_cargo.get(cg, ""),
+            "depto": dp, "depto_nombre": n_depto.get(dp, ""),
+            "sueldo": a_float(get(r, "sueldo")),
+            "telefono": str(get(r, "telefono") or ""),
+            "email": str(get(r, "emp_mail") or ""),
+            "estado": str(get(r, "estado") or ""),
+        })
+    return out
+
+
 def obtener(empleado: str, fuente: str) -> Empleado | None:
     cols = ",".join(f"[{c}]" for c in CAMPOS_EDITABLES)
     aud = "[creado_por],[fecha_crea],[mod_por],[fecha_mod]"

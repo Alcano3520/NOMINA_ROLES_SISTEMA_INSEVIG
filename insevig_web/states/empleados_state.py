@@ -196,6 +196,61 @@ class EmpleadosState(rx.State):
         yield
         await self._cargar_ficha(cod)
 
+    # ── Búsqueda avanzada / Vista completa ────────────────────────────────
+    av_apellidos: str = ""
+    av_nombres: str = ""
+    av_cedula: str = ""
+    av_estado: str = ""
+    av_depto: str = ""
+    av_cargo: str = ""
+    av_resultados: list[dict] = []
+    av_cargando: bool = False
+    av_msg: str = ""
+
+    @rx.event
+    def set_av(self, campo: str, v: str):
+        setattr(self, f"av_{campo}", v)
+
+    @rx.event
+    async def buscar_avanzada(self, todos: bool = False):
+        self.av_cargando = True
+        self.av_msg = ""
+        yield
+        fuente = await self._fuente()
+        try:
+            self.av_resultados = await asyncio.to_thread(
+                repo_emp.buscar_avanzado, fuente,
+                apellidos="" if todos else self.av_apellidos,
+                nombres="" if todos else self.av_nombres,
+                cedula="" if todos else self.av_cedula,
+                estado="" if todos else self.av_estado,
+                depto="" if todos else self.av_depto,
+                cargo="" if todos else self.av_cargo,
+                limite=3000 if todos else 1000,
+            )
+            self.av_msg = f"{len(self.av_resultados)} empleados"
+        except Exception as e:  # noqa: BLE001
+            self.av_resultados = []
+            self.av_msg = str(e)
+        self.av_cargando = False
+
+    @rx.event
+    def exportar_avanzada(self):
+        if not self.av_resultados:
+            return
+        from core.excel.empleados_builders import busqueda_avanzada_xlsx
+
+        data = busqueda_avanzada_xlsx(list(self.av_resultados))
+        return rx.download(data=data, filename="empleados.xlsx")
+
+    @rx.event
+    async def exportar_catalogos(self):
+        from core.excel.empleados_builders import catalogos_xlsx
+
+        fuente = await self._fuente()
+        cat = await asyncio.to_thread(repo_emp.catalogos, fuente)
+        return rx.download(data=catalogos_xlsx(cat), filename="catalogos.xlsx")
+
     # ── Editor / CRUD (siempre SQL Server) ─────────────────────────────────
     edit_empleado: str = ""
     edit_campos: dict = {}

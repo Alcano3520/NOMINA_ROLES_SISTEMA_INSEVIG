@@ -102,6 +102,30 @@ def test_fotos_guardar_leer_borrar(app_db, tmp_path, monkeypatch):
     assert fotos.leer_foto("9999") is None
 
 
+def test_busqueda_avanzada_y_catalogos_xlsx():
+    import io
+
+    import openpyxl
+
+    from core.excel.empleados_builders import busqueda_avanzada_xlsx, catalogos_xlsx
+
+    filas = [{
+        "empleado": "1012", "apellidos": "PEREZ", "nombres": "JUAN", "cedula": "0920116811",
+        "cargo": "09", "cargo_nombre": "GUARDIA", "depto": "10", "depto_nombre": "OPERACIONES",
+        "sueldo": 470.0, "telefono": "099", "email": "j@x.com", "estado": "ACT",
+    }]
+    wb = openpyxl.load_workbook(io.BytesIO(busqueda_avanzada_xlsx(filas)))
+    ws = wb["EMPLEADOS"]
+    assert [c.value for c in ws[1]][:4] == ["CÓDIGO", "APELLIDOS", "NOMBRES", "CÉDULA"]
+    assert ws["F2"].value == "GUARDIA"
+
+    wb2 = openpyxl.load_workbook(io.BytesIO(catalogos_xlsx({
+        "FNC": [{"codigo": "09", "nombre": "GUARDIA"}],
+        "DPT": [{"codigo": "10", "nombre": "OPS"}],
+    })))
+    assert "Cargos" in wb2.sheetnames and "Departamentos" in wb2.sheetnames
+
+
 def test_grupos_cubren_las_6_pestanas_del_legado():
     assert set(empleados.GRUPOS) == {
         "Datos generales", "Ingresos / descuentos", "Otros datos",
