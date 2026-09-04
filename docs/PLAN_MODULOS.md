@@ -177,8 +177,8 @@ Legado: `prestamos/HISTORIAL_PRESTAMOS_10.pyw` (3158).
 | 5 | **Exportar Excel por empleado** (Historial + Resumen) | ✅ |
 | 6 | **Narrativa IA** del comportamiento de pago (Job) | ✅ |
 | 7 | **Lectura en voz alta** de la narrativa (navegador) | ✅ |
-| 8 | **Ventana de detalle por fila** (doble clic → ingreso/egreso/número/observación, copiar) | ⬜ |
-| 9 | Agrupar préstamos con "brechas entre cuotas", cuota promedio, nº de cuotas ordenadas | 🟡 nº cuotas y saldo ✅ · brechas/promedio ⬜ |
+| 8 | **Detalle por préstamo** (ver movimientos individuales) | ✅ botón "Ver" |
+| 9 | Brechas entre cuotas, cuota promedio, estimación meses para cancelar | ✅ en `agrupar_por_numero` |
 | 10 | Excel por-empleado con estilo (banner, hojas Historial/DESCUENTOS con formato) | 🟡 2 hojas ✅ · formato/banner ⬜ |
 | 11 | Config del proveedor IA desde la UI (hoy: `.env`) | ⬜ (va en Administración) |
 
@@ -197,7 +197,7 @@ Legado: `observaciones/TOTAL_OSERVACIONES_4_0.pyw` (1823).
 | 3 | **Añadir observación** (primer campo refer libre, auditoría) | ✅ |
 | 4 | Edición inline de los 7 campos de un mes (en la ficha del empleado) | ✅ |
 | 5 | **Reporte HTML imprimible** | ✅ |
-| 6 | **Panel de datos del empleado** (código, cédula, cargo, depto, fechas) arriba | ⬜ |
+| 6 | **Panel de datos del empleado** arriba | ✅ `datos_basicos_empleado` |
 | 7 | **Ventana de detalle** de una observación (los 7 campos separados, copiar) | ⬜ |
 | 8 | "Mostrar todos" — lista de empleados que tienen observaciones | ⬜ |
 | 9 | Reporte HTML de **varios empleados** a la vez (`guardar_texto`) | ⬜ |
@@ -241,7 +241,7 @@ Legado: `envio_roles/ENVIO_ROLES_7_NUEVO.pyw` (801) + variantes.
 | 5 | Job reanudable, con intervalo, stop/continuar, idempotente (no doble envío) | ✅ |
 | 6 | Editor de la plantilla HTML desde la UI | ⬜ |
 | 7 | Vista previa del correo de un destinatario | ⬜ |
-| 8 | Log de envíos en pantalla (quién sí, quién falló) | 🟡 (hay `EmailSendLog`, falta verlo en la UI) |
+| 8 | Log de envíos en pantalla | ✅ botón "Ver log de envíos" |
 
 Pasos: 8 → 7 → 6.
 
@@ -259,7 +259,7 @@ Legado: `LIQUIDACIONES_SISTEMA_INSEVIG/Liquidaciones_generador_CON_VACACIONES.py
 | 4 | Selección de región | ✅ |
 | 5 | Configuración de SBU por año editable (hoy: valores por defecto) | ⬜ (va en Administración) |
 | 6 | Columnas mensuales dinámicas de remuneración (col 62+) del Excel | ⬜ |
-| 7 | Diálogo "pedir fecha de ingreso" cuando FECHA_ING > FECHA_SAL | 🟡 hoy devuelve error |
+| 7 | Fecha de ingreso override cuando FECHA_ING > FECHA_SAL | ✅ 4º dato de la línea |
 | 8 | **Validar montos contra el `.pyw` con empleados reales** | ⬜ **bloqueante para producción** |
 
 Pasos: 8 (validación) → 5 → 6 → 7.
@@ -288,10 +288,10 @@ Pasos: abrir la carpeta legada y listar lo que falte.
 |---|---|---|
 | 1 | Usuarios: alta, roles, activar/desactivar | ✅ (`/admin/usuarios`) |
 | 2 | Matriz de permisos por rol/módulo/acción editable | ✅ (`/admin/roles`) |
-| 3 | Auditoría: ver el `audit_log` (filtros por usuario/módulo/fecha) | 🟡 lista básica |
+| 3 | Auditoría con filtros por usuario y módulo | ✅ |
 | 4 | Configuración: ver credenciales enmascaradas, healthcheck de orígenes | ✅ |
 | 5 | Verificación de datos (ex-comparador) | ✅ |
-| 6 | Editar parámetros de negocio: SBU por año/región (liquidaciones), proveedor IA (préstamos), plantilla de correo | ⬜ |
+| 6 | Editar parámetros: SBU por año ✅ · proveedor IA / plantilla correo ⬜ | 🟡 |
 | 7 | Cambiar la propia contraseña / que un admin resetee la de otro | 🟡 confirmar |
 
 Pasos: 6 → 3 (filtros) → 7.
