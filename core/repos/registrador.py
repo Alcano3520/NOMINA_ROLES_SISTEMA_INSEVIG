@@ -625,7 +625,12 @@ def editar_cuota(
         conn.commit()
 
 
-# ── BIESS (pestaña 5) — se conserva lo ya existente ──────────────────────────
+# ── BIESS quirografarios / hipotecarios (pestaña 5) ─────────────────────────
+
+_MESES_ES = (
+    "", "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO",
+    "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+)
 
 
 @dataclass
@@ -636,6 +641,19 @@ class Movimiento:
     concepto: str
     periodo: str
     estado_biess: str = ""
+    cedula: str = ""
+    nombre: str = ""
+
+
+def observacion_biess(clase: int | str, fecha: str) -> str:
+    """'PRESTAMOS QUIROGRAFARIOS MES: JULIO 2026' (o HIPOTECARIOS para 207).
+    Igual que `_biess_actualizar_obs` del legado."""
+    try:
+        d = dt.date.fromisoformat(str(fecha)[:10])
+    except ValueError:
+        d = dt.date.today()
+    tipo = "HIPOTECARIOS" if str(clase) == "207" else "QUIROGRAFARIOS"
+    return f"PRESTAMOS {tipo} MES: {_MESES_ES[d.month]} {d.year}"
 
 
 def _empleado_por_cedula(cedula: str) -> dict | None:
@@ -649,23 +667,93 @@ def _empleado_por_cedula(cedula: str) -> dict | None:
     return filas[0] if filas else None
 
 
-def preparar_biess(filas: list[dict], periodo: str) -> tuple[list[Movimiento], list[str]]:
+def _empleados_por_cedulas(cedulas: list[str]) -> dict[str, dict]:
+    """{cedula10: {'EMPLEADO','APELLIDOS','NOMBRES','ESTADO'}} en una sola consulta."""
+    nums = sorted({int(c) for c in cedulas if str(c).isdigit()})
+    if not nums:
+        return {}
+    flt = get_settings().sqlserver_filter
+    out: dict[str, dict] = {}
+    for i in range(0, len(nums), 500):
+        chunk = nums[i:i + 500]
+        marcas = ",".join("?" * len(chunk))
+        filas = sqlserver.filas(
+            f"""SELECT [EMPLEADO],[APELLIDOS],[NOMBRES],[ESTADO],[CEDULA]
+                FROM [insevig].[dbo].[RPEMPLEA]
+                WHERE {flt} AND CAST([CEDULA] AS BIGINT) IN ({marcas})""",
+            tuple(chunk),
+        )
+        for r in filas:
+            out[normalizar_cedula(r.get("CEDULA"))] = r
+    return out
+
+
+def preparar_biess(
+    filas: list[dict], periodo: str, *, clase: int | str = CLASE_QUIROGRAFARIO,
+) -> tuple[list[Movimiento], list[str]]:
+    """Empareja cada cédula del Excel con un empleado. `estado_biess` ∈
+    activo | liquidado | no_encontrado. `clase` = 204 (quirografario) o 207 (hipotecario)."""
+    clase_i = int(clase)
+    concepto = CLASES_SIMPLIFICADAS.get(str(clase_i), {}).get("concepto", "BIESS")
+    ced_norm = [(f, normalizar_cedula(f["cedula"])) for f in filas]
+    cache = _empleados_por_cedulas([c for _f, c in ced_norm])
     movs: list[Movimiento] = []
     avisos: list[str] = []
-    for f in filas:
-        ced = normalizar_cedula(f["cedula"])
-        emp = _empleado_por_cedula(ced)
+    for f, ced in ced_norm:
+        emp = cache.get(ced)
+        valor = round(float(f["valor"]), 2)
         if emp is None:
-            movs.append(Movimiento(
-                "", CLASE_QUIROGRAFARIO, f["valor"], "BIESS QUIROGRAFARIO", periodo, "no_encontrado"))
-            avisos.append(f"Cédula {ced}: sin empleado en RPEMPLEA.")
+            movs.append(Movimiento("", clase_i, valor, concepto, periodo, "no_encontrado", ced, "NO ENCONTRADO"))
+            avisos.append(f"Cédula {ced}: sin empleado en la nómina.")
             continue
+        nombre = f"{(emp.get('APELLIDOS') or '').strip()} {(emp.get('NOMBRES') or '').strip()}".strip()
         estado = "activo" if (emp.get("ESTADO") or "").strip() == "ACT" else "liquidado"
+        if estado == "liquidado":
+            avisos.append(f"Cédula {ced} ({nombre}): empleado liquidado, no se registra.")
         movs.append(Movimiento(
-            str(emp["EMPLEADO"]).strip(), CLASE_QUIROGRAFARIO, round(float(f["valor"]), 2),
-            "BIESS QUIROGRAFARIO", periodo, estado,
+            str(emp["EMPLEADO"]).strip(), clase_i, valor, concepto, periodo, estado, ced, nombre,
         ))
     return movs, avisos
+
+
+def postear_biess(
+    movimientos: list[Movimiento], *, clase: int | str, fecha: str, observacion: str,
+    usuario: str, roles: set[str], dry_run: bool = True,
+) -> dict:
+    """Registra el lote BIESS: TODOS los activos con el MISMO número de egreso
+    (modo agrupado, como `_biess_subir`). INSERT completo en RPINGDES + RPCONTRL."""
+    clase_i = int(clase)
+    activos = [m for m in movimientos if m.estado_biess == "activo" and m.empleado]
+    liquidados = sum(1 for m in movimientos if m.estado_biess == "liquidado")
+    no_encontrados = sum(1 for m in movimientos if m.estado_biess == "no_encontrado")
+    total = round(sum(m.valor for m in activos), 2)
+    base = {
+        "a_insertar": len(activos), "liquidados": liquidados,
+        "no_encontrados": no_encontrados, "total": total, "insertados": 0, "numero": 0,
+    }
+    if dry_run or not activos:
+        return base
+    cfg = CLASES_SIMPLIFICADAS[str(clase_i)]
+    obs = (observacion or observacion_biess(clase_i, fecha))[:700]
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=f"BIESS/{clase_i}/{fecha}",
+        after={"clase": clase_i, "n": len(activos), "total": total},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        numero = _proximo_numero(cur, cfg["tipo"])
+        insertados = 0
+        for m in activos:
+            depto, seccion = _depto_seccion(cur, m.empleado)
+            cur.execute(
+                _INSERT_RPINGDES.format(clase=str(clase_i)),
+                (numero, m.empleado, 1, fecha, fecha, m.valor, obs, depto, seccion,
+                 cfg["aporta"], 3, 1, cfg["codigo"], cfg["concepto"], m.valor, 1),
+            )
+            insertados += 1
+        _fijar_numero(cur, cfg["tipo"], numero)
+        conn.commit()
+    return {**base, "insertados": insertados, "numero": numero}
 
 
 def _ya_existe(cur, empleado: str, clase: int, valor: float, ini: str, fin: str) -> bool:

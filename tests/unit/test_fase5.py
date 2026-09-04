@@ -54,22 +54,50 @@ def test_ia_config_override_desde_bd_sin_tocar_api_key(app_db, monkeypatch):
 
 
 def test_biess_preparar_marca_no_encontrado(monkeypatch):
-    monkeypatch.setattr(registrador, "_empleado_por_cedula", lambda c: None)
+    monkeypatch.setattr(registrador, "_empleados_por_cedulas", lambda cs: {})
     movs, avisos = registrador.preparar_biess([{"cedula": "0920116811", "valor": 45.5}], "2026-06")
     assert movs[0].empleado == ""
     assert movs[0].estado_biess == "no_encontrado"
+    assert movs[0].cedula == "0920116811"
     assert avisos
 
 
-def test_biess_preparar_empareja_activo(monkeypatch):
+def test_biess_preparar_empareja_activo_y_liquidado(monkeypatch):
     monkeypatch.setattr(
-        registrador, "_empleado_por_cedula",
-        lambda c: {"EMPLEADO": "1012", "APELLIDOS": "P", "NOMBRES": "J", "ESTADO": "ACT"},
+        registrador, "_empleados_por_cedulas",
+        lambda cs: {
+            "0920116811": {"EMPLEADO": "1012", "APELLIDOS": "P", "NOMBRES": "J",
+                           "ESTADO": "ACT", "CEDULA": 920116811.0},
+            "0912345678": {"EMPLEADO": "1013", "APELLIDOS": "X", "NOMBRES": "Y",
+                           "ESTADO": "LIQ", "CEDULA": 912345678.0},
+        },
     )
-    movs, _ = registrador.preparar_biess([{"cedula": "0920116811", "valor": 45.5}], "2026-06")
-    assert movs[0].empleado == "1012"
-    assert movs[0].estado_biess == "activo"
-    assert movs[0].clase == registrador.CLASE_QUIROGRAFARIO
+    movs, avisos = registrador.preparar_biess(
+        [{"cedula": "0920116811", "valor": 45.5}, {"cedula": "0912345678", "valor": 10}],
+        "2026-06", clase=207,
+    )
+    assert movs[0].empleado == "1012" and movs[0].estado_biess == "activo"
+    assert movs[0].clase == 207 and movs[0].nombre == "P J"
+    assert movs[1].estado_biess == "liquidado"
+    assert any("liquidado" in a for a in avisos)
+
+
+def test_observacion_biess():
+    assert registrador.observacion_biess("204", "2026-07-15") == "PRESTAMOS QUIROGRAFARIOS MES: JULIO 2026"
+    assert registrador.observacion_biess(207, "2026-12-01") == "PRESTAMOS HIPOTECARIOS MES: DICIEMBRE 2026"
+
+
+def test_postear_biess_dry_run_cuenta_por_estado():
+    movs = [
+        registrador.Movimiento("1012", 204, 10.0, "X", "2026-06", "activo", "0920116811", "P J"),
+        registrador.Movimiento("1013", 204, 5.0, "X", "2026-06", "liquidado", "0912345678", "X Y"),
+        registrador.Movimiento("", 204, 3.0, "X", "2026-06", "no_encontrado", "0900000000", "?"),
+    ]
+    res = registrador.postear_biess(
+        movs, clase=204, fecha="2026-06-30", observacion="obs", usuario="t", roles=set(), dry_run=True,
+    )
+    assert res["a_insertar"] == 1 and res["liquidados"] == 1 and res["no_encontrados"] == 1
+    assert res["total"] == 10.0 and res["insertados"] == 0
 
 
 def test_postear_dry_run_sin_empleado_cuenta():

@@ -791,11 +791,22 @@ class RegistradorState(rx.State):
             filename="movimientos_rpingdes.csv",
         )
 
-    # ── 5. BIESS ────────────────────────────────────────────────────────
+    # ── 5. BIESS quirografarios / hipotecarios ─────────────────────────
     periodo: str = ""
-    filas_biess: list[dict] = []
+    _biess_bytes: bytes = b""
+    biess_archivo: str = ""
+    biess_tipo: str = "204"            # 204 quirografario | 207 hipotecario
+    biess_fecha: str = ""
+    biess_obs: str = ""
+    biess_fila: str = "18"
+    biess_col_ced: str = "E"
+    biess_col_val: str = "AA"
+    biess_confianza: float = 0.0
+    biess_diag: list[list[str]] = []
+    biess_ver_diag: bool = False
+    filas_biess: list[dict] = []       # [{'cedula','valor'}]
     avisos: list[str] = []
-    movs: list[dict] = []
+    movs: list[dict] = []              # [{'empleado','cedula','nombre','valor','estado_biess'}]
     dry: dict = {}
 
     @rx.event
@@ -803,18 +814,63 @@ class RegistradorState(rx.State):
         self.periodo = v.strip()
 
     @rx.event
+    def set_biess(self, campo: str, v: str):
+        setattr(self, f"biess_{campo}", v)
+        if campo in ("tipo", "fecha"):
+            self.biess_obs = registrador.observacion_biess(
+                self.biess_tipo, self.biess_fecha or _hoy()
+            )
+
+    @rx.event
+    def toggle_biess_diag(self):
+        self.biess_ver_diag = not self.biess_ver_diag
+
+    @rx.event
     async def subir_biess(self, files: list[rx.UploadFile]):
         if not files:
             return
-        from core.excel.parsers import parse_biess_quirografarios
+        from core.excel.parsers import biess_autodetectar, biess_diagnostico
 
         datos = await files[0].read()
-        filas, errores = parse_biess_quirografarios(datos)
+        self._biess_bytes = datos
+        self.biess_archivo = files[0].name or "archivo.xlsx"
+        self.filas_biess = []
+        self.movs = []
+        self.dry = {}
+        self.resultado = self.error = ""
+        det = await asyncio.to_thread(biess_autodetectar, datos)
+        self.biess_fila = str(det["fila"])
+        self.biess_col_ced = det["col_cedula"]
+        self.biess_col_val = det["col_valor"]
+        self.biess_confianza = det["confianza"]
+        self.biess_diag = await asyncio.to_thread(biess_diagnostico, datos)
+        if not self.biess_fecha:
+            self.biess_fecha = _hoy()
+        self.biess_obs = registrador.observacion_biess(self.biess_tipo, self.biess_fecha)
+        await self._releer_biess()
+
+    async def _releer_biess(self):
+        from core.excel.parsers import parse_biess_manual
+
+        if not self._biess_bytes:
+            return
+        try:
+            filas, errores = await asyncio.to_thread(
+                parse_biess_manual, self._biess_bytes,
+                fila_inicio=int(self.biess_fila or 1),
+                col_cedula=self.biess_col_ced, col_valor=self.biess_col_val,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.error = f"No se pudo leer con esas columnas: {e}"
+            return
         self.filas_biess = filas
         self.avisos = errores[:50]
         self.movs = []
         self.dry = {}
-        self.resultado = ""
+
+    @rx.event
+    async def releer_biess(self):
+        await self._releer_biess()
 
     @rx.event
     async def preparar_biess(self):
@@ -822,13 +878,18 @@ class RegistradorState(rx.State):
             return
         periodo = self.periodo or _periodo()
         filas = list(self.filas_biess)
+        clase = self.biess_tipo
 
         def _prep():
-            movs, avisos = registrador.preparar_biess(filas, periodo)
+            movs, avisos = registrador.preparar_biess(filas, periodo, clase=clase)
+            dry = registrador.postear_biess(
+                movs, clase=clase, fecha=(self.biess_fecha or _hoy()),
+                observacion=self.biess_obs, usuario="", roles=set(), dry_run=True,
+            )
             return (
-                [{"empleado": m.empleado, "valor": m.valor, "estado_biess": m.estado_biess} for m in movs],
-                avisos,
-                registrador.postear(movs, usuario="", roles=set(), dry_run=True),
+                [{"empleado": m.empleado, "cedula": m.cedula, "nombre": m.nombre,
+                  "valor": m.valor, "estado_biess": m.estado_biess} for m in movs],
+                avisos, dry,
             )
 
         self.movs, avisos, self.dry = await asyncio.to_thread(_prep)
@@ -840,20 +901,42 @@ class RegistradorState(rx.State):
         if "registrador:registrar_rpingdes" not in auth.permisos_flat:
             self.error = "Sin permiso."
             return
+        if not self.biess_obs.strip():
+            self.error = "La observación es obligatoria."
+            return
         periodo = self.periodo or _periodo()
         filas = list(self.filas_biess)
+        clase, fecha, obs = self.biess_tipo, (self.biess_fecha or _hoy()), self.biess_obs
         usuario, roles = auth.username, set(auth.roles)
         self.error = ""
 
         def _post():
-            movs, _ = registrador.preparar_biess(filas, periodo)
-            return registrador.postear(movs, usuario=usuario, roles=roles, dry_run=False)
+            movs, _ = registrador.preparar_biess(filas, periodo, clase=clase)
+            return registrador.postear_biess(
+                movs, clase=clase, fecha=fecha, observacion=obs,
+                usuario=usuario, roles=roles, dry_run=False,
+            )
 
         try:
             res = await asyncio.to_thread(_post)
             self.resultado = (
-                f"Insertados: {res['insertados']} · omitidos (duplicados): {res['omitidos_dedupe']} "
-                f"· sin empleado: {res['sin_empleado']}"
+                f"BIESS N° {res['numero']:05d}: {res['insertados']} registrados · "
+                f"liquidados {res['liquidados']} · sin empleado {res['no_encontrados']} · "
+                f"total ${res['total']:.2f}"
             )
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
+
+    @rx.event
+    def exportar_biess(self):
+        if not self.movs:
+            return
+        import csv
+        import io
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Cédula", "Código", "Nombre", "Valor", "Estado"])
+        for m in self.movs:
+            w.writerow([m["cedula"], m["empleado"], m["nombre"], m["valor"], m["estado_biess"]])
+        return rx.download(data=("﻿" + buf.getvalue()).encode("utf-8"), filename="biess_consolidado.csv")

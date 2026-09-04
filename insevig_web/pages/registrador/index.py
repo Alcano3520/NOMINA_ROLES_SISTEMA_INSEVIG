@@ -585,15 +585,38 @@ def _bulk_egr_ing() -> rx.Component:
     )
 
 
-# ── 5. BIESS ───────────────────────────────────────────────────────────
+# ── 5. BIESS quirografarios / hipotecarios ─────────────────────────────
 def _tab_biess() -> rx.Component:
     return rx.vstack(
         card(
             rx.vstack(
-                rx.hstack(
-                    rx.text("Período (AAAA-MM):", size="1", weight="bold"),
-                    rx.input(value=_S.periodo, on_change=_S.set_periodo, width="120px", size="2"),
-                    spacing="2",
+                rx.grid(
+                    rx.vstack(
+                        rx.text("Tipo de préstamo", size="1", weight="bold"),
+                        rx.el.select(
+                            rx.el.option("204 — Quirografario", value="204"),
+                            rx.el.option("207 — Hipotecario", value="207"),
+                            value=_S.biess_tipo, on_change=lambda v: _S.set_biess("tipo", v), style=_SEL,
+                        ),
+                        spacing="1",
+                    ),
+                    rx.vstack(
+                        rx.text("Fecha del movimiento", size="1", weight="bold"),
+                        rx.input(value=_S.biess_fecha, type="date",
+                                 on_change=lambda v: _S.set_biess("fecha", v), width="100%"),
+                        spacing="1",
+                    ),
+                    rx.vstack(
+                        rx.text("Período (AAAA-MM)", size="1", weight="bold"),
+                        rx.input(value=_S.periodo, on_change=_S.set_periodo, width="100%"),
+                        spacing="1",
+                    ),
+                    columns=rx.breakpoints(initial="1", sm="3"), spacing="3", width="100%",
+                ),
+                rx.vstack(
+                    rx.text("Observación (obligatoria, se registra en la nómina)", size="1", weight="bold"),
+                    rx.input(value=_S.biess_obs, on_change=lambda v: _S.set_biess("obs", v), width="100%"),
+                    spacing="1",
                 ),
                 rx.upload(
                     rx.vstack(rx.icon("upload", size=24), rx.text("Arrastra o elige el Excel del BIESS")),
@@ -601,26 +624,93 @@ def _tab_biess() -> rx.Component:
                     max_files=1, border="1px dashed var(--gray-6)", padding="1.5rem", width="100%",
                 ),
                 rx.button("Cargar", on_click=_S.subir_biess(rx.upload_files(upload_id="biess"))),
+                rx.cond(
+                    _S.biess_archivo != "",
+                    rx.vstack(
+                        rx.text(_S.biess_archivo, size="1", color_scheme="gray"),
+                        rx.hstack(
+                            rx.text("Fila de inicio:", size="1"),
+                            rx.input(value=_S.biess_fila, on_change=lambda v: _S.set_biess("fila", v),
+                                     width="60px", size="1"),
+                            rx.text("Col. cédula:", size="1"),
+                            rx.input(value=_S.biess_col_ced, on_change=lambda v: _S.set_biess("col_ced", v),
+                                     width="60px", size="1"),
+                            rx.text("Col. valor:", size="1"),
+                            rx.input(value=_S.biess_col_val, on_change=lambda v: _S.set_biess("col_val", v),
+                                     width="60px", size="1"),
+                            rx.button("Releer", on_click=_S.releer_biess, size="1", variant="soft"),
+                            rx.button("Ver Excel", on_click=_S.toggle_biess_diag, size="1", variant="ghost"),
+                            spacing="2", align="center", wrap="wrap",
+                        ),
+                        rx.text(
+                            "Autodetección: confianza " + (_S.biess_confianza * 100).to_string() + "%. "
+                            "Si las columnas no son las correctas, ajústalas y pulsa Releer.",
+                            size="1", color_scheme="amber",
+                        ),
+                        rx.cond(
+                            _S.biess_ver_diag & (_S.biess_diag.length() > 0),
+                            scroll_x(
+                                rx.table.root(
+                                    rx.table.body(
+                                        rx.foreach(
+                                            _S.biess_diag,
+                                            lambda fila: rx.table.row(
+                                                rx.foreach(fila, lambda c: rx.table.cell(c)),
+                                            ),
+                                        )
+                                    ),
+                                    variant="surface", size="1", width="100%",
+                                )
+                            ),
+                        ),
+                        spacing="2", width="100%",
+                    ),
+                ),
                 rx.cond(_S.avisos.length() > 0, rx.callout(
                     rx.foreach(_S.avisos, lambda a: rx.text(a, size="1")), color_scheme="amber", size="1")),
                 rx.cond(
                     _S.filas_biess.length() > 0,
                     rx.vstack(
-                        rx.text(_S.filas_biess.length().to_string() + " filas leídas", weight="bold", size="2"),
-                        rx.button("Previsualizar posteo", on_click=_S.preparar_biess, variant="soft"),
+                        rx.text(_S.filas_biess.length().to_string() + " cédulas leídas (duplicadas sumadas)",
+                                weight="bold", size="2"),
+                        rx.button("Previsualizar / emparejar", on_click=_S.preparar_biess, variant="soft"),
                         rx.cond(
-                            _S.dry.contains("insertados"),
+                            _S.dry.contains("a_insertar"),
                             rx.callout(
-                                "Se insertarían " + _S.dry["insertados"].to_string()
-                                + " · duplicados " + _S.dry["omitidos_dedupe"].to_string()
-                                + " · sin empleado " + _S.dry["sin_empleado"].to_string(),
+                                "Se registrarán " + _S.dry["a_insertar"].to_string()
+                                + " · liquidados " + _S.dry["liquidados"].to_string()
+                                + " · sin empleado " + _S.dry["no_encontrados"].to_string()
+                                + " · total $" + _S.dry["total"].to_string(),
                                 size="1",
                             ),
                         ),
                         rx.cond(
-                            _S.movs.length() > 0
-                            & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                            primary_button("Confirmar y registrar", on_click=_S.postear_biess),
+                            _S.movs.length() > 0,
+                            _tabla(
+                                ["Cédula", "Código", "Nombre", "Valor", "Estado"],
+                                _S.movs,
+                                lambda m: rx.table.row(
+                                    rx.table.cell(m["cedula"]),
+                                    rx.table.cell(m["empleado"]),
+                                    rx.table.cell(m["nombre"]),
+                                    rx.table.cell("$" + m["valor"].to_string()),
+                                    rx.table.cell(
+                                        rx.badge(m["estado_biess"], color_scheme=rx.match(
+                                            m["estado_biess"], ("activo", "green"),
+                                            ("liquidado", "amber"), "red"))
+                                    ),
+                                ),
+                            ),
+                        ),
+                        rx.hstack(
+                            rx.cond(
+                                _S.movs.length() > 0
+                                & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
+                                primary_button("Confirmar y registrar", on_click=_S.postear_biess),
+                            ),
+                            rx.cond(_S.movs.length() > 0,
+                                    rx.button("Exportar CSV", on_click=_S.exportar_biess, variant="soft", size="1")),
+                            spacing="2",
                         ),
                         spacing="2", width="100%",
                     ),

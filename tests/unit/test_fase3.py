@@ -4,7 +4,13 @@ import io
 
 import openpyxl
 
-from core.excel.parsers import parse_biess_quirografarios, parse_carga_masiva_empleados
+from core.excel.parsers import (
+    _col_letra_a_idx,
+    biess_autodetectar,
+    parse_biess_manual,
+    parse_biess_quirografarios,
+    parse_carga_masiva_empleados,
+)
 from core.repos import empleados
 
 
@@ -165,3 +171,33 @@ def test_parse_biess_autodetecta_columnas():
     ceds = {f["cedula"] for f in filas}
     assert "0920116811" in ceds and "1712345678" in ceds
     assert all(f["valor"] > 0 for f in filas)
+
+
+def test_col_letra_a_idx():
+    assert _col_letra_a_idx("A") == 0
+    assert _col_letra_a_idx("E") == 4
+    assert _col_letra_a_idx("AA") == 26
+
+
+def test_parse_biess_manual_columnas_explicitas_y_consolida():
+    data = _xlsx([
+        ["encabezado", "", ""],
+        ["basura", "x", "y"],
+        ["", "0920116811", "10.50"],
+        ["", "0920116811", "5"],       # misma cédula -> se suma
+        ["", "1712345678", "$1,020.00"],  # $ y coma de miles como el legado
+        ["", "", ""],
+    ])
+    filas, _err = parse_biess_manual(data, fila_inicio=3, col_cedula="B", col_valor="C")
+    d = {f["cedula"]: f["valor"] for f in filas}
+    assert d["0920116811"] == 15.5
+    assert d["1712345678"] == 1020.0
+
+
+def test_biess_autodetectar_devuelve_columnas():
+    data = _xlsx([[f"h{c}" for c in range(4)]] + [
+        ["PEREIRA", str(9200000000 + i), "aaa", round(10.5 + i, 2)] for i in range(8)
+    ])
+    det = biess_autodetectar(data)
+    assert det["col_cedula"] == "B" and det["col_valor"] == "D"
+    assert det["fila"] == 2 and det["confianza"] > 0
