@@ -45,13 +45,25 @@ class AdminState(rx.State):
 
         self.usuarios = await asyncio.to_thread(_q)
 
+    aud_usuario: str = ""
+    aud_modulo: str = ""
+
+    @rx.event
+    def set_aud(self, campo: str, v: str):
+        setattr(self, f"aud_{campo}", v)
+
     @rx.event
     async def cargar_auditoria(self):
+        f_user, f_mod = self.aud_usuario.strip(), self.aud_modulo.strip()
+
         def _q():
             with appdb.session() as s:
-                filas = s.exec(
-                    sqlmodel.select(AuditLog).order_by(sqlmodel.col(AuditLog.ts).desc()).limit(100)
-                ).all()
+                q = sqlmodel.select(AuditLog).order_by(sqlmodel.col(AuditLog.ts).desc())
+                if f_user:
+                    q = q.where(sqlmodel.col(AuditLog.username).ilike(f"%{f_user}%"))
+                if f_mod:
+                    q = q.where(AuditLog.module == f_mod)
+                filas = s.exec(q.limit(200)).all()
                 return [
                     {
                         "ts": str(a.ts)[:19],

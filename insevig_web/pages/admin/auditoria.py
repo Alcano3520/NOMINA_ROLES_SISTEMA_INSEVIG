@@ -4,7 +4,8 @@ import reflex as rx
 
 from insevig_web import theme
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import page_heading, scroll_x
+from insevig_web.components.ui import card, page_heading, scroll_x
+from insevig_web.registry import MODULES
 from insevig_web.states.admin_state import AdminState
 from insevig_web.states.auth_state import AuthState
 
@@ -16,7 +17,24 @@ from insevig_web.states.auth_state import AuthState
 )
 def auditoria() -> rx.Component:
     return pagina(
-        page_heading("Auditoría", "Últimas 100 acciones registradas."),
+        page_heading("Auditoría", "Acciones registradas en el sistema (máx. 200)."),
+        card(
+            rx.hstack(
+                rx.input(value=AdminState.aud_usuario, on_change=lambda v: AdminState.set_aud("usuario", v),
+                         placeholder="Usuario…", size="2"),
+                rx.el.select(
+                    rx.el.option("Todos los módulos", value=""),
+                    *[rx.el.option(m.titulo, value=m.nombre) for m in MODULES],
+                    value=AdminState.aud_modulo,
+                    on_change=lambda v: AdminState.set_aud("modulo", v),
+                    style={"padding": "6px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
+                           "background": "#fff"},
+                ),
+                rx.button("Filtrar", on_click=AdminState.cargar_auditoria, size="2"),
+                spacing="2", wrap="wrap",
+            ),
+            width="100%", margin_bottom="0.75rem",
+        ),
         scroll_x(
             rx.table.root(
                 rx.table.header(
