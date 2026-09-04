@@ -50,6 +50,31 @@ def set_sbu(sbu: dict[str, float]) -> None:
     _guardar("sbu_por_anio", {str(k): float(v) for k, v in sbu.items()})
 
 
+_EMAIL_ASUNTO_DEFECTO = "ROL {{mes}}/{{anio}}"
+_EMAIL_HTML_DEFECTO = (
+    "<p>Estimado/a {{StrNombres}},</p>"
+    "<p>Adjunto encontrará su rol de pago correspondiente a {{mes}}/{{anio}}.</p>"
+    "<p>Cédula: {{StrCedula}} · Código: {{StrEmpleado}}</p>"
+    "<p>Recursos Humanos — INSEVIG</p>"
+)
+
+
+def get_email_plantilla() -> dict[str, str]:
+    """{'asunto': ..., 'html': ...} para el envío de roles."""
+    d = _leer("email_plantilla_roles")
+    return {
+        "asunto": str(d.get("asunto") or _EMAIL_ASUNTO_DEFECTO),
+        "html": str(d.get("html") or _EMAIL_HTML_DEFECTO),
+    }
+
+
+def set_email_plantilla(asunto: str, html: str) -> None:
+    _guardar("email_plantilla_roles", {
+        "asunto": asunto.strip() or _EMAIL_ASUNTO_DEFECTO,
+        "html": html.strip() or _EMAIL_HTML_DEFECTO,
+    })
+
+
 def config_liquidacion(region: str = "COSTA"):
     """`ConfigLiquidacion` con los SBU guardados (o los por defecto)."""
     from core.repos.liquidaciones import SBU_DEFECTO, ConfigLiquidacion

@@ -45,6 +45,55 @@ def index() -> rx.Component:
                 ),
                 width="100%",
             ),
+            card(
+                rx.vstack(
+                    rx.heading("Plantilla del correo", size="3"),
+                    rx.text(
+                        "Marcadores: {{StrNombres}}, {{StrCedula}}, {{StrEmpleado}}, {{mes}}, {{anio}}.",
+                        size="1", color_scheme="gray",
+                    ),
+                    rx.text("Asunto", size="1", weight="bold"),
+                    rx.input(
+                        value=EnvioState.plantilla_asunto,
+                        on_change=EnvioState.set_plantilla_asunto,
+                        width="100%",
+                    ),
+                    rx.text("Cuerpo (HTML)", size="1", weight="bold"),
+                    rx.text_area(
+                        value=EnvioState.plantilla_html,
+                        on_change=EnvioState.set_plantilla_html,
+                        rows="6",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        rx.button("Previsualizar", on_click=EnvioState.previsualizar, variant="soft", size="1"),
+                        rx.cond(
+                            AuthState.permisos_flat.contains("roles:enviar_email"),
+                            rx.button("Guardar plantilla", on_click=EnvioState.guardar_plantilla, size="1"),
+                        ),
+                        rx.button("Restaurar", on_click=EnvioState.cargar_plantilla, variant="ghost", size="1"),
+                        spacing="2",
+                    ),
+                    rx.cond(
+                        EnvioState.plantilla_msg != "",
+                        rx.text(EnvioState.plantilla_msg, size="1", color_scheme="gray"),
+                    ),
+                    rx.cond(
+                        EnvioState.preview_html != "",
+                        rx.box(
+                            rx.html(EnvioState.preview_html),
+                            border="1px solid var(--gray-5)",
+                            border_radius="8px",
+                            padding="12px",
+                            width="100%",
+                            background="var(--gray-1)",
+                        ),
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+                width="100%",
+            ),
             rx.cond(
                 EnvioState.errores.length() > 0,
                 rx.callout(rx.foreach(EnvioState.errores, lambda e: rx.text(e, size="1")), color_scheme="amber", size="1"),

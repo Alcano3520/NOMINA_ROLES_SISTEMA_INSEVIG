@@ -33,9 +33,11 @@ def job_enviar_roles(
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
     html_plantilla: str = "",
+    asunto: str = "",
 ) -> None:
     sender = get_sender()
     plantilla = html_plantilla or _HTML_DEFECTO
+    asunto_tpl = asunto or "ROL {{mes}}/{{anio}}"
     total = len(destinatarios)
     enviados = 0
     errores = 0
@@ -68,9 +70,14 @@ def job_enviar_roles(
                     "año": anio,
                 },
             )
+            asunto_final = render_plantilla(
+                asunto_tpl,
+                {"mes": mes, "anio": anio, "año": anio, "StrNombres": d.get("nombre", ""),
+                 "StrCedula": d.get("cedula", ""), "StrEmpleado": cod},
+            )
             msg = EmailMensaje(
                 para=d["email"],
-                asunto=f"ROL {mes}/{anio}",
+                asunto=asunto_final,
                 html=html,
                 cc=cc or [],
                 bcc=bcc or [],

@@ -27,10 +27,69 @@ class EnvioState(rx.State):
     status: str = ""
     msg: str = ""
 
+    # ── Plantilla del correo ───────────────────────────────────────────
+    plantilla_asunto: str = ""
+    plantilla_html: str = ""
+    plantilla_msg: str = ""
+    preview_html: str = ""
+
     @rx.event
     def on_load(self):
         if not self.periodo:
             self.periodo = dt.date.today().strftime("%Y-%m")
+        if not self.plantilla_html:
+            yield EnvioState.cargar_plantilla
+
+    @rx.event
+    async def cargar_plantilla(self):
+        from core.parametros import get_email_plantilla
+
+        p = await asyncio.to_thread(get_email_plantilla)
+        self.plantilla_asunto, self.plantilla_html = p["asunto"], p["html"]
+
+    @rx.event
+    def set_plantilla_asunto(self, v: str):
+        self.plantilla_asunto = v
+
+    @rx.event
+    def set_plantilla_html(self, v: str):
+        self.plantilla_html = v
+
+    @rx.event
+    async def guardar_plantilla(self):
+        auth = await self.get_state(AuthState)
+        if "roles:enviar_email" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        from core.parametros import set_email_plantilla
+
+        await asyncio.to_thread(
+            set_email_plantilla, self.plantilla_asunto, self.plantilla_html
+        )
+        self.plantilla_msg = "Plantilla guardada."
+        return rx.toast.success("Plantilla guardada.")
+
+    @rx.event
+    def previsualizar(self):
+        from core.email.service import render_plantilla
+
+        d = self.destinatarios[0] if self.destinatarios else {}
+        periodo = self.periodo or dt.date.today().strftime("%Y-%m")
+        anio, _, mes = periodo.partition("-")
+        ctx = {
+            "StrNombres": d.get("nombre") or "Juan Pérez",
+            "StrCedula": d.get("cedula") or "0912345678",
+            "StrEmpleado": d.get("empleado") or "1234",
+            "mes": mes or "01", "anio": anio, "año": anio,
+        }
+        try:
+            asunto = render_plantilla(self.plantilla_asunto, ctx)
+            cuerpo = render_plantilla(self.plantilla_html, ctx)
+        except Exception as e:  # noqa: BLE001
+            self.preview_html = ""
+            self.plantilla_msg = f"Error en la plantilla: {e}"
+            return
+        self.plantilla_msg = ""
+        self.preview_html = f"<p style='color:#555'><b>Asunto:</b> {asunto}</p><hr>{cuerpo}"
 
     @rx.event
     def set_periodo(self, v: str):
@@ -106,6 +165,7 @@ class EnvioState(rx.State):
         intervalo = float(self.intervalo or 2)
         cc = [c.strip() for c in self.cc.split(",") if c.strip()]
         usuario = auth.username
+        pl_html, pl_asunto = self.plantilla_html, self.plantilla_asunto
 
         def _fn(ctx):
             from core.datos.service import datos_empleado
@@ -119,7 +179,10 @@ class EnvioState(rx.State):
                 emp = datos_empleado(periodo, ident, fuente)
                 pdf = rol_pago_pdf(emp, OpcionesRol(fecha_desde=f"01/{mes}/{anio}", fecha_hasta=f"28/{mes}/{anio}")) if emp else b""
                 preparados.append({**d, "pdf": pdf})
-            job_enviar_roles(ctx, preparados, mes=mes, anio=anio, intervalo_seg=intervalo, cc=cc)
+            job_enviar_roles(
+                ctx, preparados, mes=mes, anio=anio, intervalo_seg=intervalo, cc=cc,
+                html_plantilla=pl_html, asunto=pl_asunto,
+            )
 
         self.job = get_runner().encolar(
             "envio_roles", {"periodo": periodo, "n": len(dest)}, creado_por=usuario, fn=_fn

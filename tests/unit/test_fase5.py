@@ -24,6 +24,19 @@ def test_console_sender_no_lanza():
     ConsoleSender().enviar(EmailMensaje(para="x@y.com", asunto="t", html="<p>h</p>"))
 
 
+def test_email_plantilla_guarda_y_recupera(app_db):
+    from core import parametros
+
+    assert parametros.get_email_plantilla()["asunto"] == "ROL {{mes}}/{{anio}}"
+    parametros.set_email_plantilla("Rol de {{StrNombres}}", "<p>Hola {{StrNombres}}</p>")
+    p = parametros.get_email_plantilla()
+    assert p["asunto"] == "Rol de {{StrNombres}}"
+    assert "Hola {{StrNombres}}" in p["html"]
+    # asunto vacío vuelve al valor por defecto
+    parametros.set_email_plantilla("", "")
+    assert parametros.get_email_plantilla()["asunto"] == "ROL {{mes}}/{{anio}}"
+
+
 def test_biess_preparar_marca_no_encontrado(monkeypatch):
     monkeypatch.setattr(registrador, "_empleado_por_cedula", lambda c: None)
     movs, avisos = registrador.preparar_biess([{"cedula": "0920116811", "valor": 45.5}], "2026-06")

@@ -221,10 +221,10 @@ Legado: `registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.py
 | 6 | Préstamo individual con planificación de cuotas (nº o valor) | ✅ `cuotas_tradicional` / `cuotas_por_valor` / `proyeccion_pagos_futuros` |
 | 7 | Carga masiva de préstamos | ✅ (Job + CSV) |
 | 8 | Consulta / edición: lista, ver cuotas, borrar, editar cuota | ✅ `historial_movimientos` / `cuotas_prestamo` / `eliminar_movimiento` / `editar_cuota` |
-| 9 | "Mover cuotas pendientes desde una fecha" | ⬜ (diálogo del legado) |
-| 10 | Respaldo por operación | ⬜ (`modulo_seguridad_prestamos` del legado no existía) |
+| 9 | "Mover cuotas pendientes desde una fecha" | ✅ `mover_cuotas_pendientes` + botón en Consulta/edición |
+| 10 | Respaldo por operación | ⬜ (`modulo_seguridad_prestamos` del legado no existía; cubierto por `core.audit`) |
 
-**Módulo portado por completo** (6 pestañas). Pendiente solo lo del punto 9-10.
+**Módulo portado por completo** (6 pestañas).
 
 ---
 
@@ -239,11 +239,11 @@ Legado: `envio_roles/ENVIO_ROLES_7_NUEVO.pyw` (801) + variantes.
 | 3 | Sustituir marcadores en la plantilla HTML ({{StrNombres}} legado + Jinja) | ✅ |
 | 4 | Envío por SMTP **o** Microsoft Graph (sin Outlook COM) | ✅ |
 | 5 | Job reanudable, con intervalo, stop/continuar, idempotente (no doble envío) | ✅ |
-| 6 | Editor de la plantilla HTML desde la UI | ⬜ |
-| 7 | Vista previa del correo de un destinatario | ⬜ |
+| 6 | Editor de la plantilla HTML desde la UI | ✅ asunto + cuerpo, guardado en `AppConfig` (`core.parametros.get/set_email_plantilla`) |
+| 7 | Vista previa del correo de un destinatario | ✅ botón "Previsualizar" (render con datos de ejemplo o del 1er destinatario) |
 | 8 | Log de envíos en pantalla | ✅ botón "Ver log de envíos" |
 
-Pasos: 8 → 7 → 6.
+Módulo a paridad.
 
 ---
 
@@ -291,7 +291,7 @@ Pasos: abrir la carpeta legada y listar lo que falte.
 | 3 | Auditoría con filtros por usuario y módulo | ✅ |
 | 4 | Configuración: ver credenciales enmascaradas, healthcheck de orígenes | ✅ |
 | 5 | Verificación de datos (ex-comparador) | ✅ |
-| 6 | Editar parámetros: SBU por año ✅ · proveedor IA / plantilla correo ⬜ | 🟡 |
+| 6 | Editar parámetros: SBU por año ✅ · plantilla de correo ✅ (en Envío) · proveedor IA ⬜ | 🟡 |
 | 7 | Cambiar la propia contraseña / que un admin resetee la de otro | 🟡 confirmar |
 
 Pasos: 6 → 3 (filtros) → 7.
