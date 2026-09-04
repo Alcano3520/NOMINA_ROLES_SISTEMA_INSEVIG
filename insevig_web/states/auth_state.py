@@ -101,3 +101,32 @@ class AuthState(rx.State):
         self.roles = []
         self.sesion = ""
         return rx.redirect("/login")
+
+    # ── Cambio de contraseña (autoservicio) ───────────────────────────
+    clave_msg: str = ""
+
+    @rx.event
+    def cambiar_mi_clave(self, form_data: dict):
+        self.clave_msg = ""
+        actual = form_data.get("actual") or ""
+        nueva = form_data.get("nueva") or ""
+        conf = form_data.get("confirmar") or ""
+        if len(nueva) < 6:
+            self.clave_msg = "La nueva contraseña debe tener al menos 6 caracteres."
+            return
+        if nueva != conf:
+            self.clave_msg = "La confirmación no coincide."
+            return
+        if self._user_id is None:
+            self.clave_msg = "Sesión no válida."
+            return
+        with appdb.session() as s:
+            user = s.get(User, self._user_id)
+            if not user or not auth.verify_password(actual, user.password_hash):
+                self.clave_msg = "La contraseña actual es incorrecta."
+                return
+            user.password_hash = auth.hash_password(nueva)
+            s.add(user)
+            s.commit()
+        self.clave_msg = "Contraseña actualizada."
+        return rx.toast.success("Contraseña actualizada.")

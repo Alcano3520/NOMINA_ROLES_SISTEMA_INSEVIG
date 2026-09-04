@@ -146,6 +146,44 @@ class AdminState(rx.State):
         self.nu_username = self.nu_nombre = self.nu_clave = ""
         await self.cargar_usuarios()
 
+    reset_user_id: int = 0
+    reset_clave: str = ""
+
+    @rx.event
+    def abrir_reset(self, user_id: int):
+        self.reset_user_id = user_id
+        self.reset_clave = ""
+
+    @rx.event
+    def set_reset_clave(self, v: str):
+        self.reset_clave = v
+
+    @rx.event
+    async def resetear_clave(self):
+        actual = await self.get_state(AuthState)
+        if "admin" not in actual.roles:
+            self.msg = "Solo admin puede resetear contraseñas."
+            return
+        if len(self.reset_clave) < 6:
+            self.msg = "La contraseña debe tener al menos 6 caracteres."
+            return
+        uid, clave = self.reset_user_id, self.reset_clave
+
+        def _r():
+            with appdb.session() as s:
+                u = s.get(User, uid)
+                if not u:
+                    return "no existe"
+                u.password_hash = auth.hash_password(clave)
+                s.add(u)
+                s.commit()
+                return "ok"
+
+        r = await asyncio.to_thread(_r)
+        self.msg = "Contraseña reseteada." if r == "ok" else "Usuario no encontrado."
+        self.reset_user_id = 0
+        self.reset_clave = ""
+
     @rx.event
     async def toggle_activo(self, user_id: int):
         def _t():

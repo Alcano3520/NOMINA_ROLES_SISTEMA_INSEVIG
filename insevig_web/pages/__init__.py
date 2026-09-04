@@ -7,6 +7,7 @@ aún no tienen página real (mira `_RUTAS_MIGRADAS`).
 from insevig_web.pages import (  # noqa: F401, I001
     index,
     login,
+    cuenta,
     reportes,
     prestamos,
     observaciones,

@@ -292,9 +292,9 @@ Pasos: abrir la carpeta legada y listar lo que falte.
 | 4 | Configuración: ver credenciales enmascaradas, healthcheck de orígenes | ✅ |
 | 5 | Verificación de datos (ex-comparador) | ✅ |
 | 6 | Editar parámetros: SBU por año ✅ · plantilla de correo ✅ (en Envío) · proveedor IA ⬜ | 🟡 |
-| 7 | Cambiar la propia contraseña / que un admin resetee la de otro | 🟡 confirmar |
+| 7 | Cambiar la propia contraseña / que un admin resetee la de otro | ✅ `/mi-cuenta` (autoservicio) + "Resetear clave" en `/admin/usuarios` |
 
-Pasos: 6 → 3 (filtros) → 7.
+Pasos: proveedor IA (parte de 6).
 
 ---
 

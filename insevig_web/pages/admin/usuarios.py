@@ -58,11 +58,47 @@ def usuarios() -> rx.Component:
                                 rx.table.cell(rx.cond(u["activo"], "sí", "no")),
                                 rx.table.cell(u["ultimo"]),
                                 rx.table.cell(
-                                    rx.button(
-                                        rx.cond(u["activo"], "Desactivar", "Activar"),
-                                        on_click=lambda: AdminState.toggle_activo(u["id"]),
-                                        size="1",
-                                        variant="soft",
+                                    rx.hstack(
+                                        rx.button(
+                                            rx.cond(u["activo"], "Desactivar", "Activar"),
+                                            on_click=lambda: AdminState.toggle_activo(u["id"]),
+                                            size="1",
+                                            variant="soft",
+                                        ),
+                                        rx.alert_dialog.root(
+                                            rx.alert_dialog.trigger(
+                                                rx.button(
+                                                    "Resetear clave",
+                                                    on_click=lambda: AdminState.abrir_reset(u["id"]),
+                                                    size="1",
+                                                    variant="soft",
+                                                    color_scheme="amber",
+                                                )
+                                            ),
+                                            rx.alert_dialog.content(
+                                                rx.alert_dialog.title("Resetear contraseña"),
+                                                rx.alert_dialog.description(
+                                                    rx.text(f"Escribe la nueva contraseña para {u['username']}.")
+                                                ),
+                                                rx.input(
+                                                    value=AdminState.reset_clave,
+                                                    on_change=AdminState.set_reset_clave,
+                                                    type="password",
+                                                    placeholder="nueva contraseña",
+                                                    margin_top="0.5rem",
+                                                ),
+                                                rx.hstack(
+                                                    rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                                    rx.alert_dialog.action(
+                                                        rx.button("Resetear", on_click=AdminState.resetear_clave, color_scheme="amber")
+                                                    ),
+                                                    spacing="3",
+                                                    justify="end",
+                                                    margin_top="1rem",
+                                                ),
+                                            ),
+                                        ),
+                                        spacing="2",
                                     )
                                 ),
                             ),

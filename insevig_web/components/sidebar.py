@@ -48,6 +48,13 @@ def sidebar_contenido() -> rx.Component:
         rx.divider(),
         rx.vstack(*[_entrada(m) for m in MODULES], spacing="1", width="100%"),
         rx.spacer(),
+        rx.link(
+            rx.hstack(rx.icon("key-round", size=16), rx.text("Mi cuenta"), spacing="2"),
+            href="/mi-cuenta",
+            color="white",
+            width="100%",
+            padding="0.4rem 0.6rem",
+        ),
         rx.button(
             rx.hstack(rx.icon("log-out", size=16), rx.text("Salir")),
             on_click=AuthState.logout,
