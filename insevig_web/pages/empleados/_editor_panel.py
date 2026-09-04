@@ -108,6 +108,36 @@ _TABS = {
 }
 
 
+_JS_CAMARA = """
+(async () => {
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}}); }
+  catch (e) { alert('No se pudo abrir la cámara: ' + e.message); return ''; }
+  return await new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
+    const v = document.createElement('video'); v.autoplay=true; v.playsInline=true; v.srcObject=stream;
+    v.style.cssText='max-width:90vw;max-height:68vh;border-radius:8px';
+    const bar = document.createElement('div'); bar.style.cssText='display:flex;gap:10px';
+    const cap = document.createElement('button'); cap.textContent='Capturar';
+    const can = document.createElement('button'); can.textContent='Cancelar';
+    for (const b of [cap,can]) b.style.cssText='padding:8px 18px;border-radius:6px;border:0;font-weight:bold;cursor:pointer';
+    cap.style.background='#1a4d8f'; cap.style.color='#fff'; can.style.background='#ddd';
+    bar.append(cap, can); ov.append(v, bar); document.body.append(ov);
+    const cleanup = () => { stream.getTracks().forEach(t=>t.stop()); ov.remove(); };
+    cap.onclick = () => {
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth || 640; c.height = v.videoHeight || 480;
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/jpeg', 0.85);
+      cleanup(); resolve(url);
+    };
+    can.onclick = () => { cleanup(); resolve(''); };
+  });
+})()
+"""
+
+
 def _foto_y_documentos() -> rx.Component:
     puede_editar = AuthState.permisos_flat.contains("empleados:editar")
     foto = rx.cond(
@@ -149,6 +179,13 @@ def _foto_y_documentos() -> rx.Component:
                             on_drop=_S.subir_foto(rx.upload_files(upload_id="foto_emp")),
                             border="0",
                             padding="0",
+                        ),
+                        rx.button(
+                            rx.icon("camera", size=14), "Tomar foto",
+                            size="1", variant="soft", type="button",
+                            on_click=rx.call_script(
+                                _JS_CAMARA, callback=_S.guardar_foto_datauri
+                            ),
                         ),
                         rx.cond(
                             _S.foto_uri != "",

@@ -524,6 +524,23 @@ class EmpleadosState(rx.State):
         self.foto_uri = ""
         self.foto_msg = "Foto eliminada."
 
+    @rx.event
+    async def guardar_foto_datauri(self, data_uri: str):
+        """Recibe una foto tomada con la cámara (data:image/...;base64,...)."""
+        import base64
+
+        from core.repos import fotos
+
+        if not self.edit_empleado or self.edit_empleado == "NUEVO" or "," not in data_uri:
+            return
+        try:
+            crudo = base64.b64decode(data_uri.split(",", 1)[1])
+            await asyncio.to_thread(fotos.guardar_foto, self.edit_empleado, crudo, "camara.jpg")
+            self.foto_msg = "Foto guardada."
+        except Exception as e:  # noqa: BLE001
+            self.foto_msg = str(e)
+        await self._cargar_foto()
+
     # ── Documentos (CV, certificado, contrato, renuncia) ─────────────────
     @rx.event
     def generar_documento(self, tipo: str):
