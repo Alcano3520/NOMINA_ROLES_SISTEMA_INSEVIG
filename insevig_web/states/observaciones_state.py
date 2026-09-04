@@ -52,29 +52,46 @@ class ObservacionesState(rx.State):
         await self._cargar_todo()
 
     datos_emp: dict = {}
+    _obs_slots: list = []  # los 7 slots de cada fila (para el detalle)
 
     async def _cargar_todo(self):
         empleado = self.empleado_sel
         fuente = await self._fuente()
 
         def _cargar():
-            obs = [
-                {"fecha_ven": x.fecha_ven, "texto": " · ".join(x.textos)}
-                for x in observaciones.observaciones(empleado, fuente)
-                if x.textos
-            ]
+            filas_obs = [x for x in observaciones.observaciones(empleado, fuente) if x.textos]
+            obs = [{"fecha_ven": x.fecha_ven, "texto": " · ".join(x.textos)} for x in filas_obs]
+            slots = [list(x.slots7) for x in filas_obs]
             return (
                 obs,
+                slots,
                 [asdict(x) for x in observaciones.multas(empleado, fuente)],
                 [asdict(x) for x in observaciones.faltas(empleado, fuente)],
                 [asdict(x) for x in observaciones.faltas(empleado, fuente, historicas=True)],
                 observaciones.datos_basicos_empleado(empleado, fuente),
             )
 
-        obs, mul, fal, falh, datos = await asyncio.to_thread(_cargar)
+        obs, slots, mul, fal, falh, datos = await asyncio.to_thread(_cargar)
         self.observaciones, self.multas, self.faltas, self.faltas_hist = obs, mul, fal, falh
+        self._obs_slots = slots
         self.datos_emp = datos
         self.cargando = False
+
+    # ── Detalle de una observación (los 7 slots por separado) ─────────
+    detalle_abierto: bool = False
+    detalle_fecha: str = ""
+    detalle_slots: list[str] = []
+
+    @rx.event
+    def ver_detalle(self, idx: int):
+        if 0 <= idx < len(self._obs_slots):
+            self.detalle_slots = list(self._obs_slots[idx])
+            self.detalle_fecha = str(self.observaciones[idx].get("fecha_ven", ""))
+            self.detalle_abierto = True
+
+    @rx.event
+    def cerrar_detalle(self):
+        self.detalle_abierto = False
 
     # ── Nueva observación (primer slot libre) ─────────────────────────────
     nueva_periodo: str = ""
@@ -109,6 +126,42 @@ class ObservacionesState(rx.State):
         except Exception as e:  # noqa: BLE001
             self.nueva_msg = str(e)
         await self._cargar_todo()
+
+    # ── "Mostrar todos": empleados con observaciones ──────────────────
+    todos: list[dict] = []
+    todos_cargando: bool = False
+    todos_sel: list[str] = []
+
+    @rx.event
+    async def cargar_todos(self):
+        self.todos_cargando = True
+        yield
+        fuente = await self._fuente()
+        self.todos = await asyncio.to_thread(
+            observaciones.empleados_con_observaciones, fuente
+        )
+        self.todos_cargando = False
+
+    @rx.event
+    def toggle_todo_sel(self, cod: str):
+        self.todos_sel = (
+            [c for c in self.todos_sel if c != cod]
+            if cod in self.todos_sel
+            else [*self.todos_sel, cod]
+        )
+
+    @rx.event
+    async def descargar_reporte_varios(self):
+        codigos = self.todos_sel or [x["empleado"] for x in self.todos]
+        if not codigos:
+            return
+        fuente = await self._fuente()
+        html = await asyncio.to_thread(
+            observaciones.reporte_html_varios, fuente, codigos
+        )
+        return rx.download(
+            data=html.encode("utf-8"), filename="observaciones_varios.html"
+        )
 
     @rx.event
     def descargar_reporte(self):

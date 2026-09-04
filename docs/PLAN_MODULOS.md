@@ -198,11 +198,11 @@ Legado: `observaciones/TOTAL_OSERVACIONES_4_0.pyw` (1823).
 | 4 | Edición inline de los 7 campos de un mes (en la ficha del empleado) | ✅ |
 | 5 | **Reporte HTML imprimible** | ✅ |
 | 6 | **Panel de datos del empleado** arriba | ✅ `datos_basicos_empleado` |
-| 7 | **Ventana de detalle** de una observación (los 7 campos separados, copiar) | ⬜ |
-| 8 | "Mostrar todos" — lista de empleados que tienen observaciones | ⬜ |
-| 9 | Reporte HTML de **varios empleados** a la vez (`guardar_texto`) | ⬜ |
+| 7 | **Ventana de detalle** de una observación (los 7 campos separados, copiar) | ✅ diálogo "Ver detalle" con botón Copiar por campo (`slots7`) |
+| 8 | "Mostrar todos" — lista de empleados que tienen observaciones | ✅ `empleados_con_observaciones` (código/nombre/meses/última) |
+| 9 | Reporte HTML de **varios empleados** a la vez (`guardar_texto`) | ✅ `reporte_html_varios` (selección o todos) |
 
-Pasos: 6 → 7 → 8 → 9.
+Módulo a paridad.
 
 ---
 

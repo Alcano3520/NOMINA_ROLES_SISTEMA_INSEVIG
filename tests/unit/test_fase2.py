@@ -15,6 +15,25 @@ def test_fila_obs_filtra_refers_vacios():
     assert fila.textos == ["texto A", "texto B"]
 
 
+def test_fila_obs_slots7_conserva_los_siete_incluidos_vacios():
+    fila = _fila_obs({"empleado": "1"}, ["a", "", None, "b", "", "", ""])
+    assert fila.slots7 == ["a", "", "", "b", "", "", ""]
+    assert fila.textos == ["a", "b"]
+
+
+def test_reporte_html_varios_concatena_por_empleado(monkeypatch):
+    from core.repos import observaciones as obs
+
+    monkeypatch.setattr(obs, "datos_basicos_empleado",
+                        lambda c, f: {"nombre": f"EMP {c}"})
+    monkeypatch.setattr(obs, "observaciones", lambda c, f: [])
+    monkeypatch.setattr(obs, "multas", lambda c, f: [])
+    monkeypatch.setattr(obs, "faltas", lambda c, f, **k: [])
+    html = obs.reporte_html_varios("supabase", ["1012", "1013"])
+    assert html.count("page-break-after") == 2
+    assert "EMP 1012" in html and "EMP 1013" in html
+
+
 def test_reporte_html_observaciones():
     from core.repos import observaciones as obs
 

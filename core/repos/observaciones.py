@@ -23,6 +23,7 @@ class FilaObservacion:
     apellidos_nombres: str
     fecha_ven: str
     textos: list[str] = field(default_factory=list)  # refer1..7 no vacíos
+    slots7: list[str] = field(default_factory=list)  # los 7 slots (incl. vacíos)
 
 
 @dataclass
@@ -97,6 +98,7 @@ def _fila_obs(r: dict, refers: list) -> FilaObservacion:
         apellidos_nombres=f"{ap} {no}".strip(),
         fecha_ven=str(r.get("fecha_ven") or r.get("FECHA_VEN") or "")[:10],
         textos=[str(t).strip() for t in refers if t and str(t).strip()],
+        slots7=[(str(t).strip() if t else "") for t in refers][:7],
     )
 
 
@@ -437,6 +439,79 @@ def reporte_html(empleado: str, nombre: str, obs: list[dict], multas_: list[dict
 <table><tr><th>Período</th><th>Ausencias</th><th>F. just.</th><th>F. injust.</th><th>Total</th></tr>{t_fal}</table>
 <p style="margin-top:24px;font-size:12px;color:#666">Listo para imprimir (Ctrl+P).</p>
 </body></html>"""
+
+
+def empleados_con_observaciones(fuente: str, *, limite: int = 500) -> list[dict]:
+    """[{'empleado','apellidos_nombres','meses','ultima'}] — empleados que tienen
+    al menos una fila en RPEMPOBSERV con algún slot con texto ("Mostrar todos")."""
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        filas = (
+            sb.table("rpempobserv").select("*").order("fecha_ven", desc=True)
+            .limit(5000).execute().data or []
+        )
+        emps = {
+            str(x["empleado"]).strip(): x
+            for x in (sb.table("rpemplea").select("empleado,apellidos,nombres")
+                      .eq("codemp", "10").execute().data or [])
+        }
+        get = lambda r, s: r.get(s)  # noqa: E731
+    else:
+        filas = sqlserver.filas(
+            f"""SELECT o.empleado, o.fecha_ven, {', '.join('o.' + s for s in SLOTS_REFER)},
+                       e.APELLIDOS, e.NOMBRES
+                FROM dbo.RPEMPOBSERV o
+                LEFT JOIN dbo.RPEMPLEA e ON o.empleado = e.EMPLEADO
+                WHERE o.codemp = '10' AND o.codsuc = '10'
+                ORDER BY o.fecha_ven DESC""",
+            (),
+        )
+        emps = {}
+        get = lambda r, s: r.get(s.upper()) or r.get(s)  # noqa: E731
+    agg: dict[str, dict] = {}
+    for r in filas:
+        if not any(str(get(r, s) or "").strip() for s in SLOTS_REFER):
+            continue
+        cod = str(get(r, "empleado") or "").strip()
+        if not cod:
+            continue
+        e = emps.get(cod, r)
+        nombre = f"{(get(e, 'apellidos') or '').strip()} {(get(e, 'nombres') or '').strip()}".strip()
+        fecha = str(get(r, "fecha_ven") or "")[:10]
+        cur = agg.setdefault(cod, {"empleado": cod, "apellidos_nombres": nombre, "meses": 0, "ultima": ""})
+        cur["meses"] += 1
+        if fecha > cur["ultima"]:
+            cur["ultima"] = fecha
+    return sorted(agg.values(), key=lambda x: x["ultima"], reverse=True)[:limite]
+
+
+def reporte_html_varios(fuente: str, empleados: list[str]) -> str:
+    """Concatena el reporte HTML de observaciones/multas/faltas de varios empleados
+    (porta el 'guardar_texto' de todos del legado)."""
+    partes = []
+    for cod in empleados:
+        d = datos_basicos_empleado(cod, fuente)
+        nombre = d.get("nombre", cod)
+        obs = [{"fecha_ven": x.fecha_ven, "texto": " · ".join(x.textos)}
+               for x in observaciones(cod, fuente) if x.textos]
+        from dataclasses import asdict as _asdict
+
+        mul = [_asdict(x) for x in multas(cod, fuente)]
+        fal = [_asdict(x) for x in faltas(cod, fuente)]
+        html = reporte_html(cod, nombre, obs, mul, fal)
+        cuerpo = html.split("<body>", 1)[-1].split("</body>", 1)[0]
+        partes.append(f'<section style="page-break-after:always">{cuerpo}</section>')
+    return (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">'
+        "<title>Observaciones — varios empleados</title><style>"
+        "body{font-family:'Segoe UI',Arial,sans-serif;margin:32px;color:#222}"
+        "h1{font-size:18px}h2{font-size:14px;background:#0D1B2A;color:#fff;padding:6px 10px;margin-top:20px}"
+        "table{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px}"
+        "th,td{border:1px solid #bbb;padding:4px 6px;text-align:left}th{background:#1a4d8f;color:#fff}"
+        ".info{color:#555;font-size:12px;margin-bottom:12px}</style></head><body>"
+        + "".join(partes)
+        + "</body></html>"
+    )
 
 
 def buscar_empleados(texto: str, fuente: str) -> list[dict]:

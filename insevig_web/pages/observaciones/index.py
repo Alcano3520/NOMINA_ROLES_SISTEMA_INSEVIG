@@ -75,6 +75,99 @@ def _tabla(cols: list[str], filas: rx.Var, celdas) -> rx.Component:
     )
 
 
+def _detalle_dialog() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Observación del " + ObservacionesState.detalle_fecha),
+            rx.dialog.description("Los 7 campos del mes, por separado.", size="1"),
+            rx.vstack(
+                rx.foreach(
+                    ObservacionesState.detalle_slots,
+                    lambda s, i: rx.cond(
+                        s != "",
+                        rx.box(
+                            rx.hstack(
+                                rx.text(f"Campo {i + 1}", size="1", weight="bold", color_scheme="gray"),
+                                rx.spacer(),
+                                rx.button(
+                                    rx.icon("copy", size=12), "Copiar",
+                                    on_click=rx.set_clipboard(s),
+                                    size="1", variant="ghost",
+                                ),
+                                width="100%",
+                                align="center",
+                            ),
+                            rx.text(s, size="2"),
+                            border="1px solid var(--gray-5)",
+                            border_radius="6px",
+                            padding="8px 10px",
+                            width="100%",
+                        ),
+                    ),
+                ),
+                spacing="2",
+                width="100%",
+                margin_top="0.5rem",
+            ),
+            rx.dialog.close(
+                rx.button("Cerrar", on_click=ObservacionesState.cerrar_detalle, variant="soft", margin_top="1rem")
+            ),
+            max_width="560px",
+        ),
+        open=ObservacionesState.detalle_abierto,
+    )
+
+
+def _mostrar_todos() -> rx.Component:
+    return card(
+        rx.vstack(
+            rx.hstack(
+                rx.heading("Empleados con observaciones", size="3"),
+                rx.button("Mostrar todos", on_click=ObservacionesState.cargar_todos, variant="soft", size="1"),
+                rx.spacer(),
+                rx.button(
+                    "Descargar reporte (selección o todos)",
+                    on_click=ObservacionesState.descargar_reporte_varios,
+                    size="1",
+                ),
+                width="100%",
+                align="center",
+                wrap="wrap",
+            ),
+            rx.cond(
+                ObservacionesState.todos_cargando,
+                rx.spinner(),
+                _tabla(
+                    ["", "Código", "Empleado", "Meses", "Última"],
+                    ObservacionesState.todos,
+                    lambda t: rx.table.row(
+                        rx.table.cell(
+                            rx.checkbox(
+                                checked=ObservacionesState.todos_sel.contains(t["empleado"]),
+                                on_change=lambda _v: ObservacionesState.toggle_todo_sel(t["empleado"]),
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.link(
+                                t["empleado"],
+                                on_click=lambda: ObservacionesState.seleccionar(
+                                    t["empleado"], t["apellidos_nombres"]
+                                ),
+                            )
+                        ),
+                        rx.table.cell(t["apellidos_nombres"]),
+                        rx.table.cell(t["meses"].to_string()),
+                        rx.table.cell(t["ultima"]),
+                    ),
+                ),
+            ),
+            spacing="2",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
 @rx.page(
     route="/observaciones",
     title="INSEVIG — Observaciones",
@@ -142,10 +235,19 @@ def index() -> rx.Component:
                                 ),
                                 rx.tabs.content(
                                     _tabla(
-                                        ["Fecha", "Texto"],
+                                        ["Fecha", "Texto", ""],
                                         ObservacionesState.observaciones,
-                                        lambda o: rx.table.row(
-                                            rx.table.cell(o["fecha_ven"]), rx.table.cell(o["texto"])
+                                        lambda o, i: rx.table.row(
+                                            rx.table.cell(o["fecha_ven"]),
+                                            rx.table.cell(o["texto"]),
+                                            rx.table.cell(
+                                                rx.button(
+                                                    "Ver detalle",
+                                                    on_click=lambda: ObservacionesState.ver_detalle(i),
+                                                    size="1",
+                                                    variant="soft",
+                                                )
+                                            ),
                                         ),
                                     ),
                                     value="obs",
@@ -204,6 +306,8 @@ def index() -> rx.Component:
                 ),
             ),
             rx.cond(ObservacionesState.empleado_sel != "", _nueva_observacion()),
+            _mostrar_todos(),
+            _detalle_dialog(),
             spacing="4",
             width="100%",
         ),
