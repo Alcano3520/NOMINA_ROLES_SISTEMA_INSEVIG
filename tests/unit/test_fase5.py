@@ -37,6 +37,22 @@ def test_email_plantilla_guarda_y_recupera(app_db):
     assert parametros.get_email_plantilla()["asunto"] == "ROL {{mes}}/{{anio}}"
 
 
+def test_ia_config_override_desde_bd_sin_tocar_api_key(app_db, monkeypatch):
+    from core import parametros
+
+    monkeypatch.setenv("IA_API_KEY", "secreta-del-env")
+    import core.config as config
+    config.get_settings.cache_clear()
+
+    parametros.set_ia_config("ollama", "http://ollama.local:11434", "llama3.1")
+    cfg = parametros.get_ia_config()
+    assert cfg["provider"] == "ollama"
+    assert cfg["base_url"] == "http://ollama.local:11434"
+    assert cfg["model"] == "llama3.1"
+    assert cfg["api_key"] == "secreta-del-env"  # siempre del .env, nunca de la BD
+    config.get_settings.cache_clear()
+
+
 def test_biess_preparar_marca_no_encontrado(monkeypatch):
     monkeypatch.setattr(registrador, "_empleado_por_cedula", lambda c: None)
     movs, avisos = registrador.preparar_biess([{"cedula": "0920116811", "valor": 45.5}], "2026-06")

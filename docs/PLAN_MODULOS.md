@@ -180,9 +180,9 @@ Legado: `prestamos/HISTORIAL_PRESTAMOS_10.pyw` (3158).
 | 8 | **Detalle por préstamo** (ver movimientos individuales) | ✅ botón "Ver" |
 | 9 | Brechas entre cuotas, cuota promedio, estimación meses para cancelar | ✅ en `agrupar_por_numero` |
 | 10 | Excel por-empleado con estilo (banner, hojas Historial/DESCUENTOS con formato) | 🟡 2 hojas ✅ · formato/banner ⬜ |
-| 11 | Config del proveedor IA desde la UI (hoy: `.env`) | ⬜ (va en Administración) |
+| 11 | Config del proveedor IA desde la UI (hoy: `.env`) | ✅ `/admin/parametros` (proveedor/URL/modelo; API key sigue en `.env`) |
 
-Pasos: 8 → 9 → 10.
+Pasos: 10 (formato del Excel por-empleado).
 
 ---
 
@@ -291,7 +291,7 @@ Pasos: abrir la carpeta legada y listar lo que falte.
 | 3 | Auditoría con filtros por usuario y módulo | ✅ |
 | 4 | Configuración: ver credenciales enmascaradas, healthcheck de orígenes | ✅ |
 | 5 | Verificación de datos (ex-comparador) | ✅ |
-| 6 | Editar parámetros: SBU por año ✅ · plantilla de correo ✅ (en Envío) · proveedor IA ⬜ | 🟡 |
+| 6 | Editar parámetros: SBU por año ✅ · plantilla de correo ✅ (en Envío) · proveedor IA ✅ (`/admin/parametros`, la API key sigue en `.env`) | ✅ |
 | 7 | Cambiar la propia contraseña / que un admin resetee la de otro | ✅ `/mi-cuenta` (autoservicio) + "Resetear clave" en `/admin/usuarios` |
 
 Pasos: proveedor IA (parte de 6).

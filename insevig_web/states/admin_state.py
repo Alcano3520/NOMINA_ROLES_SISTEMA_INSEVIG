@@ -88,6 +88,43 @@ class AdminState(rx.State):
         await asyncio.to_thread(_save)
         self.sbu_msg = "Guardado."
 
+    # ── Proveedor de narrativa IA (préstamos) ──────────────────────────
+    ia_provider: str = "none"
+    ia_base_url: str = ""
+    ia_model: str = ""
+    ia_key_estado: str = ""
+    ia_msg: str = ""
+
+    @rx.event
+    async def cargar_ia(self):
+        from core.parametros import get_ia_config
+
+        cfg = await asyncio.to_thread(get_ia_config)
+        self.ia_provider = cfg["provider"] or "none"
+        self.ia_base_url = cfg["base_url"]
+        self.ia_model = cfg["model"]
+        self.ia_key_estado = "configurada en .env" if cfg["api_key"] else "no configurada"
+
+    @rx.event
+    def set_ia(self, campo: str, v: str):
+        setattr(self, f"ia_{campo}", v)
+
+    @rx.event
+    async def guardar_ia(self):
+        auth_st = await self.get_state(AuthState)
+        if "admin" not in auth_st.roles:
+            self.ia_msg = "Solo un administrador."
+            return
+        prov, base, model = self.ia_provider, self.ia_base_url, self.ia_model
+
+        def _save():
+            from core.parametros import set_ia_config
+
+            set_ia_config(prov, base, model)
+
+        await asyncio.to_thread(_save)
+        self.ia_msg = "Guardado. La narrativa usará este proveedor."
+
     @rx.event
     async def cargar_auditoria(self):
         f_user, f_mod = self.aud_usuario.strip(), self.aud_modulo.strip()

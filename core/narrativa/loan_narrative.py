@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import httpx
 
-from core.config import get_settings
+from core.parametros import get_ia_config
 
 _SYSTEM = (
     "Eres asistente de nomina. Escribe en espanol muy sencillo, con frases cortas. "
@@ -41,18 +41,18 @@ def _contexto(movimientos: list, deuda_hoy: float) -> str:
 
 
 def narrar_prestamos(movimientos: list, deuda_hoy: float) -> str:
-    s = get_settings()
-    prov = s.ia_provider.lower()
+    cfg = get_ia_config()
+    prov = cfg["provider"].lower()
     if prov in ("", "none"):
         raise NarrativaNoDisponible("IA desactivada (IA_PROVIDER=none).")
     contexto = _contexto(movimientos, deuda_hoy)
 
     if prov == "ollama":
-        url = s.ia_base_url.rstrip("/") + "/api/chat"
+        url = cfg["base_url"].rstrip("/") + "/api/chat"
         r = httpx.post(
             url,
             json={
-                "model": s.ia_model or "llama3",
+                "model": cfg["model"] or "llama3",
                 "messages": [
                     {"role": "system", "content": _SYSTEM},
                     {"role": "user", "content": contexto},
@@ -66,13 +66,13 @@ def narrar_prestamos(movimientos: list, deuda_hoy: float) -> str:
 
     if prov == "openrouter":
         url = "https://openrouter.ai/api/v1/chat/completions"
-        modelos = list(dict.fromkeys([s.ia_model, *_FALLBACK_OPENROUTER]))
+        modelos = list(dict.fromkeys([cfg["model"], *_FALLBACK_OPENROUTER]))
         modelos = [m for m in modelos if m]
     else:  # groq
         url = "https://api.groq.com/openai/v1/chat/completions"
-        modelos = [s.ia_model or "llama-3.1-8b-instant"]
+        modelos = [cfg["model"] or "llama-3.1-8b-instant"]
 
-    headers = {"Authorization": f"Bearer {s.ia_api_key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"}
     ultimo = "sin respuesta"
     for modelo in modelos:
         try:

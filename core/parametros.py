@@ -75,6 +75,30 @@ def set_email_plantilla(asunto: str, html: str) -> None:
     })
 
 
+def get_ia_config() -> dict[str, str]:
+    """Config del proveedor de narrativa IA. `provider/base_url/model` se pueden
+    editar desde Administración; la API key sigue viniendo SOLO de `.env`
+    (no se guarda en la BD de la app)."""
+    from core.config import get_settings
+
+    s = get_settings()
+    base = {"provider": s.ia_provider, "base_url": s.ia_base_url, "model": s.ia_model}
+    ov = _leer("ia_config")
+    for k in ("provider", "base_url", "model"):
+        if str(ov.get(k, "")).strip():
+            base[k] = str(ov[k]).strip()
+    base["api_key"] = s.ia_api_key  # nunca desde la BD
+    return base
+
+
+def set_ia_config(provider: str, base_url: str, model: str) -> None:
+    _guardar("ia_config", {
+        "provider": provider.strip().lower(),
+        "base_url": base_url.strip(),
+        "model": model.strip(),
+    })
+
+
 def config_liquidacion(region: str = "COSTA"):
     """`ConfigLiquidacion` con los SBU guardados (o los por defecto)."""
     from core.repos.liquidaciones import SBU_DEFECTO, ConfigLiquidacion
