@@ -62,22 +62,21 @@ def _campo(nombre: str) -> rx.Component:
             style=_SELECT_STYLE,
         )
     elif nombre in CAMPOS_CATALOGO:
-        # Catálogos (DEPTO/CARGO/SECCION/BANCO): input con <datalist> y, debajo,
-        # el NOMBRE del código seleccionado.
-        tipo = CAMPOS_CATALOGO[nombre]
+        # Catálogos (DEPTO/CARGO/SECCION/BANCO): se escribe el código y debajo se
+        # muestra el NOMBRE que corresponde.
         return rx.vstack(
             rx.text(_label(nombre), size="1", weight="bold"),
-            rx.el.input(
+            rx.input(
                 value=val,
                 on_change=lambda v: _S.set_campo_catalogo(nombre, v),
-                list=f"cat_{tipo}",
                 disabled=_bloqueado(),
-                placeholder="código o nombre…",
-                style=_SELECT_STYLE,
+                placeholder="código",
+                size="2",
+                width="100%",
             ),
             rx.cond(
                 _S.edit_nombres_cat[nombre] != "",
-                rx.text(_S.edit_nombres_cat[nombre], size="1", color_scheme="blue", weight="medium"),
+                rx.text("→ " + _S.edit_nombres_cat[nombre], size="1", color_scheme="blue", weight="medium"),
             ),
             spacing="1",
             width="100%",
@@ -191,22 +190,6 @@ def _foto_y_documentos() -> rx.Component:
             wrap="wrap",
         ),
         width="100%",
-    )
-
-
-def _datalists() -> rx.Component:
-    """Los <datalist> de catálogos, declarados una sola vez para todo el editor."""
-    return rx.fragment(
-        *[
-            rx.el.datalist(
-                rx.foreach(
-                    _S.edit_catalogos[tipo],
-                    lambda o: rx.el.option(o["nombre"], value=o["codigo"]),
-                ),
-                id=f"cat_{tipo}",
-            )
-            for tipo in ("FNC", "SEC", "DPT", "BAN")
-        ]
     )
 
 
@@ -345,7 +328,6 @@ def editor_panel() -> rx.Component:
                         spacing="1",
                     ),
                 ),
-                _datalists(),
                 rx.tabs.root(
                     rx.tabs.list(
                         *[
@@ -355,14 +337,28 @@ def editor_panel() -> rx.Component:
                         rx.tabs.trigger("Observaciones", value="obs"),
                         wrap="wrap",
                     ),
+                    # Solo se monta el contenido de la pestaña activa (rápido).
                     *[
-                        rx.tabs.content(_tab_secciones(tab), value=str(i))
+                        rx.tabs.content(
+                            rx.cond(_S.edit_tab == str(i), _tab_secciones(tab), rx.box()),
+                            value=str(i),
+                        )
                         for i, tab in enumerate(SECCIONES)
                     ],
                     rx.tabs.content(
-                        rx.cond(_S.es_nuevo, rx.text("Disponible al guardar el empleado."), _observaciones()),
+                        rx.cond(
+                            _S.edit_tab == "obs",
+                            rx.cond(
+                                _S.es_nuevo,
+                                rx.text("Disponible al guardar el empleado."),
+                                _observaciones(),
+                            ),
+                            rx.box(),
+                        ),
                         value="obs",
                     ),
+                    value=_S.edit_tab,
+                    on_change=_S.set_edit_tab,
                     default_value="0",
                     width="100%",
                 ),

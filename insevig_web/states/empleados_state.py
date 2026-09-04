@@ -266,12 +266,18 @@ class EmpleadosState(rx.State):
         self.edit_obs_existe = False
         self.edit_obs_msg = ""
         self.foto_msg = ""
+        self.edit_tab = "0"
         self.cargando_editor = False
         await self._cargar_foto()
         await self._cargar_catalogos_editor()
         await self._resolver_nombres_catalogo()
 
     edit_nombres_cat: dict[str, str] = {}  # campo -> nombre del código (DEPTO/CARGO/...)
+    edit_tab: str = "0"
+
+    @rx.event
+    def set_edit_tab(self, v: str):
+        self.edit_tab = v
 
     async def _resolver_nombres_catalogo(self):
         pares = [
