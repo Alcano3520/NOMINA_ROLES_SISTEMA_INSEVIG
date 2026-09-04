@@ -18,6 +18,13 @@ def index() -> rx.Component:
             "Cálculo legal: vacaciones, décimo 13/14, desahucio, indemnización por despido, IESS, "
             "fondo de reserva, split de anticipos. Una línea por empleado: cédula, dd/mm/aaaa, motivo.",
         ),
+        rx.link(
+            rx.button(
+                rx.icon("folder-open", size=14), "Ver liquidaciones guardadas",
+                variant="soft", size="2",
+            ),
+            href="/liquidaciones/guardadas",
+        ),
         rx.vstack(
             card(
                 rx.vstack(
