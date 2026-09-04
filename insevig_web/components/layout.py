@@ -30,11 +30,11 @@ def _header() -> rx.Component:
         ),
         rx.spacer(),
         rx.hstack(
+            rx.color_mode.button(size="2"),
             rx.icon("user", size=16, color="white"),
             rx.text(AuthState.nombre, color="white", size="2"),
             spacing="2",
             align="center",
-            display=rx.breakpoints(initial="none", sm="flex"),
         ),
         width="100%",
         height="60px",

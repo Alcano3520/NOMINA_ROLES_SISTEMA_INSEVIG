@@ -15,7 +15,7 @@ from core.repos.empleados import (
     CAMPOS_NUMERICOS,
     CAMPOS_SN,
     ETIQUETAS,
-    GRUPOS,
+    SECCIONES,
 )
 from insevig_web.components.ui import card, primary_button
 from insevig_web.states.auth_state import AuthState
@@ -62,17 +62,25 @@ def _campo(nombre: str) -> rx.Component:
             style=_SELECT_STYLE,
         )
     elif nombre in CAMPOS_CATALOGO:
-        # Catálogos con cientos de opciones (DEPTO ~987, SECCION ~557): input con
-        # <datalist> (autocompletar nativo). Los <datalist> se declaran UNA vez en
-        # `_datalists()`; aquí solo se referencia por id.
+        # Catálogos (DEPTO/CARGO/SECCION/BANCO): input con <datalist> y, debajo,
+        # el NOMBRE del código seleccionado.
         tipo = CAMPOS_CATALOGO[nombre]
-        control = rx.el.input(
-            value=val,
-            on_change=lambda v: _S.set_campo(nombre, v),
-            list=f"cat_{tipo}",
-            disabled=_bloqueado(),
-            placeholder="código o nombre…",
-            style=_SELECT_STYLE,
+        return rx.vstack(
+            rx.text(_label(nombre), size="1", weight="bold"),
+            rx.el.input(
+                value=val,
+                on_change=lambda v: _S.set_campo_catalogo(nombre, v),
+                list=f"cat_{tipo}",
+                disabled=_bloqueado(),
+                placeholder="código o nombre…",
+                style=_SELECT_STYLE,
+            ),
+            rx.cond(
+                _S.edit_nombres_cat[nombre] != "",
+                rx.text(_S.edit_nombres_cat[nombre], size="1", color_scheme="blue", weight="medium"),
+            ),
+            spacing="1",
+            width="100%",
         )
     else:
         control = rx.input(
@@ -202,10 +210,28 @@ def _datalists() -> rx.Component:
     )
 
 
-def _grid_campos(campos: tuple[str, ...]) -> rx.Component:
-    return rx.grid(
-        *[_campo(c) for c in campos],
-        columns=rx.breakpoints(initial="1", sm="2", lg="3"),
+def _subseccion(titulo: str, campos: tuple[str, ...]) -> rx.Component:
+    """Un recuadro con título (como los LabelFrame del sistema anterior)."""
+    return rx.box(
+        rx.text(titulo.upper(), size="1", weight="bold", color_scheme="blue", letter_spacing="0.04em"),
+        rx.divider(margin_y="6px"),
+        rx.grid(
+            *[_campo(c) for c in campos],
+            columns=rx.breakpoints(initial="1", sm="2", lg="3"),
+            spacing="3",
+            width="100%",
+        ),
+        border="1px solid var(--gray-5)",
+        border_radius="8px",
+        padding="12px 14px",
+        width="100%",
+        background="var(--gray-1)",
+    )
+
+
+def _tab_secciones(tab: str) -> rx.Component:
+    return rx.vstack(
+        *[_subseccion(tit, campos) for tit, campos in SECCIONES[tab]],
         spacing="3",
         width="100%",
         padding_y="3",
@@ -324,14 +350,14 @@ def editor_panel() -> rx.Component:
                     rx.tabs.list(
                         *[
                             rx.tabs.trigger(_TABS[g], value=str(i))
-                            for i, g in enumerate(GRUPOS)
+                            for i, g in enumerate(SECCIONES)
                         ],
                         rx.tabs.trigger("Observaciones", value="obs"),
                         wrap="wrap",
                     ),
                     *[
-                        rx.tabs.content(_grid_campos(tuple(cs)), value=str(i))
-                        for i, (g, cs) in enumerate(GRUPOS.items())
+                        rx.tabs.content(_tab_secciones(tab), value=str(i))
+                        for i, tab in enumerate(SECCIONES)
                     ],
                     rx.tabs.content(
                         rx.cond(_S.es_nuevo, rx.text("Disponible al guardar el empleado."), _observaciones()),

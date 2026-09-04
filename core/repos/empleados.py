@@ -17,34 +17,59 @@ from core.db import sqlserver, supabase_client
 from core.db.health import FUENTE_SUPABASE
 from core.utils import a_float, normalizar_cedula
 
-# Campos editables de RPEMPLEA, agrupados como las 6 pestañas del legado
-# (`SISTEMA_GESTION_EMPLEADOS_10.pyw`). Nombres de columna EXACTOS del legado.
+# Campos editables de RPEMPLEA. Organizados como el legado
+# (`SISTEMA_GESTION_EMPLEADOS_10.pyw`): pestaña -> [(subsección, campos)].
+# Nombres de columna EXACTOS del legado.
+SECCIONES: dict[str, list[tuple[str, tuple[str, ...]]]] = {
+    "Datos generales": [
+        ("Información personal", (
+            "NOMBRES", "APELLIDOS", "CEDULA", "SEXO", "ESTADO_CI",
+            "FECHA_NAC", "LUGAR_NAC", "NACIONAL", "CONYUGUE",
+        )),
+        ("Ubicación", ("DIRECCION", "PROVINCIA", "CANTON", "PARROQUIA")),
+        ("Contacto", ("TELEFONO", "RPCAM", "emp_mail")),
+        ("Información laboral", (
+            "FECHA_ING", "FECHA_SAL", "DEPTO", "CARGO", "SECCION",
+            "ESTADO", "TIPO_TRA", "ACTIVIDAD",
+        )),
+        ("Estudios", ("PRIMARIA", "SECUNDARIA", "EST_SUP", "TITULO", "ANIO_EST")),
+    ],
+    "Ingresos / descuentos": [
+        ("Sueldo y beneficios de ley", (
+            "SUELDO", "BONIFI", "COMPEN", "TRANSP", "HOR25", "HOR50", "HOR100",
+        )),
+        ("Acumulados de beneficios sociales", ("DECIMO3", "DECIMO4", "VACACION", "FONRESER")),
+        ("Rol extra", (
+            "MOVILIZA", "LUNCH", "ANTICIPO", "DESCUENTO", "ING_EXTRA", "DCT_EXTRA", "CONCEPTO",
+        )),
+        ("Parámetros de nómina", ("CAT_PROYECT_7", "CAT_PROYECT_8", "RPCAM2")),
+    ],
+    "Otros datos": [
+        ("Generales", ("INCL_ROL", "INCL_BAN", "CARGAS", "ULTLIQ", "ULTDIATRA", "DIAS_TRA",
+                       "TIP_SAN", "TIPO_PGO")),
+        ("Cuentas contables", ("CODCTA", "CTADPT", "CTAAUX")),
+        ("Información bancaria", ("RUTA4", "CTA_CTE", "CTA_AHO")),
+    ],
+    "Certificados / familiares": [
+        ("Familiares", ("NOM_FAM", "DIR_FAM", "TEL_FAM")),
+        ("No familiares", ("NOM_NO_FAM", "DIR_NO_FAM", "TEL_NO_FAM")),
+    ],
+    "Referencias": [
+        ("Datos referenciales", (
+            "CED_MIL", "EDAD", "IDVOTA", "LICCOND", "CODIESS", "ID_CONADIS", "OBSERV",
+        )),
+        ("Servicios", (
+            "RPCAM5", "CONTINS", "RPCAM3", "RPCAM4",
+            "certificados", "reentrenamiento", "vacuna", "FZA_PUB", "SER_MIL",
+        )),
+        ("Información adicional", ("CERTVINF", "MANIOBRAS", "NUM_AFIL")),
+    ],
+}
+
+# Compat: pestaña -> tupla plana de campos (lo usan los PDF de ficha/documentos).
 GRUPOS: dict[str, tuple[str, ...]] = {
-    "Datos generales": (
-        "NOMBRES", "APELLIDOS", "CEDULA", "SEXO", "ESTADO_CI", "FECHA_NAC", "LUGAR_NAC",
-        "NACIONAL", "DIRECCION", "PROVINCIA", "CANTON", "PARROQUIA",
-        "FECHA_ING", "FECHA_SAL", "DEPTO", "CARGO", "SECCION", "ESTADO",
-        "TELEFONO", "RPCAM", "emp_mail", "TIPO_TRA", "ACTIVIDAD", "CONYUGUE",
-    ),
-    "Ingresos / descuentos": (
-        "SUELDO", "BONIFI", "COMPEN", "TRANSP", "HOR25", "HOR50", "HOR100",
-        "DECIMO3", "DECIMO4", "VACACION", "FONRESER",
-        "MOVILIZA", "LUNCH", "ANTICIPO", "DESCUENTO", "ING_EXTRA", "DCT_EXTRA", "CONCEPTO",
-        "CAT_PROYECT_7", "CAT_PROYECT_8", "RPCAM2",
-    ),
-    "Otros datos": (
-        "INCL_ROL", "INCL_BAN", "CARGAS", "ULTLIQ", "ULTDIATRA", "DIAS_TRA",
-        "TIP_SAN", "TIPO_PGO", "CODCTA", "CTADPT", "CTAAUX", "RUTA4", "CTA_CTE", "CTA_AHO",
-    ),
-    "Certificados / familiares": (
-        "NOM_FAM", "DIR_FAM", "TEL_FAM", "NOM_NO_FAM", "DIR_NO_FAM", "TEL_NO_FAM",
-    ),
-    "Referencias": (
-        "CED_MIL", "EDAD", "IDVOTA", "LICCOND", "CODIESS", "ID_CONADIS", "OBSERV",
-        "PRIMARIA", "SECUNDARIA", "EST_SUP", "TITULO", "ANIO_EST",
-        "RPCAM5", "CONTINS", "RPCAM3", "RPCAM4", "certificados", "reentrenamiento", "vacuna",
-        "FZA_PUB", "SER_MIL", "CERTVINF", "MANIOBRAS", "NUM_AFIL",
-    ),
+    tab: tuple(c for _sub, campos in secs for c in campos)
+    for tab, secs in SECCIONES.items()
 }
 CAMPOS_EDITABLES: tuple[str, ...] = tuple(c for cs in GRUPOS.values() for c in cs)
 
@@ -377,4 +402,33 @@ def catalogos(fuente: str) -> dict[str, list[dict]]:
             "SELECT CODIGO, NOMBRE FROM dbo.DBTABLAS WHERE TIPO = ? AND CODEMP='10'", (tipo,)
         )
         out[tipo] = [{"codigo": str(r["CODIGO"]).strip(), "nombre": (r["NOMBRE"] or "").strip()} for r in filas]
+    return out
+
+
+def nombres_catalogo(fuente: str, pares: list[tuple[str, str]]) -> dict[str, str]:
+    """Resuelve [(tipo, codigo)] -> {codigo: nombre}. Para mostrar el nombre del
+    departamento/cargo/sección/banco junto al código en la ficha.
+    """
+    pares = [(t, str(c).strip()) for t, c in pares if str(c).strip()]
+    if not pares:
+        return {}
+    out: dict[str, str] = {}
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        for tipo, cod in pares:
+            r = (
+                sb.table("dbtablas").select("nombre")
+                .eq("tipo", tipo).eq("codemp", "10").eq("codigo", cod)
+                .limit(1).execute()
+            )
+            if r.data:
+                out[cod] = (r.data[0].get("nombre") or "").strip()
+        return out
+    for tipo, cod in pares:
+        filas = sqlserver.filas(
+            "SELECT NOMBRE FROM dbo.DBTABLAS WHERE TIPO = ? AND CODIGO = ? AND CODEMP='10'",
+            (tipo, cod),
+        )
+        if filas:
+            out[cod] = (filas[0]["NOMBRE"] or "").strip()
     return out

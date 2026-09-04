@@ -20,14 +20,14 @@ BG = "#f5f7fa"
 SIDEBAR_BREAKPOINT = "1024px"
 
 theme = rx.theme(
-    color_mode="light",  # fuerza modo claro
+    # Claro por defecto (el sistema anterior era claro), pero el usuario puede
+    # cambiar a oscuro con el botón del encabezado.
+    appearance="light",
+    has_background=True,
     accent_color="blue",
     gray_color="slate",
     radius="medium",
     scaling="100%",
-    # reflex-components-radix elimina el prop `appearance` al renderizar; forzamos
-    # la escala clara de Radix con el data-attribute directamente.
-    custom_attrs={"data-appearance": "light"},
 )
 
 # El estilo global (fondo claro, modo claro forzado, superficies Radix) vive en

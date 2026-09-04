@@ -269,6 +269,34 @@ class EmpleadosState(rx.State):
         self.cargando_editor = False
         await self._cargar_foto()
         await self._cargar_catalogos_editor()
+        await self._resolver_nombres_catalogo()
+
+    edit_nombres_cat: dict[str, str] = {}  # campo -> nombre del código (DEPTO/CARGO/...)
+
+    async def _resolver_nombres_catalogo(self):
+        pares = [
+            (tipo, str(self.edit_campos.get(campo, "")).strip())
+            for campo, tipo in repo_emp.CAMPOS_CATALOGO.items()
+            if str(self.edit_campos.get(campo, "")).strip()
+        ]
+        if not pares:
+            self.edit_nombres_cat = {}
+            return
+        try:
+            fuente = await self._fuente()
+            res = await asyncio.to_thread(repo_emp.nombres_catalogo, fuente, pares)
+        except Exception:  # noqa: BLE001
+            res = {}
+        self.edit_nombres_cat = {
+            campo: res.get(str(self.edit_campos.get(campo, "")).strip(), "")
+            for campo in repo_emp.CAMPOS_CATALOGO
+        }
+
+    @rx.event
+    async def set_campo_catalogo(self, campo: str, valor: str):
+        self.edit_campos[campo] = valor
+        # refresca el nombre mostrado
+        await self._resolver_nombres_catalogo()
 
     @rx.event
     async def abrir_editor(self, empleado: str):

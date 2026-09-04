@@ -1,67 +1,52 @@
-/* La app INSEVIG tiene un ÚNICO look corporativo claro. Se fuerza el modo claro
-   sin importar el `prefers-color-scheme` del navegador del usuario. */
+/* Tema INSEVIG. Claro por defecto (el sistema anterior era claro); el usuario
+   puede pasar a oscuro con el botón del encabezado. */
 
-/* LightningCSS (el transformador CSS de Reflex/Vite) convierte la función
-   `light-dark()` de Radix Themes en un toggle con estas custom properties,
-   controladas por `@media (prefers-color-scheme)`. En un navegador en modo
-   oscuro resuelve TODO a la rama oscura aunque la clase `.light` esté puesta.
-   Forzamos aquí la rama clara de forma incondicional. */
+/* LightningCSS convierte light-dark() de Radix en este toggle. Lo fijamos según
+   el modo activo (clase .light/.dark en <html>, la pone el selector de tema). */
 :root,
-.radix-themes,
-.light,
-.light-theme,
-.dark,
-.dark-theme {
+:root.light {
   --lightningcss-light: ;
   --lightningcss-dark: initial;
-  color-scheme: light !important;
+  color-scheme: light;
+}
+:root.dark {
+  --lightningcss-light: initial;
+  --lightningcss-dark: ;
+  color-scheme: dark;
 }
 
-html,
-body {
-  color-scheme: light !important;
-  background-color: #f5f7fa !important;
-  color: #1f2937 !important;
+/* ── Modo claro ─────────────────────────────────────────────────────────── */
+:root:not(.dark) body,
+:root:not(.dark) .radix-themes {
+  background-color: #f5f7fa;
+  color: #1f2937;
+}
+:root:not(.dark) .rt-Card,
+:root:not(.dark) .rt-Card::before,
+:root:not(.dark) .rt-BaseCard,
+:root:not(.dark) .rt-PopperContent,
+:root:not(.dark) .rt-DialogContent,
+:root:not(.dark) .rt-AlertDialogContent,
+:root:not(.dark) .rt-PopoverContent,
+:root:not(.dark) .rt-SelectContent {
+  background-color: #ffffff;
+}
+:root:not(.dark) .rt-TextFieldInput,
+:root:not(.dark) .rt-TextFieldRoot,
+:root:not(.dark) .rt-TextAreaInput,
+:root:not(.dark) .rt-TextArea,
+:root:not(.dark) input,
+:root:not(.dark) textarea,
+:root:not(.dark) select {
+  background-color: #ffffff;
+  color: #1f2937;
 }
 
-/* El <Theme> de Radix (div .radix-themes): fondo claro y color de texto oscuro.
-   Sin esto, en un navegador en modo oscuro el div queda transparente y se ve
-   el "canvas" oscuro del navegador a través de toda la app. */
-.radix-themes {
-  color-scheme: light !important;
-  background-color: #f5f7fa !important;
-  color: #1f2937 !important;
-  --color-background: #ffffff;
-}
-
-/* Superficies Radix con fondo blanco sólido (los paneles translúcidos por
-   defecto dejan ver el fondo oscuro del navegador). */
-.rt-Card,
-.rt-Card::before,
-.rt-BaseCard,
-.rt-PopperContent,
-.rt-DialogContent,
-.rt-AlertDialogContent,
-.rt-PopoverContent,
-.rt-HoverCardContent,
-.rt-DropdownMenuContent,
-.rt-SelectContent,
-.rt-Table,
-.rt-TableRootTable {
-  background-color: #ffffff !important;
-}
-
-/* Campos de formulario legibles en modo claro. */
-.rt-TextFieldInput,
-.rt-TextFieldRoot,
-.rt-TextAreaInput,
-.rt-TextArea,
-.rt-SelectTrigger,
-select,
-input,
-textarea {
-  background-color: #ffffff !important;
-  color: #1f2937 !important;
+/* ── Modo oscuro ────────────────────────────────────────────────────────── */
+:root.dark body,
+:root.dark .radix-themes {
+  background-color: #0d1117;
+  color: #e6edf3;
 }
 
 .rt-Button.rt-variant-solid {
