@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     sqlserver_filter: str = "CODEMP='10' AND CODSUC='10'"
     sqlserver_encrypt: str = "no"
     sqlserver_trust_cert: bool = True
-    sqlserver_timeout: int = 5
+    sqlserver_timeout: int = 3
     sqlserver_pool_size: int = 5
 
     # ── Supabase (solo lectura) ──────────────────────────────────────────────

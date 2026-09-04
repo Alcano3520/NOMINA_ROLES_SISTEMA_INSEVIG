@@ -6,7 +6,6 @@ from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading
 from insevig_web.pages.empleados._editor_panel import editor_panel
 from insevig_web.states.auth_state import AuthState
-from insevig_web.states.datasource_state import DataSourceState
 from insevig_web.states.empleados_state import EmpleadosState
 
 _S = EmpleadosState
@@ -127,11 +126,7 @@ def _lista() -> rx.Component:
 @rx.page(
     route="/empleados/buscar",
     title="INSEVIG — Gestión de empleados",
-    on_load=[
-        AuthState.cargar_sesion,
-        DataSourceState.detectar,
-        EmpleadosState.cargar_lista_inicial,
-    ],
+    on_load=[AuthState.cargar_sesion, EmpleadosState.cargar_lista_inicial],
 )
 def buscar() -> rx.Component:
     return pagina(
