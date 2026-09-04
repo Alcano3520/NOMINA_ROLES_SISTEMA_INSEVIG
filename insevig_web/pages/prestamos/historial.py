@@ -48,7 +48,7 @@ def _tabla_resumen() -> rx.Component:
                 rx.table.row(
                     *[
                         rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
-                        for c in ("N° préstamo", "Desde", "Hasta", "Prestado", "Abonado", "Saldo", "Cuotas")
+                        for c in ("N°", "Desde", "Hasta", "Prestado", "Abonado", "Saldo", "Cuotas", "Estado", "")
                     ]
                 )
             ),
@@ -63,6 +63,21 @@ def _tabla_resumen() -> rx.Component:
                         rx.table.cell(g["abonado"].to_string()),
                         rx.table.cell(g["saldo"].to_string()),
                         rx.table.cell(g["cuotas"].to_string()),
+                        rx.table.cell(
+                            rx.text(
+                                g["estado"],
+                                size="1",
+                                color_scheme=rx.cond(g["cancelado"], "green", "amber"),
+                            )
+                        ),
+                        rx.table.cell(
+                            rx.button(
+                                "Ver",
+                                size="1",
+                                variant="soft",
+                                on_click=lambda: PrestamosState.ver_detalle_prestamo(g["numero"]),
+                            )
+                        ),
                     ),
                 )
             ),
@@ -70,6 +85,52 @@ def _tabla_resumen() -> rx.Component:
             size="1",
             width="100%",
         )
+    )
+
+
+def _detalle_prestamo() -> rx.Component:
+    return rx.cond(
+        PrestamosState.detalle_movs.length() > 0,
+        card(
+            rx.vstack(
+                rx.hstack(
+                    rx.heading(PrestamosState.detalle_titulo, size="3"),
+                    rx.spacer(),
+                    rx.button("Cerrar", on_click=PrestamosState.cerrar_detalle, variant="soft", size="1"),
+                    width="100%",
+                ),
+                scroll_x(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                *[
+                                    rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                    for c in ("Fecha", "Concepto", "Valor", "Origen", "Cuadre")
+                                ]
+                            )
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                PrestamosState.detalle_movs,
+                                lambda m: rx.table.row(
+                                    rx.table.cell(m["fecha"]),
+                                    rx.table.cell(m["concepto"]),
+                                    rx.table.cell(m["valor"].to_string()),
+                                    rx.table.cell(m["origen"]),
+                                    rx.table.cell(rx.cond(m["es_cuadre"], "SÍ", "")),
+                                ),
+                            )
+                        ),
+                        variant="surface",
+                        size="1",
+                        width="100%",
+                    )
+                ),
+                spacing="2",
+                width="100%",
+            ),
+            width="100%",
+        ),
     )
 
 
@@ -129,6 +190,7 @@ def historial() -> rx.Component:
                             rx.vstack(
                                 rx.heading("Resumen por préstamo", size="3"),
                                 _tabla_resumen(),
+                                _detalle_prestamo(),
                                 spacing="2",
                                 width="100%",
                             ),

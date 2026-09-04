@@ -211,16 +211,36 @@ class ResumenPrestamo:
     numero: str
     desde: str
     hasta: str
-    prestado: float   # suma de ingresos (VALOR > 0)
-    abonado: float    # suma de |egresos| (VALOR < 0)
+    prestado: float       # suma de ingresos (VALOR > 0)
+    abonado: float        # suma de |egresos| (VALOR < 0)
     saldo: float
     cuotas: int
+    cuota_promedio: float = 0.0
+    meses_brecha: int = 0          # meses sin descuento entre la primera y última cuota
+    cancelado: bool = False
+    meses_para_cancelar: int = 0   # estimación: saldo / cuota_promedio
+    estado: str = ""              # texto legible
+
+
+def _meses_brecha(claves: list[tuple[int, int]]) -> int:
+    """Meses sin descuento entre cuotas consecutivas (como el legado)."""
+    faltantes = 0
+    for i in range(1, len(claves)):
+        py, pm = claves[i - 1]
+        cy, cm = claves[i]
+        diff = (cy - py) * 12 + (cm - pm)
+        if diff > 1:
+            faltantes += diff - 1
+    return faltantes
 
 
 def agrupar_por_numero(movs: list[MovimientoPrestamo]) -> list[ResumenPrestamo]:
     """Agrupa los movimientos por NUMERO de préstamo (como `agrupar_prestamos_por_numero`
-    del legado): total prestado, total abonado, saldo y nº de cuotas (egresos).
+    + el resumen detallado de `_preparar_contexto_ia` del legado): total prestado,
+    abonado, saldo, nº de cuotas, cuota promedio, brechas y estimación para cancelar.
     """
+    import math
+
     grupos: dict[str, list[MovimientoPrestamo]] = {}
     for m in movs:
         grupos.setdefault(m.numero or "(sin nº)", []).append(m)
@@ -229,16 +249,36 @@ def agrupar_por_numero(movs: list[MovimientoPrestamo]) -> list[ResumenPrestamo]:
         fechas = sorted(x.fecha for x in ms if x.fecha)
         prestado = round(sum(x.valor for x in ms if x.valor > 0), 2)
         abonado = round(sum(-x.valor for x in ms if x.valor < 0), 2)
+        saldo = round(prestado - abonado, 2)
+        egresos = [x for x in ms if x.valor < 0]
+        n_cuotas = len(egresos)
+        cuota_prom = round(abonado / n_cuotas, 2) if n_cuotas else 0.0
+        claves = sorted({(int(x.fecha[:4]), int(x.fecha[5:7])) for x in egresos if len(x.fecha) >= 7})
+        brecha = _meses_brecha(claves)
+        cancelado = saldo <= 0.01
+        meses_rest = math.ceil(saldo / cuota_prom) if (cuota_prom > 0 and not cancelado) else 0
+        if cancelado:
+            estado = f"Cancelado · {n_cuotas} cuotas de ~{cuota_prom:,.2f}"
+        else:
+            cont = "pagos continuos" if not brecha else f"{brecha} mes(es) sin descuento"
+            estado = (
+                f"Pendiente {saldo:,.2f} · ~{meses_rest} mes(es) para cancelar "
+                f"({n_cuotas} cuotas ~{cuota_prom:,.2f}/mes, {cont})"
+            )
         out.append(
             ResumenPrestamo(
                 numero=num,
                 desde=fechas[0] if fechas else "",
                 hasta=fechas[-1] if fechas else "",
-                prestado=prestado,
-                abonado=abonado,
-                saldo=round(prestado - abonado, 2),
-                cuotas=sum(1 for x in ms if x.valor < 0),
+                prestado=prestado, abonado=abonado, saldo=saldo, cuotas=n_cuotas,
+                cuota_promedio=cuota_prom, meses_brecha=brecha, cancelado=cancelado,
+                meses_para_cancelar=meses_rest, estado=estado,
             )
         )
     out.sort(key=lambda r: r.hasta, reverse=True)
     return out
+
+
+def movimientos_de_numero(movs: list[MovimientoPrestamo], numero: str) -> list[MovimientoPrestamo]:
+    """Los movimientos individuales de un préstamo (para el detalle por fila)."""
+    return sorted((m for m in movs if (m.numero or "(sin nº)") == numero), key=lambda m: m.fecha)

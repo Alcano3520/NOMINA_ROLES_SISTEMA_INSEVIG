@@ -98,6 +98,22 @@ class PrestamosState(rx.State):
         self.saldo_empleado = round(sum(m["valor"] for m in self.movimientos), 2)
         self.cargando_hist = False
 
+    # detalle de un préstamo (doble clic en la fila del resumen)
+    detalle_movs: list[dict] = []
+    detalle_titulo: str = ""
+
+    @rx.event
+    def ver_detalle_prestamo(self, numero: str):
+        movs = [prestamos.MovimientoPrestamo(**m) for m in self.movimientos]
+        d = prestamos.movimientos_de_numero(movs, numero)
+        self.detalle_movs = [asdict(m) for m in d]
+        self.detalle_titulo = f"Préstamo N° {numero} — {len(d)} movimientos"
+
+    @rx.event
+    def cerrar_detalle(self):
+        self.detalle_movs = []
+        self.detalle_titulo = ""
+
     @rx.event
     async def exportar_empleado(self):
         if not self.empleado_sel:

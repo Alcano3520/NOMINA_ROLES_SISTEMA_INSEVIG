@@ -53,7 +53,26 @@ def test_agrupar_por_numero():
     assert g["500"].abonado == 200.0
     assert g["500"].saldo == 800.0
     assert g["500"].cuotas == 2
+    assert g["500"].cuota_promedio == 100.0
+    assert g["500"].cancelado is False
+    assert g["500"].meses_brecha == 0  # feb -> mar consecutivos
+    assert "para cancelar" in g["500"].estado
     assert g["700"].saldo == 300.0
+
+
+def test_agrupar_detecta_brecha_y_cancelado():
+    M = prestamos.MovimientoPrestamo
+    movs = [
+        M("2025-01-05", 400.0, "P", "9", "RPHISTOR"),
+        M("2025-01-31", -200.0, "C", "9", "RPHISTOR"),
+        M("2025-04-30", -200.0, "C", "9", "RPHISTOR"),  # brecha feb y mar
+    ]
+    r = prestamos.agrupar_por_numero(movs)[0]
+    assert r.saldo == 0.0 and r.cancelado is True
+    assert r.meses_brecha == 2
+    assert "Cancelado" in r.estado
+    det = prestamos.movimientos_de_numero(movs, "9")
+    assert len(det) == 3 and det[0].fecha == "2025-01-05"
 
 
 def test_historial_xlsx_tiene_hoja_resumen():
