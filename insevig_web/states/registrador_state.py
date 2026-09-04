@@ -1,36 +1,378 @@
-"""Estado del módulo Registrador (Fase 5, alcance acotado): BIESS + alta manual."""
+"""Estado del módulo Registrar egresos/ingresos — 6 pestañas del sistema anterior."""
 
 from __future__ import annotations
 
 import asyncio
 import datetime as dt
+from dataclasses import asdict
 
 import reflex as rx
 
 from core.repos import registrador
 from insevig_web.states.auth_state import AuthState
+from insevig_web.states.datasource_state import DataSourceState
+
+CLASES_OPCIONES = [
+    {"codigo": c, "etiqueta": f"{c} — {registrador.NOMBRE_CLASE.get(c, c)} ({cfg['tipo']})"}
+    for c, cfg in registrador.CLASES_SIMPLIFICADAS.items()
+]
+
+
+def _hoy() -> str:
+    return dt.date.today().isoformat()
+
+
+def _periodo() -> str:
+    return dt.date.today().strftime("%Y-%m")
 
 
 class RegistradorState(rx.State):
-    periodo: str = ""
-    # BIESS
-    filas_biess: list[dict] = []  # {'cedula','valor'}
-    avisos: list[str] = []
-    movs: list[dict] = []  # {'empleado','cedula','valor','estado_biess'}
-    dry: dict = {}
-    resultado: str = ""
+    tab: str = "prestamo"
     error: str = ""
+    resultado: str = ""
 
-    # manual
-    m_empleado: str = ""
-    m_clase: str = "204"
-    m_valor: str = ""
-    m_concepto: str = ""
+    # búsqueda de empleado (compartida)
+    busca: str = ""
+    encontrados: list[dict] = []
+    emp_sel: str = ""
+    emp_nombre: str = ""
 
     @rx.event
     def on_load(self):
+        if not self.p_fecha:
+            self.p_fecha = _hoy()
+        if not self.ind_fecha:
+            self.ind_fecha = _hoy()
         if not self.periodo:
-            self.periodo = dt.date.today().strftime("%Y-%m")
+            self.periodo = _periodo()
+
+    @rx.event
+    def set_tab(self, v: str):
+        self.tab = v
+        self.error = self.resultado = ""
+
+    async def _fuente(self) -> str:
+        ds = await self.get_state(DataSourceState)
+        return await ds.resolver("registrador")
+
+    @rx.event
+    def set_busca(self, v: str):
+        self.busca = v
+
+    @rx.event
+    async def buscar_emp(self):
+        if not self.busca.strip():
+            return
+        from core.repos import observaciones
+
+        fuente = await self._fuente()
+        self.encontrados = await asyncio.to_thread(observaciones.buscar_empleados, self.busca, fuente)
+
+    @rx.event
+    def elegir_emp(self, empleado: str, nombre: str):
+        self.emp_sel = empleado
+        self.emp_nombre = nombre
+        self.encontrados = []
+
+    # ── 1. Préstamo individual ───────────────────────────────────────────
+    p_valor: str = ""
+    p_modo: str = "cuotas"          # "cuotas" (nº de cuotas) | "valor" (cuota mensual)
+    p_num_cuotas: str = "12"
+    p_cuota_mensual: str = ""
+    p_fecha: str = ""
+    p_observ: str = ""
+    p_preview: list[dict] = []      # [{'secuencia','fecha_vencimiento','valor'}]
+    p_aviso: str = ""
+
+    @rx.event
+    def set_p(self, campo: str, v: str):
+        setattr(self, f"p_{campo}", v)
+
+    @rx.event
+    async def calcular_cuotas(self):
+        self.error = self.resultado = self.p_aviso = ""
+        self.p_preview = []
+        try:
+            total = float(self.p_valor)
+            fecha = dt.date.fromisoformat(self.p_fecha or _hoy())
+        except ValueError:
+            self.error = "Revisa el valor y la fecha."
+            return
+        try:
+            if self.p_modo == "cuotas":
+                cuotas = registrador.cuotas_tradicional(total, int(self.p_num_cuotas), fecha)
+            else:
+                fuente = await self._fuente()
+                proy = {}
+                if self.emp_sel:
+                    proy = await asyncio.to_thread(
+                        registrador.proyeccion_pagos_futuros, self.emp_sel, fuente, fecha
+                    )
+                cuotas, aviso = await asyncio.to_thread(
+                    registrador.cuotas_por_valor, total, float(self.p_cuota_mensual), fecha, proy
+                )
+                self.p_aviso = aviso
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+            return
+        self.p_preview = [asdict(c) for c in cuotas]
+
+    @rx.event
+    async def guardar_prestamo(self):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            self.error = "Sin permiso."
+            return
+        if not self.emp_sel or not self.p_preview:
+            self.error = "Elige un empleado y calcula las cuotas."
+            return
+        from core.repos.registrador import Cuota
+
+        cuotas = [Cuota(c["secuencia"], c["fecha_vencimiento"], c["valor"]) for c in self.p_preview]
+        total = round(sum(c.valor for c in cuotas), 2)
+        emp, fecha, obs = self.emp_sel, self.p_fecha or _hoy(), self.p_observ
+        usuario, roles = auth.username, set(auth.roles)
+        self.error = self.resultado = ""
+        try:
+            res = await asyncio.to_thread(
+                registrador.registrar_prestamo, emp, total, fecha, obs, cuotas,
+                usuario=usuario, roles=roles, dry_run=False,
+            )
+            self.resultado = res.detalle if res.ok else ""
+            self.error = "" if res.ok else res.detalle
+            if res.ok:
+                self.p_preview = []
+                self.p_valor = self.p_observ = ""
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+
+    # ── 2. Carga masiva de préstamos ─────────────────────────────────────
+    masiva_texto: str = ""
+    masiva_filas: list[dict] = []   # {'cedula','valor','cuotas','fecha','empleado','nombre','estado'}
+    masiva_job: int = 0
+    masiva_status: str = ""
+    masiva_msg: str = ""
+    masiva_path: str = ""
+
+    @rx.event
+    def set_masiva_texto(self, v: str):
+        self.masiva_texto = v
+
+    @rx.event
+    async def previsualizar_masiva(self):
+        from core.repos import observaciones
+
+        self.error = ""
+        fuente = await self._fuente()
+        filas: list[dict] = []
+        for ln in self.masiva_texto.splitlines():
+            p = [x.strip() for x in ln.split(",")]
+            if len(p) < 3 or not p[0]:
+                continue
+            filas.append({"cedula": p[0], "valor": p[1], "cuotas": p[2],
+                          "fecha": p[3] if len(p) > 3 else _hoy()})
+        # resolver empleado por cédula/código
+        def _resolver():
+            out = []
+            for f in filas:
+                r = observaciones.buscar_empleados(f["cedula"], fuente)
+                e = r[0] if r else None
+                out.append({**f,
+                            "empleado": e["empleado"] if e else "",
+                            "nombre": e["apellidos_nombres"] if e else "(no encontrado)"})
+            return out
+
+        self.masiva_filas = await asyncio.to_thread(_resolver)
+
+    @rx.event
+    async def aplicar_masiva(self):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        filas = [f for f in self.masiva_filas if f["empleado"]]
+        usuario, roles = auth.username, set(auth.roles)
+
+        def _fn(ctx):
+            from core import storage
+            from core.repos.registrador import Cuota, cuotas_tradicional, registrar_prestamo
+
+            res = []
+            for i, f in enumerate(filas, 1):
+                try:
+                    total = float(f["valor"])
+                    n = int(f["cuotas"])
+                    fecha = dt.date.fromisoformat(f["fecha"])
+                    cuotas = cuotas_tradicional(total, n, fecha)
+                    r = registrar_prestamo(
+                        f["empleado"], total, f["fecha"], "CARGA MASIVA",
+                        [Cuota(c.secuencia, c.fecha_vencimiento, c.valor) for c in cuotas],
+                        usuario=usuario, roles=roles, dry_run=False,
+                    )
+                    res.append({"empleado": f["empleado"], "ok": r.ok, "detalle": r.detalle})
+                except Exception as e:  # noqa: BLE001
+                    res.append({"empleado": f["empleado"], "ok": False, "detalle": str(e)[:150]})
+                ctx.progreso(i, len(filas), f"{i}/{len(filas)}")
+            import csv
+            import io
+            buf = io.StringIO()
+            w = csv.DictWriter(buf, fieldnames=["empleado", "ok", "detalle"])
+            w.writeheader()
+            w.writerows(res)
+            ruta = storage.guardar(ctx.job_id, "CARGA_PRESTAMOS.csv", buf.getvalue().encode("utf-8"))
+            ctx.set_resultado(str(ruta))
+            ok = sum(1 for r in res if r["ok"])
+            ctx.progreso(len(filas), len(filas), f"{ok} OK, {len(res) - ok} con error")
+
+        from core.jobs.runner import get_runner
+
+        self.masiva_path = ""
+        self.masiva_job = get_runner().encolar("carga_prestamos", {"n": len(filas)}, creado_por=usuario, fn=_fn)
+        self.masiva_status = "pendiente"
+        return RegistradorState.vigilar_masiva
+
+    @rx.event(background=True)
+    async def vigilar_masiva(self):
+        from core.jobs.runner import leer_job
+
+        for _ in range(1800):
+            async with self:
+                jid = self.masiva_job
+            j = leer_job(jid)
+            if j is None:
+                return
+            async with self:
+                self.masiva_status = j.status
+                self.masiva_msg = j.message
+                self.masiva_path = j.result_path
+            if j.status in ("ok", "error", "cancelado"):
+                return
+            await asyncio.sleep(1)
+
+    @rx.event
+    def descargar_masiva(self):
+        if not self.masiva_path:
+            return
+        from pathlib import Path
+
+        p = Path(self.masiva_path)
+        return rx.download(data=p.read_bytes(), filename=p.name)
+
+    # ── 3 y 6. Consulta de movimientos ──────────────────────────────────
+    consulta_filtro: str = ""
+    movimientos: list[dict] = []
+    cargando_mov: bool = False
+    detalle_cuotas: list[dict] = []
+    detalle_titulo: str = ""
+
+    @rx.event
+    def set_consulta_filtro(self, v: str):
+        self.consulta_filtro = v
+
+    @rx.event
+    async def buscar_movimientos(self):
+        self.cargando_mov = True
+        self.detalle_cuotas = []
+        yield
+        await self._recargar_movimientos()
+
+    @rx.event
+    async def ver_cuotas(self, numero: str, empleado: str, nombre: str):
+        fuente = await self._fuente()
+        self.detalle_titulo = f"Préstamo N° {numero} — {nombre}"
+        self.detalle_cuotas = await asyncio.to_thread(
+            registrador.cuotas_prestamo, numero, empleado, fuente
+        )
+
+    @rx.event
+    async def eliminar_movimiento(self, numero: str, empleado: str, clase: str):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            yield rx.toast.error("Sin permiso.")
+            return
+        try:
+            n = await asyncio.to_thread(
+                registrador.eliminar_movimiento, numero, empleado, clase,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+            self.resultado = f"Se borraron {n} fila(s) del movimiento {numero}."
+            self.detalle_cuotas = []
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+        self.cargando_mov = True
+        yield
+        await self._recargar_movimientos()
+
+    async def _recargar_movimientos(self):
+        fuente = await self._fuente()
+        try:
+            movs = await asyncio.to_thread(
+                registrador.historial_movimientos, fuente, self.consulta_filtro
+            )
+            self.movimientos = [asdict(m) for m in movs]
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+        self.cargando_mov = False
+
+    # ── 4. Registro individual (cualquier tipo) ─────────────────────────
+    ind_clase: str = "203"
+    ind_valor: str = ""
+    ind_fecha: str = ""
+    ind_observ: str = ""
+    ind_preview: str = ""
+
+    @rx.event
+    def set_ind(self, campo: str, v: str):
+        setattr(self, f"ind_{campo}", v)
+
+    @rx.event
+    async def previsualizar_individual(self):
+        self.error = self.resultado = ""
+        try:
+            valor = float(self.ind_valor)
+        except ValueError:
+            self.error = "El valor debe ser numérico."
+            return
+        res = registrador.registrar_movimiento(
+            self.emp_sel, self.ind_clase, valor, self.ind_fecha or _hoy(), self.ind_observ,
+            usuario="", roles=set(), dry_run=True,
+        )
+        self.ind_preview = res.detalle if res.ok else ""
+        self.error = "" if res.ok else res.detalle
+
+    @rx.event
+    async def guardar_individual(self):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            self.error = "Sin permiso."
+            return
+        if not self.emp_sel:
+            self.error = "Elige un empleado."
+            return
+        try:
+            valor = float(self.ind_valor)
+        except ValueError:
+            self.error = "El valor debe ser numérico."
+            return
+        try:
+            res = await asyncio.to_thread(
+                registrador.registrar_movimiento,
+                self.emp_sel, self.ind_clase, valor, self.ind_fecha or _hoy(), self.ind_observ,
+                usuario=auth.username, roles=set(auth.roles), dry_run=False,
+            )
+            if res.ok:
+                self.resultado = res.detalle
+                self.ind_valor = self.ind_observ = self.ind_preview = ""
+            else:
+                self.error = res.detalle
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+
+    # ── 5. BIESS ────────────────────────────────────────────────────────
+    periodo: str = ""
+    filas_biess: list[dict] = []
+    avisos: list[str] = []
+    movs: list[dict] = []
+    dry: dict = {}
 
     @rx.event
     def set_periodo(self, v: str):
@@ -51,19 +393,16 @@ class RegistradorState(rx.State):
         self.resultado = ""
 
     @rx.event
-    async def preparar(self):
+    async def preparar_biess(self):
         if not self.filas_biess:
             return
-        periodo = self.periodo or dt.date.today().strftime("%Y-%m")
+        periodo = self.periodo or _periodo()
         filas = list(self.filas_biess)
 
         def _prep():
             movs, avisos = registrador.preparar_biess(filas, periodo)
             return (
-                [
-                    {"empleado": m.empleado, "cedula": "", "valor": m.valor, "estado_biess": m.estado_biess}
-                    for m in movs
-                ],
+                [{"empleado": m.empleado, "valor": m.valor, "estado_biess": m.estado_biess} for m in movs],
                 avisos,
                 registrador.postear(movs, usuario="", roles=set(), dry_run=True),
             )
@@ -72,12 +411,12 @@ class RegistradorState(rx.State):
         self.avisos = avisos[:50]
 
     @rx.event
-    async def postear(self):
+    async def postear_biess(self):
         auth = await self.get_state(AuthState)
         if "registrador:registrar_rpingdes" not in auth.permisos_flat:
             self.error = "Sin permiso."
             return
-        periodo = self.periodo or dt.date.today().strftime("%Y-%m")
+        periodo = self.periodo or _periodo()
         filas = list(self.filas_biess)
         usuario, roles = auth.username, set(auth.roles)
         self.error = ""
@@ -89,39 +428,8 @@ class RegistradorState(rx.State):
         try:
             res = await asyncio.to_thread(_post)
             self.resultado = (
-                f"Insertados: {res['insertados']} · omitidos (dedupe): {res['omitidos_dedupe']} "
+                f"Insertados: {res['insertados']} · omitidos (duplicados): {res['omitidos_dedupe']} "
                 f"· sin empleado: {res['sin_empleado']}"
             )
-        except Exception as e:  # noqa: BLE001
-            self.error = str(e)
-
-    # ── Manual ────────────────────────────────────────────────────────────
-    @rx.event
-    def set_m(self, campo: str, v: str):
-        setattr(self, f"m_{campo}", v)
-
-    @rx.event
-    async def registrar_manual(self):
-        auth = await self.get_state(AuthState)
-        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
-            self.error = "Sin permiso."
-            return
-        try:
-            valor = float(self.m_valor)
-            clase = int(self.m_clase)
-        except ValueError:
-            self.error = "Valor y clase deben ser numéricos."
-            return
-        periodo = self.periodo or dt.date.today().strftime("%Y-%m")
-        mov = registrador.Movimiento(
-            self.m_empleado.strip(), clase, round(valor, 2), self.m_concepto.strip() or "REGISTRO MANUAL", periodo
-        )
-        usuario, roles = auth.username, set(auth.roles)
-        self.error = ""
-        try:
-            res = await asyncio.to_thread(
-                registrador.postear, [mov], usuario=usuario, roles=roles, dry_run=False
-            )
-            self.resultado = f"Insertados: {res['insertados']} · omitidos: {res['omitidos_dedupe']}"
         except Exception as e:  # noqa: BLE001
             self.error = str(e)

@@ -217,10 +217,14 @@ Legado: `registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.py
 | 2 | Emparejar con empleados (activo/liquidado/no encontrado) | ✅ |
 | 3 | Vista previa antes de registrar | ✅ |
 | 4 | Postear a RPINGDES (CLASE 204) con auditoría + dedupe | ✅ |
-| 5 | Alta manual de un ingreso/egreso | ✅ |
-| 6 | Resto de pestañas del legado (visualizadores, otros CLASE) | ⬜ tras feature flag — **confirmar con el usuario si hace falta algo más** |
+| 5 | Alta manual de un ingreso/egreso (cualquier CLASE) | ✅ `registrar_movimiento` |
+| 6 | Préstamo individual con planificación de cuotas (nº o valor) | ✅ `cuotas_tradicional` / `cuotas_por_valor` / `proyeccion_pagos_futuros` |
+| 7 | Carga masiva de préstamos | ✅ (Job + CSV) |
+| 8 | Consulta / edición: lista, ver cuotas, borrar, editar cuota | ✅ `historial_movimientos` / `cuotas_prestamo` / `eliminar_movimiento` / `editar_cuota` |
+| 9 | "Mover cuotas pendientes desde una fecha" | ⬜ (diálogo del legado) |
+| 10 | Respaldo por operación | ⬜ (`modulo_seguridad_prestamos` del legado no existía) |
 
-Pasos: preguntar al usuario qué pestañas del legado usan de verdad; el resto queda fuera de v1.
+**Módulo portado por completo** (6 pestañas). Pendiente solo lo del punto 9-10.
 
 ---
 

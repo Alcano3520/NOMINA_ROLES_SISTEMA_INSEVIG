@@ -1,19 +1,429 @@
-"""Registro de egresos/ingresos en RPINGDES. Alcance acotado (plan Fase 5):
-import BIESS quirografarios + alta manual + posteo auditado con dry-run y dedupe.
+"""Registro de egresos/ingresos en RPINGDES — puerto completo de
+`registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.pyw`.
 
-Porta lo esencial de `registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.pyw`.
+Cubre las 6 pestañas del sistema anterior:
+  1. Préstamo individual (CLASE 205, con planificación de cuotas)
+  2. Carga masiva de préstamos
+  3. Egresos / Ingresos (todos los tipos de `CLASES_SIMPLIFICADAS`)
+  4. Registro individual (un movimiento de cualquier tipo)
+  5. BIESS quirografarios (Excel -> CLASE 204)
+  6. Consulta / edición de movimientos existentes
+
+Escrituras SOLO a SQL Server, con vista previa (dry_run) + `AuditWriter`.
+Números de movimiento desde RPCONTRL (ULT_EGR / ULT_ING).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import calendar
+import datetime as dt
+from dataclasses import dataclass, field
 
 from core.audit.writer import audit_scope
 from core.config import get_settings
-from core.db import sqlserver
-from core.utils import normalizar_cedula
+from core.db import sqlserver, supabase_client
+from core.db.health import FUENTE_SUPABASE
+from core.utils import a_float, normalizar_cedula
 
-CLASE_QUIROGRAFARIO = 204
+CLASE_PRESTAMO = "205"
+CLASE_QUIROGRAFARIO = 204  # compat BIESS
+
+# CLASE -> configuración del INSERT (del legado: CLASES_SIMPLIFICADAS).
+CLASES_SIMPLIFICADAS: dict[str, dict] = {
+    "250": {"concepto": "ANTICIPOS SURTIDOS", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "219": {"concepto": "IMPUESTO A LA RENTA", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "218": {"concepto": "APORT.IESS CONYUGE", "codigo": "EGR", "tipo": "EGR", "aporta": 1},
+    "206": {"concepto": "PENSION ALIMENTICIA", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "203": {"concepto": "MULTAS", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "202": {"concepto": "ANTICIPO DE SUELDO", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "204": {"concepto": "PRESTAMOS QUIROGRAFARIOS", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "207": {"concepto": "PRESTAMO HIPOTECARIO", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "217": {"concepto": "ANTICIPOS OTROS", "codigo": "EGR", "tipo": "EGR", "aporta": 0},
+    "102": {"concepto": "BONIFICACION OTROS INGRESOS", "codigo": "ING", "tipo": "ING", "aporta": 1},
+    "120": {"concepto": "MOVILIZACION", "codigo": "ING", "tipo": "ING", "aporta": 0},
+    "111": {"concepto": "REEMBOLSOS", "codigo": "ING", "tipo": "ING", "aporta": 0},
+    "110": {"concepto": "MANIOBRAS", "codigo": "ING", "tipo": "ING", "aporta": 1},
+}
+
+NOMBRE_CLASE: dict[str, str] = {
+    "205": "Préstamo", "202": "Anticipo de sueldo", "203": "Multa",
+    "204": "Quirografario", "206": "Pensión alimenticia", "207": "Préstamo hipotecario",
+    "217": "Anticipos otros", "218": "IESS cónyuge", "219": "Impuesto a la renta",
+    "250": "Anticipos surtidos", "102": "Bonificación", "110": "Maniobras",
+    "111": "Reembolsos", "120": "Movilización",
+}
+
+# Constantes del INSERT de préstamo (del legado).
+_CODIGO_PRESTAMO = "EGR"
+_CONCEPTO_PRESTAMO = "PRESTAMOS COMPAÑIA"
+_APORTA_FIJO = 0
+_TIPO_PGO_FIJO = 3
+_TIPO_TRA_FIJO = 1
+
+
+# ── Cálculo de cuotas ────────────────────────────────────────────────────────
+
+
+@dataclass
+class Cuota:
+    secuencia: int
+    fecha_vencimiento: str  # YYYY-MM-DD (último día del mes)
+    valor: float
+
+
+def _ultimo_dia(anio: int, mes: int) -> dt.date:
+    return dt.date(anio, mes, calendar.monthrange(anio, mes)[1])
+
+
+def _mes_siguiente(anio: int, mes: int) -> tuple[int, int]:
+    return (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+
+
+def cuotas_tradicional(valor_total: float, num_cuotas: int, fecha_inicio: dt.date) -> list[Cuota]:
+    """N cuotas iguales; el ajuste de redondeo va en la primera."""
+    if valor_total <= 0 or num_cuotas <= 0:
+        raise ValueError("Valor total y número de cuotas deben ser positivos")
+    vc = round(valor_total / num_cuotas, 2)
+    ajuste = round(valor_total - vc * num_cuotas, 2)
+    out: list[Cuota] = []
+    anio, mes = fecha_inicio.year, fecha_inicio.month
+    for i in range(num_cuotas):
+        val = vc + ajuste if (i == 0 and ajuste) else vc
+        out.append(Cuota(i + 1, _ultimo_dia(anio, mes).isoformat(), round(val, 2)))
+        anio, mes = _mes_siguiente(anio, mes)
+    return out
+
+
+def cuotas_por_valor(
+    valor_total: float, cuota_mensual: float, fecha_inicio: dt.date,
+    proyeccion_existente: dict[tuple[int, int], float] | None = None,
+) -> tuple[list[Cuota], str]:
+    """Planificación inteligente: cuotas de `cuota_mensual` respetando lo que el
+    empleado ya tiene programado ese mes (proyeccion_existente {(anio,mes): valor}).
+    """
+    if valor_total <= 0 or cuota_mensual <= 0:
+        raise ValueError("Valores inválidos")
+    proy = proyeccion_existente or {}
+    saldo = round(float(valor_total), 2)
+    cuota_mensual = round(float(cuota_mensual), 2)
+    out: list[Cuota] = []
+    sec = 1
+    anio, mes = fecha_inicio.year, fecha_inicio.month
+    for _ in range(600):
+        if saldo <= 0.005:
+            break
+        carga = round(proy.get((anio, mes), 0.0), 2)
+        espacio = max(0.0, cuota_mensual - carga)
+        vc = round(min(saldo, espacio), 2)
+        if vc > 0.005:
+            out.append(Cuota(sec, _ultimo_dia(anio, mes).isoformat(), vc))
+            saldo = round(saldo - vc, 2)
+            sec += 1
+        anio, mes = _mes_siguiente(anio, mes)
+    aviso = ""
+    if saldo > 0.005:
+        aviso = f"Queda un saldo de {saldo:.2f}: la cuota es muy baja frente a lo ya programado."
+    return out, aviso
+
+
+def proyeccion_pagos_futuros(empleado: str, fuente: str, desde: dt.date | None = None) -> dict[tuple[int, int], float]:
+    """Suma de cuotas de préstamo (CLASE 205, ASENTADO=0) pendientes por mes."""
+    desde = (desde or dt.date.today()).replace(day=1)
+    out: dict[tuple[int, int], float] = {}
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        filas = (
+            sb.table("rpingdesres").select("fecha_ven,valor")
+            .eq("codemp", "10").eq("empleado", str(empleado)).eq("clase", 205).eq("asentado", 0)
+            .gte("fecha_ven", desde.isoformat()).execute().data or []
+        )
+    else:
+        flt = get_settings().sqlserver_filter
+        filas = sqlserver.filas(
+            f"""SELECT FECHA_VEN, VALOR FROM dbo.RPINGDES
+                WHERE {flt} AND EMPLEADO = ? AND CLASE = '205' AND ASENTADO = 0
+                  AND FECHA_VEN >= ?""",
+            (str(empleado), desde.isoformat()),
+        )
+    for r in filas:
+        fv = str(r.get("FECHA_VEN") or r.get("fecha_ven") or "")[:10]
+        if len(fv) < 7:
+            continue
+        y, m = int(fv[:4]), int(fv[5:7])
+        out[(y, m)] = round(out.get((y, m), 0.0) + a_float(r.get("VALOR") or r.get("valor")), 2)
+    return out
+
+
+# ── Consulta de movimientos (pestañas 3 y 6) ─────────────────────────────────
+
+
+@dataclass
+class MovimientoRegistrado:
+    numero: str
+    clase: str
+    tipo_clase: str
+    empleado: str
+    nombre: str
+    fecha: str
+    valor: float
+    cuotas: int
+    concepto: str
+    asentado: bool = False
+
+
+def historial_movimientos(fuente: str, filtro: str = "", limite: int = 200) -> list[MovimientoRegistrado]:
+    """Movimientos de RPINGDES (ASENTADO=0) agrupados por NUMERO. Para préstamos
+    (205) agrupa las cuotas en una fila con el total. Filtro por número o nombre."""
+    filtro = (filtro or "").strip()
+    out: list[MovimientoRegistrado] = []
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        cols = "numero,clase,empleado,fecha,valor,observ,concepto"
+        q = sb.table("rpingdesres").select(cols).eq("codemp", "10").eq("asentado", 0)
+        if filtro.isdigit():
+            q = q.eq("numero", int(filtro))
+        filas = q.order("fecha", desc=True).limit(2000).execute().data or []
+        emps = {
+            str(x["empleado"]).strip(): x
+            for x in (sb.table("rpemplea").select("empleado,apellidos,nombres").eq("codemp", "10").execute().data or [])
+        }
+        grp: dict[tuple, dict] = {}
+        for r in filas:
+            k = (str(r.get("numero")), str(r.get("clase")), str(r.get("empleado")))
+            g = grp.setdefault(k, {"fecha": r.get("fecha"), "valor": 0.0, "cuotas": 0,
+                                   "observ": r.get("observ"), "concepto": r.get("concepto")})
+            g["valor"] += a_float(r.get("valor"))
+            g["cuotas"] += 1
+        for (num, clase, emp), g in grp.items():
+            e = emps.get(str(emp).strip(), {})
+            nombre = f"{(e.get('apellidos') or '').strip()} {(e.get('nombres') or '').strip()}".strip() or f"Emp {emp}"
+            if filtro and not filtro.isdigit() and filtro.lower() not in nombre.lower():
+                continue
+            out.append(_mov_reg(num, clase, emp, nombre, g))
+        out.sort(key=lambda m: m.numero, reverse=True)
+        return out[:limite]
+
+    flt = get_settings().sqlserver_filter
+    params: list = []
+    cond = ""
+    if filtro:
+        if filtro.isdigit():
+            cond = " AND (CAST(r.NUMERO AS VARCHAR) LIKE ? OR CAST(r.EMPLEADO AS VARCHAR) LIKE ?)"
+            params += [f"%{filtro}%", f"%{filtro}%"]
+        else:
+            cond = " AND (e.APELLIDOS LIKE ? OR e.NOMBRES LIKE ?)"
+            params += [f"%{filtro}%", f"%{filtro}%"]
+    filas = sqlserver.filas(
+        f"""SELECT TOP {limite} r.NUMERO, r.CLASE, r.EMPLEADO,
+                   MIN(r.FECHA) FECHA_EMISION, SUM(r.VALOR) VALOR_TOTAL, COUNT(*) CUOTAS,
+                   MAX(r.OBSERV) OBSERV, MAX(r.CONCEPTO) CONCEPTO, e.APELLIDOS, e.NOMBRES
+            FROM dbo.RPINGDES r
+            LEFT JOIN dbo.RPEMPLEA e ON r.EMPLEADO = e.EMPLEADO
+            WHERE r.ASENTADO = 0 AND {flt.replace('CODEMP', 'r.CODEMP').replace('CODSUC', 'r.CODSUC')}
+            {cond}
+            GROUP BY r.NUMERO, r.CLASE, r.EMPLEADO, e.APELLIDOS, e.NOMBRES
+            ORDER BY MAX(r.FECHA) DESC, r.NUMERO DESC""",
+        tuple(params),
+    )
+    for r in filas:
+        ap = (r.get("APELLIDOS") or "").strip()
+        no = (r.get("NOMBRES") or "").strip()
+        nombre = f"{ap} {no}".strip() or f"Emp {r.get('EMPLEADO')}"
+        out.append(_mov_reg(
+            str(r.get("NUMERO")), str(r.get("CLASE") or "").strip(), str(r.get("EMPLEADO")).strip(), nombre,
+            {"fecha": r.get("FECHA_EMISION"), "valor": a_float(r.get("VALOR_TOTAL")),
+             "cuotas": int(r.get("CUOTAS") or 1), "observ": r.get("OBSERV"), "concepto": r.get("CONCEPTO")},
+        ))
+    return out
+
+
+def _mov_reg(num: str, clase: str, emp: str, nombre: str, g: dict) -> MovimientoRegistrado:
+    fecha = str(g["fecha"] or "")[:10]
+    concepto = (str(g.get("concepto") or "").strip() or str(g.get("observ") or "").strip())
+    return MovimientoRegistrado(
+        numero=str(num).strip(), clase=clase, tipo_clase=NOMBRE_CLASE.get(clase, clase),
+        empleado=str(emp).strip(), nombre=nombre, fecha=fecha,
+        valor=round(g["valor"], 2), cuotas=int(g["cuotas"]), concepto=concepto,
+    )
+
+
+def cuotas_prestamo(numero: str, empleado: str, fuente: str) -> list[dict]:
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        filas = (
+            sb.table("rpingdesres").select("secuencia,fecha_ven,valor,asentado,observ")
+            .eq("codemp", "10").eq("numero", int(numero)).eq("empleado", str(empleado)).eq("clase", 205)
+            .order("secuencia").execute().data or []
+        )
+        return [
+            {"secuencia": int(r.get("secuencia") or 0), "fecha_ven": str(r.get("fecha_ven") or "")[:10],
+             "valor": a_float(r.get("valor")), "asentado": bool(r.get("asentado")),
+             "observ": (r.get("observ") or "").strip()}
+            for r in filas
+        ]
+    flt = get_settings().sqlserver_filter
+    filas = sqlserver.filas(
+        f"""SELECT SECUENCIA, FECHA_VEN, VALOR, ASENTADO, OBSERV FROM dbo.RPINGDES
+            WHERE {flt} AND NUMERO = ? AND EMPLEADO = ? AND CLASE = '205' ORDER BY SECUENCIA""",
+        (numero, str(empleado)),
+    )
+    return [
+        {"secuencia": int(r.get("SECUENCIA") or 0), "fecha_ven": str(r.get("FECHA_VEN") or "")[:10],
+         "valor": a_float(r.get("VALOR")), "asentado": bool(r.get("ASENTADO")),
+         "observ": (r.get("OBSERV") or "").strip()}
+        for r in filas
+    ]
+
+
+# ── Escritura ────────────────────────────────────────────────────────────────
+
+
+def _depto_seccion(cur, empleado: str) -> tuple[str, str]:
+    cur.execute("SELECT DEPTO, SECCION FROM dbo.RPEMPLEA WHERE EMPLEADO = ?", (str(empleado),))
+    r = cur.fetchone()
+    if not r:
+        raise LookupError(f"Empleado {empleado} no existe en RPEMPLEA")
+    return (str(r[0] or "").strip(), str(r[1] or "").strip())
+
+
+def _proximo_numero(cur, tipo: str) -> int:
+    col = "ULT_ING" if tipo == "ING" else "ULT_EGR"
+    cur.execute(f"SELECT {col} FROM dbo.RPCONTRL WITH (UPDLOCK, HOLDLOCK)")
+    r = cur.fetchone()
+    if not r or r[0] is None:
+        raise RuntimeError(f"RPCONTRL sin {col}")
+    return int(r[0]) + 1
+
+
+def _fijar_numero(cur, tipo: str, numero: int) -> None:
+    col = "ULT_ING" if tipo == "ING" else "ULT_EGR"
+    cur.execute(f"UPDATE dbo.RPCONTRL SET {col} = ?", (numero,))
+
+
+_INSERT_RPINGDES = """INSERT INTO dbo.RPINGDES (
+    NUMERO, EMPLEADO, SECUENCIA, CLASE, FECHA, FECHA_VEN, VALOR, OBSERV,
+    CODSUC, CODEMP, DEPTO, SECCION, ASENTADO, ACTUALIZA, APORTA, TIPO_PGO, TIPO_TRA, CODIGO,
+    CONCEPTO, MONTO, DIVIDENDO
+) VALUES (?, ?, ?, '{clase}', ?, ?, ?, ?, '10', '10', ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)"""
+
+
+@dataclass
+class ResultadoRegistro:
+    ok: bool
+    numero: int = 0
+    detalle: str = ""
+    cuotas: list[Cuota] = field(default_factory=list)
+
+
+def registrar_prestamo(
+    empleado: str, valor_total: float, fecha_emision: str, observacion: str, cuotas: list[Cuota],
+    *, usuario: str, roles: set[str], dry_run: bool = True,
+) -> ResultadoRegistro:
+    """Inserta un préstamo CLASE 205 (una fila por cuota) en RPINGDES."""
+    if not cuotas:
+        return ResultadoRegistro(False, detalle="Sin cuotas")
+    total_cuotas = round(sum(c.valor for c in cuotas), 2)
+    if abs(total_cuotas - round(valor_total, 2)) > 0.05:
+        return ResultadoRegistro(False, detalle=f"Las cuotas suman {total_cuotas}, no {valor_total}")
+    obs = (observacion or "")[:700]
+    if dry_run:
+        return ResultadoRegistro(True, detalle=f"{len(cuotas)} cuotas por {total_cuotas:.2f}", cuotas=cuotas)
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=str(empleado),
+        after={"clase": "205", "total": total_cuotas, "cuotas": len(cuotas)},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        depto, seccion = _depto_seccion(cur, empleado)
+        numero = _proximo_numero(cur, "EGR")
+        for c in cuotas:
+            cur.execute(
+                _INSERT_RPINGDES.format(clase="205"),
+                (numero, str(empleado), c.secuencia, fecha_emision, c.fecha_vencimiento,
+                 c.valor, obs, depto, seccion, _APORTA_FIJO, _TIPO_PGO_FIJO, _TIPO_TRA_FIJO,
+                 _CODIGO_PRESTAMO, _CONCEPTO_PRESTAMO, round(valor_total, 2), len(cuotas)),
+            )
+        _fijar_numero(cur, "EGR", numero)
+        conn.commit()
+    return ResultadoRegistro(
+        True, numero=numero,
+        detalle=f"Préstamo N° {numero:05d} · {len(cuotas)} cuotas", cuotas=cuotas,
+    )
+
+
+def registrar_movimiento(
+    empleado: str, clase: str, valor: float, fecha: str, observacion: str,
+    *, usuario: str, roles: set[str], dry_run: bool = True,
+) -> ResultadoRegistro:
+    """Inserta un movimiento simple (multa, anticipo, bonificación, …) en RPINGDES."""
+    if clase not in CLASES_SIMPLIFICADAS:
+        return ResultadoRegistro(False, detalle=f"Clase {clase} no soportada")
+    cfg = CLASES_SIMPLIFICADAS[clase]
+    valor = round(a_float(valor), 2)
+    if valor <= 0:
+        return ResultadoRegistro(False, detalle="El valor debe ser mayor que 0")
+    obs = (observacion or "")[:700]
+    if dry_run:
+        return ResultadoRegistro(True, detalle=f"{NOMBRE_CLASE.get(clase, clase)} · {valor:.2f} · {cfg['tipo']}")
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=str(empleado),
+        after={"clase": clase, "valor": valor},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        depto, seccion = _depto_seccion(cur, empleado)
+        numero = _proximo_numero(cur, cfg["tipo"])
+        cur.execute(
+            _INSERT_RPINGDES.format(clase=clase),
+            (numero, str(empleado), 1, fecha, fecha, valor, obs, depto, seccion,
+             cfg["aporta"], 3, 1, cfg["codigo"], cfg["concepto"], valor, 1),
+        )
+        _fijar_numero(cur, cfg["tipo"], numero)
+        conn.commit()
+    return ResultadoRegistro(True, numero=numero, detalle=f"N° {numero:05d} · {NOMBRE_CLASE.get(clase, clase)}")
+
+
+def eliminar_movimiento(numero: str, empleado: str, clase: str, *, usuario: str, roles: set[str]) -> int:
+    """Borra todas las filas (cuotas) NO asentadas de un movimiento. Devuelve cuántas borró."""
+    flt = get_settings().sqlserver_filter
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=f"{numero}/{empleado}",
+        antes={"numero": numero, "clase": clase, "empleado": empleado},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""DELETE FROM dbo.RPINGDES
+                WHERE {flt} AND NUMERO = ? AND EMPLEADO = ? AND CLASE = ? AND ASENTADO = 0""",
+            (numero, str(empleado), clase),
+        )
+        n = cur.rowcount
+        conn.commit()
+    return n
+
+
+def editar_cuota(
+    numero: str, empleado: str, secuencia: int, nuevo_valor: float, nueva_fecha: str,
+    *, usuario: str, roles: set[str],
+) -> None:
+    """Cambia el valor y/o fecha de vencimiento de una cuota NO asentada de un préstamo."""
+    flt = get_settings().sqlserver_filter
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=f"{numero}/{empleado}/{secuencia}",
+        after={"valor": nuevo_valor, "fecha_ven": nueva_fecha},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""UPDATE dbo.RPINGDES SET VALOR = ?, FECHA_VEN = ?
+                WHERE {flt} AND NUMERO = ? AND EMPLEADO = ? AND CLASE = '205'
+                  AND SECUENCIA = ? AND ASENTADO = 0""",
+            (round(a_float(nuevo_valor), 2), nueva_fecha, numero, str(empleado), secuencia),
+        )
+        conn.commit()
+
+
+# ── BIESS (pestaña 5) — se conserva lo ya existente ──────────────────────────
 
 
 @dataclass
@@ -22,8 +432,8 @@ class Movimiento:
     clase: int
     valor: float
     concepto: str
-    periodo: str  # YYYY-MM
-    estado_biess: str = ""  # activo | liquidado | no_encontrado
+    periodo: str
+    estado_biess: str = ""
 
 
 def _empleado_por_cedula(cedula: str) -> dict | None:
@@ -38,30 +448,21 @@ def _empleado_por_cedula(cedula: str) -> dict | None:
 
 
 def preparar_biess(filas: list[dict], periodo: str) -> tuple[list[Movimiento], list[str]]:
-    """`filas`: [{'cedula','valor'}]. Empareja con RPEMPLEA y clasifica.
-    Devuelve (movimientos_listos, avisos)."""
     movs: list[Movimiento] = []
     avisos: list[str] = []
     for f in filas:
         ced = normalizar_cedula(f["cedula"])
         emp = _empleado_por_cedula(ced)
         if emp is None:
-            movs.append(
-                Movimiento("", CLASE_QUIROGRAFARIO, f["valor"], "BIESS QUIROGRAFARIO", periodo, "no_encontrado")
-            )
+            movs.append(Movimiento(
+                "", CLASE_QUIROGRAFARIO, f["valor"], "BIESS QUIROGRAFARIO", periodo, "no_encontrado"))
             avisos.append(f"Cédula {ced}: sin empleado en RPEMPLEA.")
             continue
         estado = "activo" if (emp.get("ESTADO") or "").strip() == "ACT" else "liquidado"
-        movs.append(
-            Movimiento(
-                str(emp["EMPLEADO"]).strip(),
-                CLASE_QUIROGRAFARIO,
-                round(float(f["valor"]), 2),
-                "BIESS QUIROGRAFARIO",
-                periodo,
-                estado,
-            )
-        )
+        movs.append(Movimiento(
+            str(emp["EMPLEADO"]).strip(), CLASE_QUIROGRAFARIO, round(float(f["valor"]), 2),
+            "BIESS QUIROGRAFARIO", periodo, estado,
+        ))
     return movs, avisos
 
 
@@ -76,26 +477,16 @@ def _ya_existe(cur, empleado: str, clase: int, valor: float, ini: str, fin: str)
     return cur.fetchone()[0] > 0
 
 
-def postear(
-    movimientos: list[Movimiento],
-    *,
-    usuario: str,
-    roles: set[str],
-    dry_run: bool = True,
-) -> dict:
-    """Inserta en RPINGDES los movimientos con empleado. `dry_run=True` solo cuenta.
-    Devuelve {'insertados','omitidos_dedupe','sin_empleado'}."""
+def postear(movimientos: list[Movimiento], *, usuario: str, roles: set[str], dry_run: bool = True) -> dict:
     validos = [m for m in movimientos if m.empleado]
     sin_empleado = len(movimientos) - len(validos)
     if not validos:
         return {"insertados": 0, "omitidos_dedupe": 0, "sin_empleado": sin_empleado}
-
     anio, mes = validos[0].periodo.split("-")
     ini = f"{anio}-{int(mes):02d}-01"
     fin = f"{int(anio) + 1}-01-01" if int(mes) == 12 else f"{anio}-{int(mes) + 1:02d}-01"
     fecha_ven = f"{anio}-{int(mes):02d}-28"
     insertados = omitidos = 0
-
     if dry_run:
         with sqlserver.conexion() as conn:
             cur = conn.cursor()
@@ -105,7 +496,6 @@ def postear(
                 else:
                     insertados += 1
         return {"insertados": insertados, "omitidos_dedupe": omitidos, "sin_empleado": sin_empleado}
-
     with audit_scope(
         "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
         target_table="RPINGDES", target_key=validos[0].periodo,

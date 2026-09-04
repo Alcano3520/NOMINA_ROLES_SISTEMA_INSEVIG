@@ -1,1 +1,1 @@
-from insevig_web.pages.registrador import biess, manual  # noqa: F401
+from insevig_web.pages.registrador import index  # noqa: F401

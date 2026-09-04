@@ -29,10 +29,14 @@ class DataSourceState(rx.State):
     fuente_por_modulo: dict[str, str] = {}
     auto: str = ""  # fuente autodetectada (sqlserver si responde, si no supabase)
 
-    @rx.event
+    @rx.event(background=True)
     async def detectar(self):
-        if not self.auto:
-            self.auto = await asyncio.to_thread(fuente_por_defecto)
+        async with self:
+            if self.auto:
+                return
+        fuente = await asyncio.to_thread(fuente_por_defecto)
+        async with self:
+            self.auto = fuente
 
     async def resolver(self, modulo: str) -> str:
         """Fuente efectiva para un módulo: la elegida, o la autodetectada."""

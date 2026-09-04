@@ -48,8 +48,7 @@ MODULES: list[ModuleSpec] = [
     ),
     ModuleSpec(
         "registrador", "Registrar egresos/ingresos", "file-plus-2",
-        [NavItem("Importar BIESS", "/registrador/biess", "registrar_rpingdes"),
-         NavItem("Registro manual", "/registrador/manual", "registrar_rpingdes")],
+        [NavItem("Préstamos y egresos/ingresos", "/registrador", "registrar_rpingdes")],
     ),
     ModuleSpec(
         "reportes", "Reportes", "file-bar-chart",

@@ -12,6 +12,35 @@ from insevig_web import theme
 from insevig_web.components.sidebar import sidebar_drawer, sidebar_fijo
 from insevig_web.state import AppState
 from insevig_web.states.auth_state import AuthState
+from insevig_web.states.datasource_state import DataSourceState
+
+
+def _indicador_datos() -> rx.Component:
+    """Muestra si los datos vienen de la nube o del servidor local."""
+    return rx.hstack(
+        rx.icon(
+            rx.cond(DataSourceState.auto == "sqlserver", "server", "cloud"),
+            size=14,
+            color="white",
+        ),
+        rx.text(
+            rx.match(
+                DataSourceState.auto,
+                ("sqlserver", "Servidor local"),
+                ("supabase", "En la nube"),
+                "Conectando…",
+            ),
+            color="white",
+            size="1",
+        ),
+        spacing="1",
+        align="center",
+        padding="2px 8px",
+        border_radius="999px",
+        background="rgba(255,255,255,0.15)",
+        display=rx.breakpoints(initial="none", sm="flex"),
+        title="Origen de los datos que se están consultando",
+    )
 
 
 def _header() -> rx.Component:
@@ -30,6 +59,7 @@ def _header() -> rx.Component:
         ),
         rx.spacer(),
         rx.hstack(
+            _indicador_datos(),
             rx.color_mode.button(size="2"),
             rx.icon("user", size=16, color="white"),
             rx.text(AuthState.nombre, color="white", size="2"),
@@ -94,6 +124,7 @@ def pagina(
                 min_width="0",
                 min_height="100vh",
                 background=theme.BG,
+                on_mount=DataSourceState.detectar,
             ),
             spacing="0",
             width="100%",
