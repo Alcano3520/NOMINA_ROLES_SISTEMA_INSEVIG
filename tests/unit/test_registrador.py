@@ -65,3 +65,26 @@ def test_registrar_movimiento_dry_run():
     assert r.ok and "Multa" in r.detalle
     mal = rg.registrar_movimiento("1012", "999", 25.0, "2026-07-01", "", usuario="t", roles=set(), dry_run=True)
     assert not mal.ok
+
+
+def test_fila_mov_mapea_sqlserver_y_supabase():
+    sql_row = {"NUMERO": " 42 ", "EMPLEADO": "1012", "SECUENCIA": 3, "CLASE": "205",
+               "FECHA_VEN": "2026-07-31T00:00:00", "VALOR": "300.0", "CONCEPTO": "PRESTAMO",
+               "OBSERV": "x", "ASENTADO": 0}
+    f = rg._fila_mov(sql_row, "PEREIRA JUAN", sb_keys=False)
+    assert f.numero == "42" and f.secuencia == 3 and f.clase == "205"
+    assert f.tipo_clase == "Préstamo" and f.fecha_ven == "2026-07-31"
+    assert f.valor == 300.0 and f.asentado is False
+
+    sb_row = {"numero": 7, "empleado": "1013", "secuencia": 1, "clase": 203,
+              "fecha_ven": "2026-08-31", "valor": 25, "concepto": "MULTAS",
+              "observ": "", "asentado": 1}
+    g = rg._fila_mov(sb_row, "X Y", sb_keys=True)
+    assert g.numero == "7" and g.clase == "203" and g.asentado is True
+
+
+def test_editar_valor_fila_rechaza_no_positivo():
+    import pytest
+
+    with pytest.raises(ValueError, match="mayor que 0"):
+        rg.editar_valor_fila("1", "1012", "203", 1, "2026-07-31", 0, usuario="t", roles=set())

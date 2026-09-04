@@ -7,7 +7,11 @@ from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
 from insevig_web.states.auth_state import AuthState
-from insevig_web.states.registrador_state import CLASES_OPCIONES, RegistradorState
+from insevig_web.states.registrador_state import (
+    CLASES_CONSULTA,
+    CLASES_OPCIONES,
+    RegistradorState,
+)
 
 _S = RegistradorState
 _SEL = {
@@ -71,9 +75,38 @@ def _tabla(cols: list[str], filas: rx.Var, fila_fn) -> rx.Component:
 
 
 # ── 1. Préstamo individual ──────────────────────────────────────────────
+def _panel_proyeccion() -> rx.Component:
+    return rx.cond(
+        _S.p_proyeccion.length() > 0,
+        card(
+            rx.vstack(
+                rx.hstack(
+                    rx.heading("Carga programada del empleado", size="2"),
+                    rx.spacer(),
+                    rx.button("Actualizar", on_click=_S.refrescar_proyeccion, size="1", variant="ghost"),
+                    width="100%",
+                ),
+                rx.text("Descuentos de préstamo ya agendados por mes. Úsalo para elegir la cuota.",
+                        size="1", color_scheme="gray"),
+                _tabla(
+                    ["Mes", "Ya agendado"],
+                    _S.p_proyeccion,
+                    lambda p: rx.table.row(
+                        rx.table.cell(p["mes"]),
+                        rx.table.cell("$" + p["valor"].to_string()),
+                    ),
+                ),
+                spacing="2", width="100%",
+            ),
+            width="100%",
+        ),
+    )
+
+
 def _tab_prestamo() -> rx.Component:
     return rx.vstack(
         _buscador_empleado(),
+        _panel_proyeccion(),
         card(
             rx.vstack(
                 rx.grid(
@@ -108,15 +141,40 @@ def _tab_prestamo() -> rx.Component:
                 rx.cond(
                     _S.p_preview.length() > 0,
                     rx.vstack(
-                        _tabla(
-                            ["Cuota", "Vence", "Valor"],
-                            _S.p_preview,
-                            lambda c: rx.table.row(
-                                rx.table.cell(c["secuencia"].to_string()),
-                                rx.table.cell(c["fecha_vencimiento"]),
-                                rx.table.cell(c["valor"].to_string()),
-                            ),
+                        rx.text("Puedes ajustar el valor de una cuota antes de registrar.",
+                                size="1", color_scheme="gray"),
+                        scroll_x(
+                            rx.table.root(
+                                rx.table.header(rx.table.row(*[
+                                    rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                    for c in ("Cuota", "Vence", "Valor")
+                                ])),
+                                rx.table.body(
+                                    rx.foreach(
+                                        _S.p_preview,
+                                        lambda c, i: rx.table.row(
+                                            rx.table.cell(c["secuencia"].to_string()),
+                                            rx.table.cell(
+                                                rx.input(
+                                                    value=c["fecha_vencimiento"], type="date",
+                                                    on_change=lambda v: _S.set_preview_cuota(i, "fecha_vencimiento", v),
+                                                    size="1", width="150px",
+                                                )
+                                            ),
+                                            rx.table.cell(
+                                                rx.input(
+                                                    value=c["valor"].to_string(), type="number",
+                                                    on_change=lambda v: _S.set_preview_cuota(i, "valor", v),
+                                                    size="1", width="110px",
+                                                )
+                                            ),
+                                        ),
+                                    )
+                                ),
+                                variant="surface", size="1", width="100%",
+                            )
                         ),
+                        rx.text("Total cuotas: $" + _S.p_preview_total.to_string(), weight="bold", size="2"),
                         rx.cond(
                             AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
                             primary_button("Registrar préstamo", on_click=_S.guardar_prestamo),
@@ -260,7 +318,107 @@ def _tab_consulta() -> rx.Component:
             ),
             width="100%",
         ),
+        _consulta_detallada(),
         spacing="4", width="100%",
+    )
+
+
+def _consulta_detallada() -> rx.Component:
+    def _cell_valor(f):
+        clave = (
+            f["numero"].to_string() + "-" + f["empleado"].to_string() + "-"
+            + f["clase"].to_string() + "-" + f["secuencia"].to_string()
+        )
+        return rx.cond(
+            f["asentado"],
+            rx.text("$" + f["valor"].to_string()),
+            rx.hstack(
+                rx.input(
+                    default_value=f["valor"].to_string(), type="number", size="1", width="90px",
+                    on_change=lambda v: _S.set_cq_edit(clave, v),
+                ),
+                rx.cond(
+                    AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
+                    rx.button("Guardar", size="1", variant="soft",
+                              on_click=lambda: _S.guardar_valor_fila(f)),
+                ),
+                spacing="1",
+            ),
+        )
+
+    return card(
+        rx.vstack(
+            rx.heading("Consulta detallada (fila por fila)", size="3"),
+            rx.grid(
+                rx.input(value=_S.cq_empleado, on_change=lambda v: _S.set_cq("empleado", v),
+                         placeholder="Empleado: código o nombre", size="2"),
+                rx.el.select(
+                    *[rx.el.option(o["etiqueta"], value=o["codigo"]) for o in CLASES_CONSULTA],
+                    value=_S.cq_clase, on_change=lambda v: _S.set_cq("clase", v), style=_SEL,
+                ),
+                rx.input(value=_S.cq_numero, on_change=lambda v: _S.set_cq("numero", v),
+                         placeholder="N° de movimiento", size="2"),
+                rx.hstack(
+                    rx.text("Vence:", size="1"),
+                    rx.input(value=_S.cq_desde, on_change=lambda v: _S.set_cq("desde", v),
+                             type="date", size="1"),
+                    rx.input(value=_S.cq_hasta, on_change=lambda v: _S.set_cq("hasta", v),
+                             type="date", size="1"),
+                    spacing="1", align="center",
+                ),
+                columns=rx.breakpoints(initial="1", sm="2", lg="4"),
+                spacing="2", width="100%",
+            ),
+            rx.hstack(
+                rx.checkbox("Solo no procesados", checked=_S.cq_solo_pend,
+                            on_change=lambda _v: _S.toggle_cq_pend()),
+                rx.button("Buscar", on_click=_S.buscar_filas, size="1"),
+                rx.button("Limpiar", on_click=_S.limpiar_cq, size="1", variant="soft"),
+                rx.button("Exportar CSV", on_click=_S.exportar_cq_csv, size="1", variant="soft"),
+                spacing="2", align="center", wrap="wrap",
+            ),
+            rx.cond(
+                _S.cq_cargando,
+                rx.center(rx.spinner(), padding="1rem"),
+                rx.vstack(
+                    rx.text(_S.cq_filas.length().to_string() + " fila(s)", size="1", color_scheme="gray"),
+                    scroll_x(
+                        rx.table.root(
+                            rx.table.header(rx.table.row(*[
+                                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                for c in ("N°", "Empleado", "Tipo", "Seq", "Vence", "Valor", "Estado", "")
+                            ])),
+                            rx.table.body(
+                                rx.foreach(
+                                    _S.cq_filas,
+                                    lambda f: rx.table.row(
+                                        rx.table.cell(f["numero"]),
+                                        rx.table.cell(f["nombre"]),
+                                        rx.table.cell(f["tipo_clase"]),
+                                        rx.table.cell(f["secuencia"].to_string()),
+                                        rx.table.cell(f["fecha_ven"]),
+                                        rx.table.cell(_cell_valor(f)),
+                                        rx.table.cell(rx.cond(f["asentado"], "Procesado", "Pendiente")),
+                                        rx.table.cell(
+                                            rx.cond(
+                                                ~f["asentado"]
+                                                & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
+                                                rx.button("Eliminar", size="1", color_scheme="red", variant="ghost",
+                                                          on_click=lambda: _S.eliminar_fila(f)),
+                                            )
+                                        ),
+                                    ),
+                                )
+                            ),
+                            variant="surface", size="1", width="100%",
+                        )
+                    ),
+                    spacing="2", width="100%",
+                ),
+            ),
+            spacing="3", width="100%",
+        ),
+        width="100%",
     )
 
 
@@ -300,7 +458,61 @@ def _tab_individual() -> rx.Component:
             ),
             width="100%",
         ),
+        _bulk_egr_ing(),
         spacing="4", width="100%",
+    )
+
+
+def _bulk_egr_ing() -> rx.Component:
+    return card(
+        rx.vstack(
+            rx.heading("Carga masiva de egresos / ingresos", size="3"),
+            rx.text(
+                "Una línea por movimiento: cédula, clase, valor, fecha (AAAA-MM-DD), observación. "
+                "Clases: 205=préstamo no, usa las simples (203 multa, 202 anticipo, 102 bonificación…).",
+                size="1", color_scheme="gray",
+            ),
+            rx.text_area(
+                value=_S.bulk_texto, on_change=_S.set_bulk_texto, rows="6", width="100%",
+                placeholder="0920116811, 203, 25.00, 2026-07-31, MULTA ATRASO\n1712345678, 102, 40, 2026-07-31, BONO",
+            ),
+            rx.hstack(
+                rx.button("Previsualizar", on_click=_S.previsualizar_bulk, variant="soft"),
+                rx.cond(
+                    (_S.bulk_filas.length() > 0)
+                    & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
+                    primary_button("Aplicar", on_click=_S.aplicar_bulk),
+                ),
+                spacing="2",
+            ),
+            rx.cond(
+                _S.bulk_filas.length() > 0,
+                _tabla(
+                    ["Cédula", "Empleado", "Tipo", "Valor", "Fecha", "OK"],
+                    _S.bulk_filas,
+                    lambda f: rx.table.row(
+                        rx.table.cell(f["cedula"]),
+                        rx.table.cell(f["nombre"]),
+                        rx.table.cell(f["tipo"]),
+                        rx.table.cell(f["valor"]),
+                        rx.table.cell(f["fecha"]),
+                        rx.table.cell(rx.cond(f["valido"], "✓", "✗")),
+                    ),
+                ),
+            ),
+            rx.cond(
+                _S.bulk_job > 0,
+                job_progress(
+                    status=_S.bulk_status, progress=rx.Var.create(0), total=rx.Var.create(1),
+                    message=_S.bulk_msg, error=rx.Var.create(""),
+                    corriendo=_S.bulk_status.contains("corriendo") | _S.bulk_status.contains("pendiente"),
+                    tiene_resultado=_S.bulk_path != "",
+                    on_cancelar=rx.console_log, on_descargar=_S.descargar_bulk,
+                ),
+            ),
+            spacing="3", width="100%",
+        ),
+        width="100%",
     )
 
 

@@ -220,11 +220,16 @@ Legado: `registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.py
 | 5 | Alta manual de un ingreso/egreso (cualquier CLASE) | ✅ `registrar_movimiento` |
 | 6 | Préstamo individual con planificación de cuotas (nº o valor) | ✅ `cuotas_tradicional` / `cuotas_por_valor` / `proyeccion_pagos_futuros` |
 | 7 | Carga masiva de préstamos | ✅ (Job + CSV) |
-| 8 | Consulta / edición: lista, ver cuotas, borrar, editar cuota | ✅ `historial_movimientos` / `cuotas_prestamo` / `eliminar_movimiento` / `editar_cuota` |
-| 9 | "Mover cuotas pendientes desde una fecha" | ✅ `mover_cuotas_pendientes` + botón en Consulta/edición |
-| 10 | Respaldo por operación | ⬜ (`modulo_seguridad_prestamos` del legado no existía; cubierto por `core.audit`) |
+| 8 | Consulta / edición (vista agrupada): lista, ver cuotas, borrar movimiento, mover cuotas | ✅ `historial_movimientos` / `cuotas_prestamo` / `eliminar_movimiento` |
+| 9 | "Mover cuotas pendientes desde una fecha" | ✅ `mover_cuotas_pendientes` + botón en Consulta |
+| 10 | **Consulta detallada fila por fila** (filtros empleado/clase/rango de fechas/nº/solo pendientes, editar VALOR, eliminar fila, exportar CSV) | ✅ `consultar_filas` / `editar_valor_fila` / `eliminar_fila` |
+| 11 | **Carga masiva de egresos/ingresos** (no solo préstamos) — pegar cédula/clase/valor/fecha/observación → preview → Job + CSV | ✅ `_bulk_egr_ing` |
+| 12 | **Panel "carga programada del empleado"** al registrar un préstamo (deducciones ya agendadas por mes) | ✅ `proyeccion_pagos_futuros` en la pestaña Préstamo |
+| 13 | **Editar el valor/fecha de cada cuota en la vista previa** antes de registrar el préstamo | ✅ inputs por fila + total en vivo |
+| 14 | Respaldo por operación | ⬜ (`modulo_seguridad_prestamos` del legado no existía; cubierto por `core.audit`) |
+| 15 | BIESS: override manual de fila-encabezado / columnas cuando falla la autodetección | ⬜ (hoy solo autodetección) |
 
-**Módulo portado por completo** (6 pestañas).
+**6 pestañas portadas.** Falta: override manual de columnas BIESS y el "respaldo por operación" (que en el legado nunca existió — reemplazado por `core.audit`).
 
 ---
 

@@ -247,6 +247,172 @@ def _mov_reg(num: str, clase: str, emp: str, nombre: str, g: dict) -> Movimiento
     )
 
 
+@dataclass
+class FilaMovimiento:
+    """Una fila individual de RPINGDES (para la consulta detallada del legado)."""
+    numero: str
+    empleado: str
+    nombre: str
+    secuencia: int
+    clase: str
+    tipo_clase: str
+    fecha_ven: str
+    valor: float
+    concepto: str
+    observ: str
+    asentado: bool
+
+
+def consultar_filas(
+    fuente: str, *, empleado: str = "", clase: str = "", desde: str = "", hasta: str = "",
+    numero: str = "", solo_pendientes: bool = False, limite: int = 3000,
+) -> list[FilaMovimiento]:
+    """Filas individuales de RPINGDES con los filtros de la pestaña Consulta del
+    legado: empleado (código o nombre), clase, rango de FECHA_VEN, número, y
+    'solo no procesados' (ASENTADO=0)."""
+    empleado, clase, numero = empleado.strip(), clase.strip(), numero.strip()
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        q = sb.table("rpingdesres").select(
+            "numero,empleado,secuencia,clase,fecha_ven,valor,concepto,observ,asentado"
+        ).eq("codemp", "10")
+        if clase:
+            q = q.eq("clase", int(clase) if clase.isdigit() else clase)
+        if numero.isdigit():
+            q = q.eq("numero", int(numero))
+        if empleado.isdigit():
+            q = q.eq("empleado", empleado)
+        if solo_pendientes:
+            q = q.eq("asentado", 0)
+        if desde:
+            q = q.gte("fecha_ven", desde)
+        if hasta:
+            q = q.lte("fecha_ven", hasta)
+        filas = q.order("fecha_ven", desc=True).limit(limite).execute().data or []
+        emps = {
+            str(x["empleado"]).strip(): x
+            for x in (sb.table("rpemplea").select("empleado,apellidos,nombres").eq("codemp", "10").execute().data or [])
+        }
+        out: list[FilaMovimiento] = []
+        for r in filas:
+            emp = str(r.get("empleado") or "").strip()
+            e = emps.get(emp, {})
+            nombre = f"{(e.get('apellidos') or '').strip()} {(e.get('nombres') or '').strip()}".strip() or f"Emp {emp}"
+            if empleado and not empleado.isdigit() and empleado.lower() not in nombre.lower():
+                continue
+            out.append(_fila_mov(r, nombre, sb_keys=True))
+        return out
+
+    flt = get_settings().sqlserver_filter
+    where = [flt.replace("CODEMP", "r.CODEMP").replace("CODSUC", "r.CODSUC")]
+    params: list = []
+    if empleado:
+        if empleado.isdigit():
+            where.append("r.EMPLEADO = ?")
+            params.append(int(empleado))
+        else:
+            where.append("(e.APELLIDOS LIKE ? OR e.NOMBRES LIKE ?)")
+            params += [f"%{empleado}%", f"%{empleado}%"]
+    if clase:
+        where.append("r.CLASE = ?")
+        params.append(clase)
+    if solo_pendientes:
+        where.append("r.ASENTADO = 0")
+    if desde:
+        where.append("r.FECHA_VEN >= ?")
+        params.append(desde)
+    if hasta:
+        where.append("r.FECHA_VEN <= ?")
+        params.append(hasta)
+    if numero.isdigit():
+        where.append("r.NUMERO = ?")
+        params.append(int(numero))
+    filas = sqlserver.filas(
+        f"""SELECT TOP {limite} r.NUMERO, r.EMPLEADO, r.SECUENCIA, r.CLASE, r.FECHA_VEN,
+                   r.VALOR, r.OBSERV, r.CONCEPTO, r.ASENTADO, e.APELLIDOS, e.NOMBRES
+            FROM dbo.RPINGDES r
+            LEFT JOIN dbo.RPEMPLEA e ON r.EMPLEADO = e.EMPLEADO
+            WHERE {' AND '.join(where)}
+            ORDER BY r.FECHA_VEN DESC, r.NUMERO DESC, r.SECUENCIA""",
+        tuple(params),
+    )
+    salida: list[FilaMovimiento] = []
+    for r in filas:
+        ap = (r.get("APELLIDOS") or "").strip()
+        no = (r.get("NOMBRES") or "").strip()
+        nombre = f"{ap} {no}".strip() or f"Emp {r.get('EMPLEADO')}"
+        salida.append(_fila_mov(r, nombre, sb_keys=False))
+    return salida
+
+
+def _fila_mov(r: dict, nombre: str, *, sb_keys: bool) -> FilaMovimiento:
+    g = (lambda k: r.get(k.lower())) if sb_keys else (lambda k: r.get(k.upper()) or r.get(k))
+    clase = str(g("CLASE") or "").strip()
+    return FilaMovimiento(
+        numero=str(g("NUMERO") or "").strip(),
+        empleado=str(g("EMPLEADO") or "").strip(),
+        nombre=nombre,
+        secuencia=int(g("SECUENCIA") or 1),
+        clase=clase,
+        tipo_clase=NOMBRE_CLASE.get(clase, clase),
+        fecha_ven=str(g("FECHA_VEN") or "")[:10],
+        valor=round(a_float(g("VALOR")), 2),
+        concepto=str(g("CONCEPTO") or "").strip(),
+        observ=str(g("OBSERV") or "").strip(),
+        asentado=bool(g("ASENTADO")),
+    )
+
+
+def editar_valor_fila(
+    numero: str, empleado: str, clase: str, secuencia: int, fecha_ven: str, nuevo_valor: float,
+    *, usuario: str, roles: set[str],
+) -> int:
+    """UPDATE del VALOR de una fila NO asentada de RPINGDES (pestaña Consulta → 'Editar valor')."""
+    val = round(a_float(nuevo_valor), 2)
+    if val <= 0:
+        raise ValueError("El valor debe ser mayor que 0.")
+    flt = get_settings().sqlserver_filter
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=f"{numero}/{empleado}/{clase}/{secuencia}",
+        after={"valor": val},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""UPDATE dbo.RPINGDES SET VALOR = ?
+                WHERE {flt} AND NUMERO = ? AND EMPLEADO = ? AND CLASE = ?
+                  AND SECUENCIA = ? AND ASENTADO = 0""",
+            (val, numero, str(empleado), clase, secuencia),
+        )
+        n = cur.rowcount
+        conn.commit()
+    return n
+
+
+def eliminar_fila(
+    numero: str, empleado: str, clase: str, secuencia: int, fecha_ven: str,
+    *, usuario: str, roles: set[str],
+) -> int:
+    """DELETE de UNA fila NO asentada de RPINGDES (pestaña Consulta → 'Eliminar fila').
+    Para préstamos borra solo esa cuota."""
+    flt = get_settings().sqlserver_filter
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=f"{numero}/{empleado}/{clase}/{secuencia}",
+        antes={"numero": numero, "clase": clase, "empleado": empleado, "secuencia": secuencia},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""DELETE FROM dbo.RPINGDES
+                WHERE {flt} AND NUMERO = ? AND EMPLEADO = ? AND CLASE = ?
+                  AND SECUENCIA = ? AND ASENTADO = 0""",
+            (numero, str(empleado), clase, secuencia),
+        )
+        n = cur.rowcount
+        conn.commit()
+    return n
+
+
 def cuotas_prestamo(numero: str, empleado: str, fuente: str) -> list[dict]:
     if fuente == FUENTE_SUPABASE:
         sb = supabase_client.get_client()

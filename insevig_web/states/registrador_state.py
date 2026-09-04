@@ -17,6 +17,13 @@ CLASES_OPCIONES = [
     for c, cfg in registrador.CLASES_SIMPLIFICADAS.items()
 ]
 
+# Para el filtro de la consulta detallada (incluye préstamos 205 y "todas").
+CLASES_CONSULTA = [
+    {"codigo": "", "etiqueta": "Todos los tipos"},
+    {"codigo": "205", "etiqueta": "205 — Préstamo"},
+    *[{"codigo": o["codigo"], "etiqueta": o["etiqueta"]} for o in CLASES_OPCIONES],
+]
+
 
 def _hoy() -> str:
     return dt.date.today().isoformat()
@@ -69,10 +76,36 @@ class RegistradorState(rx.State):
         self.encontrados = await asyncio.to_thread(observaciones.buscar_empleados, self.busca, fuente)
 
     @rx.event
-    def elegir_emp(self, empleado: str, nombre: str):
+    async def elegir_emp(self, empleado: str, nombre: str):
         self.emp_sel = empleado
         self.emp_nombre = nombre
         self.encontrados = []
+        if self.tab == "prestamo":
+            await self._cargar_proyeccion()
+
+    # carga programada del empleado (deducciones ya agendadas por mes)
+    p_proyeccion: list[dict] = []
+
+    async def _cargar_proyeccion(self):
+        self.p_proyeccion = []
+        if not self.emp_sel:
+            return
+        fuente = await self._fuente()
+        try:
+            fecha = dt.date.fromisoformat(self.p_fecha or _hoy())
+        except ValueError:
+            fecha = dt.date.today()
+        proy = await asyncio.to_thread(
+            registrador.proyeccion_pagos_futuros, self.emp_sel, fuente, fecha
+        )
+        self.p_proyeccion = [
+            {"mes": f"{a:04d}-{m:02d}", "valor": round(v, 2)}
+            for (a, m), v in sorted(proy.items())
+        ]
+
+    @rx.event
+    async def refrescar_proyeccion(self):
+        await self._cargar_proyeccion()
 
     # ── 1. Préstamo individual ───────────────────────────────────────────
     p_valor: str = ""
@@ -116,6 +149,25 @@ class RegistradorState(rx.State):
             self.error = str(e)
             return
         self.p_preview = [asdict(c) for c in cuotas]
+
+    @rx.event
+    def set_preview_cuota(self, idx: int, campo: str, v: str):
+        """Ajuste manual de una cuota del preview antes de registrar."""
+        filas = list(self.p_preview)
+        if not 0 <= idx < len(filas):
+            return
+        if campo == "valor":
+            try:
+                filas[idx] = {**filas[idx], "valor": round(float(v), 2)}
+            except ValueError:
+                return
+        else:
+            filas[idx] = {**filas[idx], campo: v}
+        self.p_preview = filas
+
+    @rx.var
+    def p_preview_total(self) -> float:
+        return round(sum(float(c.get("valor", 0)) for c in self.p_preview), 2)
 
     @rx.event
     async def guardar_prestamo(self):
@@ -397,6 +449,236 @@ class RegistradorState(rx.State):
                 self.error = res.detalle
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
+
+    # ── 4b. Carga masiva de egresos / ingresos (cualquier tipo) ─────────
+    bulk_texto: str = ""
+    bulk_filas: list[dict] = []
+    bulk_job: int = 0
+    bulk_status: str = ""
+    bulk_msg: str = ""
+    bulk_path: str = ""
+
+    @rx.event
+    def set_bulk_texto(self, v: str):
+        self.bulk_texto = v
+
+    @rx.event
+    async def previsualizar_bulk(self):
+        from core.repos import observaciones
+
+        self.error = ""
+        fuente = await self._fuente()
+        base: list[dict] = []
+        for ln in self.bulk_texto.splitlines():
+            p = [x.strip() for x in ln.split(",")]
+            if len(p) < 3 or not p[0]:
+                continue
+            base.append({"cedula": p[0], "clase": p[1], "valor": p[2],
+                         "fecha": p[3] if len(p) > 3 else _hoy(),
+                         "observ": p[4] if len(p) > 4 else ""})
+
+        def _resolver():
+            out = []
+            for f in base:
+                r = observaciones.buscar_empleados(f["cedula"], fuente)
+                e = r[0] if r else None
+                clase = f["clase"]
+                cfg = registrador.CLASES_SIMPLIFICADAS.get(clase)
+                out.append({
+                    **f,
+                    "empleado": e["empleado"] if e else "",
+                    "nombre": e["apellidos_nombres"] if e else "(no encontrado)",
+                    "tipo": registrador.NOMBRE_CLASE.get(clase, clase),
+                    "valido": bool(e) and cfg is not None,
+                })
+            return out
+
+        self.bulk_filas = await asyncio.to_thread(_resolver)
+
+    @rx.event
+    async def aplicar_bulk(self):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        filas = [f for f in self.bulk_filas if f.get("valido")]
+        if not filas:
+            return rx.toast.error("No hay filas válidas.")
+        usuario, roles = auth.username, set(auth.roles)
+
+        def _fn(ctx):
+            import csv
+            import io
+
+            from core import storage
+            from core.repos.registrador import registrar_movimiento
+
+            res = []
+            for i, f in enumerate(filas, 1):
+                try:
+                    r = registrar_movimiento(
+                        f["empleado"], f["clase"], float(f["valor"]),
+                        f["fecha"], f.get("observ") or f["tipo"],
+                        usuario=usuario, roles=roles, dry_run=False,
+                    )
+                    res.append({"empleado": f["empleado"], "clase": f["clase"],
+                                "ok": r.ok, "detalle": r.detalle})
+                except Exception as e:  # noqa: BLE001
+                    res.append({"empleado": f["empleado"], "clase": f["clase"],
+                                "ok": False, "detalle": str(e)[:150]})
+                ctx.progreso(i, len(filas), f"{i}/{len(filas)}")
+            buf = io.StringIO()
+            w = csv.DictWriter(buf, fieldnames=["empleado", "clase", "ok", "detalle"])
+            w.writeheader()
+            w.writerows(res)
+            ruta = storage.guardar(ctx.job_id, "CARGA_EGRESOS_INGRESOS.csv", buf.getvalue().encode("utf-8"))
+            ctx.set_resultado(str(ruta))
+            ok = sum(1 for r in res if r["ok"])
+            ctx.progreso(len(filas), len(filas), f"{ok} OK, {len(res) - ok} con error")
+
+        from core.jobs.runner import get_runner
+
+        self.bulk_path = ""
+        self.bulk_job = get_runner().encolar("carga_egr_ing", {"n": len(filas)}, creado_por=usuario, fn=_fn)
+        self.bulk_status = "pendiente"
+        return RegistradorState.vigilar_bulk
+
+    @rx.event(background=True)
+    async def vigilar_bulk(self):
+        from core.jobs.runner import leer_job
+
+        for _ in range(1800):
+            async with self:
+                jid = self.bulk_job
+            j = leer_job(jid)
+            if j is None:
+                return
+            async with self:
+                self.bulk_status = j.status
+                self.bulk_msg = j.message
+                self.bulk_path = j.result_path
+            if j.status in ("ok", "error", "cancelado"):
+                return
+            await asyncio.sleep(1)
+
+    @rx.event
+    def descargar_bulk(self):
+        if not self.bulk_path:
+            return
+        from pathlib import Path
+
+        p = Path(self.bulk_path)
+        return rx.download(data=p.read_bytes(), filename=p.name)
+
+    # ── 6b. Consulta detallada de filas de RPINGDES ────────────────────
+    cq_empleado: str = ""
+    cq_clase: str = ""
+    cq_desde: str = ""
+    cq_hasta: str = ""
+    cq_numero: str = ""
+    cq_solo_pend: bool = False
+    cq_filas: list[dict] = []
+    cq_cargando: bool = False
+    cq_edit_val: dict = {}  # clave -> nuevo valor en edición
+
+    @rx.event
+    def set_cq(self, campo: str, v: str):
+        setattr(self, f"cq_{campo}", v)
+
+    @rx.event
+    def toggle_cq_pend(self):
+        self.cq_solo_pend = not self.cq_solo_pend
+
+    @rx.event
+    def limpiar_cq(self):
+        self.cq_empleado = self.cq_clase = self.cq_desde = self.cq_hasta = self.cq_numero = ""
+        self.cq_solo_pend = False
+
+    @rx.event
+    async def buscar_filas(self):
+        self.cq_cargando = True
+        self.error = ""
+        yield
+        fuente = await self._fuente()
+        try:
+            filas = await asyncio.to_thread(
+                registrador.consultar_filas, fuente,
+                empleado=self.cq_empleado, clase=self.cq_clase,
+                desde=self.cq_desde, hasta=self.cq_hasta,
+                numero=self.cq_numero, solo_pendientes=self.cq_solo_pend,
+            )
+            self.cq_filas = [asdict(f) for f in filas]
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+        self.cq_cargando = False
+
+    @rx.event
+    def set_cq_edit(self, clave: str, v: str):
+        self.cq_edit_val = {**self.cq_edit_val, clave: v}
+
+    @rx.event
+    async def guardar_valor_fila(self, fila: dict):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        clave = f"{fila['numero']}-{fila['empleado']}-{fila['clase']}-{fila['secuencia']}"
+        nuevo = self.cq_edit_val.get(clave, "")
+        try:
+            val = float(nuevo)
+        except (TypeError, ValueError):
+            return rx.toast.error("Valor inválido.")
+        try:
+            n = await asyncio.to_thread(
+                registrador.editar_valor_fila,
+                fila["numero"], fila["empleado"], fila["clase"],
+                int(fila["secuencia"]), fila["fecha_ven"], val,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+            self.resultado = f"Valor actualizado ({n} fila)."
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+        await self.buscar_filas()
+
+    @rx.event
+    async def eliminar_fila(self, fila: dict):
+        auth = await self.get_state(AuthState)
+        if "registrador:registrar_rpingdes" not in auth.permisos_flat:
+            yield rx.toast.error("Sin permiso.")
+            return
+        if fila.get("asentado"):
+            yield rx.toast.error("La fila ya fue procesada.")
+            return
+        try:
+            n = await asyncio.to_thread(
+                registrador.eliminar_fila,
+                fila["numero"], fila["empleado"], fila["clase"],
+                int(fila["secuencia"]), fila["fecha_ven"],
+                usuario=auth.username, roles=set(auth.roles),
+            )
+            self.resultado = f"Fila eliminada ({n})."
+        except Exception as e:  # noqa: BLE001
+            self.error = str(e)
+        yield
+        await self.buscar_filas()
+
+    @rx.event
+    def exportar_cq_csv(self):
+        if not self.cq_filas:
+            return
+        import csv
+        import io
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["N°", "Empleado", "Nombre", "Clase", "Concepto", "Observación",
+                    "Secuencia", "Vence", "Valor", "Estado"])
+        for f in self.cq_filas:
+            w.writerow([f["numero"], f["empleado"], f["nombre"], f["clase"], f["concepto"],
+                        f["observ"], f["secuencia"], f["fecha_ven"], f["valor"],
+                        "Procesado" if f["asentado"] else "Pendiente"])
+        return rx.download(
+            data=("﻿" + buf.getvalue()).encode("utf-8"),
+            filename="movimientos_rpingdes.csv",
+        )
 
     # ── 5. BIESS ────────────────────────────────────────────────────────
     periodo: str = ""
