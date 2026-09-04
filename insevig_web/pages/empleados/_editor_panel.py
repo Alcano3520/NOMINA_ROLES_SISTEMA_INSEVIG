@@ -230,13 +230,36 @@ def _foto_y_documentos() -> rx.Component:
     )
 
 
+def _fdr_checkbox() -> rx.Component:
+    return rx.hstack(
+        rx.checkbox(
+            checked=_S.fdr_marcado,
+            on_change=lambda _v: _S.toggle_fdr(),
+            disabled=_bloqueado(),
+        ),
+        rx.vstack(
+            rx.text("Fondo de Reserva", size="1", weight="bold"),
+            rx.text(
+                "Marca al empleado como afiliado al IESS para que el rol calcule el fondo de reserva.",
+                size="1", color_scheme="gray",
+            ),
+            spacing="0",
+        ),
+        spacing="2",
+        align="center",
+        width="100%",
+    )
+
+
 def _subseccion(titulo: str, campos: tuple[str, ...]) -> rx.Component:
     """Un recuadro con título (como los LabelFrame del sistema anterior)."""
+    extra = [_fdr_checkbox()] if titulo == "Parámetros de nómina" else []
     return rx.box(
         rx.text(titulo.upper(), size="1", weight="bold", color_scheme="blue", letter_spacing="0.04em"),
         rx.divider(margin_y="6px"),
         rx.grid(
             *[_campo(c) for c in campos],
+            *extra,
             columns=rx.breakpoints(initial="1", sm="2", lg="3"),
             spacing="3",
             width="100%",

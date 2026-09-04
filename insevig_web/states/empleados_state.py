@@ -473,6 +473,29 @@ class EmpleadosState(rx.State):
     def set_campo(self, campo: str, valor: str):
         self.edit_campos[campo] = valor
 
+    # ── Casilla "Fondo de Reserva" (deriva de NUM_AFIL) ──────────────────
+    @rx.var
+    def fdr_marcado(self) -> bool:
+        """Fondo de Reserva activo cuando NUM_AFIL != 9999999999."""
+        v = str(self.edit_campos.get("NUM_AFIL", "")).strip().replace(".0", "")
+        return v != "9999999999"
+
+    @rx.var
+    def fdr_num_real(self) -> bool:
+        """NUM_AFIL tiene un número de afiliación real (no 0 ni 9999999999)."""
+        v = str(self.edit_campos.get("NUM_AFIL", "")).strip().replace(".0", "")
+        return v not in ("", "0", "9999999999")
+
+    @rx.event
+    def toggle_fdr(self):
+        if self.fdr_marcado and self.fdr_num_real:
+            yield rx.toast.warning(
+                "Este empleado tiene un No. de afiliación IESS real. "
+                "Para marcarlo como NO afiliado, bórrelo en Referencias."
+            )
+            return
+        self.edit_campos["NUM_AFIL"] = "9999999999" if self.fdr_marcado else "0"
+
     @rx.event
     def imprimir_ficha(self):
         if not self.edit_campos:

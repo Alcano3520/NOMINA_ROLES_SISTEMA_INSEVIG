@@ -52,7 +52,7 @@ la pestaña Observaciones como una más.
 | Pestaña legado | Campos | Estado |
 |---|---|---|
 | **Datos Generales** | código, cédula, cód.suc, cód.emp, nombres, apellidos, sexo (combo), estado civil (combo), lugar/fecha nac., dirección, provincia, cantón, parroquia, nacionalidad, fecha ingreso/salida, **depto/cargo/sección** (selector con catálogo + búsqueda en vivo), estado (combo), 2 teléfonos, email, tipo de empleado (combo), actividad, cónyuge, **panel de auditoría** (creado/modificado por/fecha) | 🟡 campos ✅ · pestaña ⬜ · panel auditoría 🟡 (una línea) · selector de catálogo con búsqueda ⬜ (hoy `<select>` plano) |
-| **Ingresos / Dctos.** | sueldo, bonificación, compensación, transporte, horas 25/50/100; acumulados décimo 3/4, vacaciones, fdo. reserva; rol extra: moviliza, lunch, anticipo %, descuento, ing/dct extra, concepto; **casilla Fondo de Reserva** (escribe NUM_AFIL 0/9999999999, con protección si ya hay número real); flags "Décimo 13 aparte", "Décimo 14 aparte", "Aporta IESS cónyuge" | 🟡 campos ✅ · casilla Fondo de Reserva con su lógica especial ⬜ · pestaña ⬜ |
+| **Ingresos / Dctos.** | sueldo, bonificación, compensación, transporte, horas 25/50/100; acumulados décimo 3/4, vacaciones, fdo. reserva; rol extra: moviliza, lunch, anticipo %, descuento, ing/dct extra, concepto; **casilla Fondo de Reserva** (escribe NUM_AFIL 0/9999999999, con protección si ya hay número real); flags "Décimo 13 aparte", "Décimo 14 aparte", "Aporta IESS cónyuge" | 🟡 campos ✅ · casilla Fondo de Reserva (NUM_AFIL 0/9999999999 + bloqueo si hay número real) ✅ · pestaña ⬜ |
 | **Observaciones** | selector mes+año, botón Mostrar, 7 recuadros refer1..7 (llenos y vacíos), Guardar Obs., Imprimir Historial (HTML de TODAS las fechas) | 🟡 mostrar+editar+guardar ✅ · imprimir historial 🟡 (se lista, no HTML) · dentro del editor ✅ pero no como pestaña |
 | **Otros Datos** | casillas "Incluir en el Rol" / "Acreditar" (S/N); cargas, últ. liquidación, últ. día trab., días trab., grupo sanguíneo (combo), período de pago (combo); cuentas contables (cta, cta depto, cta auxiliar); info bancaria (banco combo, cta cte, cta ahorros) | 🟡 campos ✅ · pestaña ⬜ |
 | **Certificados** | 4 recuadros de archivo (cédula, votación, record policial, libreta militar) — **hoy solo dibujan recuadro vacío en el legado**; familiares (nombres/dirección/teléfonos); no familiares (idem) | 🟡 campos de familiares ✅ · recuadros de archivo ⬜ (adjuntar imágenes = mejora sobre el legado) |
@@ -80,7 +80,7 @@ la pestaña Observaciones como una más.
 | 23 | **Vista Completa** (diálogo): tabla de todos los empleados con muchas columnas + exportar | ⬜ |
 | 24 | **Exportar Catálogos** (diálogo): vuelca DBTABLAS (cargos/secciones/deptos/…) a Excel | ⬜ |
 | 25 | **Imprimir empleado** (ficha a papel/PDF) | ✅ `core/pdf/ficha_empleado.py` |
-| 25b | **Foto del empleado** (subir / mostrar / quitar) — ref. ManagementPro | ✅ `core/repos/fotos.py`, en STORAGE_DIR/fotos/. Falta: "tomar foto" con la cámara |
+| 25b | **Foto del empleado** (subir / mostrar / quitar / **tomar foto con la cámara**) — ref. ManagementPro | ✅ `core/repos/fotos.py` (STORAGE_DIR/fotos/) + botón "Tomar foto" (getUserMedia→canvas→`guardar_foto_datauri`) |
 | 25c | **Documentos**: hoja de vida, certificado de trabajo, contrato, carta de renuncia (PDF con los datos de la ficha) | ✅ `core/pdf/documentos_empleado.py`. Falta: plantillas editables desde Administración, huellas dactilares |
 | 26 | **Historial de nómina del empleado** (`historial_empleado_GUI.pyw`): períodos recientes, detalle por concepto (ingreso/egreso), filtro, exportar Excel, ventana de detalle por fila | 🟡 `/empleados/historial` muestra consolidado de UN período · faltan: varios períodos a la vez, detalle por fila, exportar |
 
@@ -103,7 +103,7 @@ la pestaña Observaciones como una más.
 4. **Cancelar**: repuebla la ficha desde los datos originales sin recargar. *(item 16)*
 5. **Diálogos de confirmación** con resumen en Guardar y triple en Eliminar. *(15, 17)*
 6. **Nuevo**: validar código y cédula duplicados antes de crear. *(item 13)*
-7. **Casilla "Fondo de Reserva"** en Ingresos/Dctos con su lógica NUM_AFIL. *(1.2)*
+7. ~~**Casilla "Fondo de Reserva"** en Ingresos/Dctos con su lógica NUM_AFIL.~~ ✅ *(1.2)*
 8. Combo **ACTIVOS/INACTIVOS/TODOS** + **navegación ◀◀ ◀ ▶ ▶▶** + **filtrado en vivo**
    de la lista + **autocompletar**. *(items 3, 4, 5, 8)*
 9. **Búsqueda Avanzada** (diálogo/pantalla con 6 criterios + tabla ancha + exportar). *(22)*
