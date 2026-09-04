@@ -1,11 +1,21 @@
 """Generación de liquidaciones (finiquitos) — módulo 9.
 
-Porta **completo** `LIQUIDACIONES_SISTEMA_INSEVIG/Liquidaciones_generador_CON_VACACIONES.pyw`
-(la versión con vacaciones/décimos/desahucio) adaptado a `core`. Cálculos legales
-de Ecuador: vacaciones, décima tercera, décima cuarta (por región), desahucio,
-indemnización por despido intempestivo, IESS, fondo de reserva, split de anticipos.
+Cálculos legales de Ecuador: vacaciones, décima tercera, décima cuarta (por
+región), desahucio, indemnización por despido intempestivo, IESS, fondo de
+reserva, split de anticipos.
 
-Entrada: (cédula, fecha_salida, motivo_salida). Salida: dict por empleado + Excel 62 col.
+Entrada: (cédula, fecha_salida, motivo_salida). Salida: dict por empleado + Excel.
+
+Origen: esta versión reemplaza la extracción inicial (basada en
+`Liquidaciones_generador_CON_VACACIONES.pyw`, la versión vieja/deprecada) por
+la lógica de `LIQUIDACIONES_SISTEMA_INSEVIG/nucleo_modular/` — la extracción
+fiel y ya probada (18 tests) del `.pyw` que la empresa usa hoy en producción
+(`Generador_Liquidaciones_INSEVIG.pyw`), con meses de correcciones reales ya
+validadas. Ver `docs/modulos/liquidaciones.md`, sección "Correcciones
+incorporadas al reemplazar la extracción inicial", para el detalle de qué
+cambió respecto de la versión anterior de este archivo y por qué (ningún
+cambio es una "mejora" inventada aquí -- todos ya estaban confirmados contra
+casos reales en el `.pyw` de producción).
 """
 
 from __future__ import annotations
@@ -14,31 +24,30 @@ import calendar
 import datetime as dt
 from dataclasses import dataclass, field
 
+from core.concepts import CLASE_A_CONCEPTO, CLASES_IGNORADAS
 from core.config import get_settings
 from core.db import sqlserver, supabase_client
 from core.db.health import FUENTE_SUPABASE
 from core.utils import a_float, a_int, normalizar_cedula
 
-# ── Constantes del legado ────────────────────────────────────────────────────
+# ── Constantes ────────────────────────────────────────────────────────────
+# El mapeo CLASE→concepto y los códigos ignorados son los de `core.concepts`
+# (fuente única, compartida con roles/reportes) -- ya NO se duplican aquí.
 
-MAPEO_CONCEPTOS = {
-    100: "SUELDO", 102: "BONIFICACION", 104: "FONDO_RESERVA", 107: "DECIMO_TERCERA",
-    108: "DECIMO_CUARTA", 110: "MANIOBRAS", 111: "REEMBOLSOS", 113: "SOBRETIEMPO_25",
-    114: "SOBRETIEMPO_50", 115: "SOBRETIEMPO_100", 120: "MOVILIZACION", 200: "APORT_IESS",
-    201: "ANTICIPOS_OTROS", 202: "ANTICIPO_SUELDO", 203: "MULTAS", 204: "PRESTAMOS_QUIROGRAFARIOS",
-    205: "PRESTAMOS_COMPANIA", 206: "PENSION_ALIMENTICIA", 207: "PRESTAMO_HIPOTECARIO",
-    217: "ANTICIPOS_OTROS", 218: "APORT_IESS_CONYUGE", 219: "IMPUESTO_RENTA", 250: "ANTICIPOS_SURTIDOS",
-}
-CODIGOS_IGNORAR = {105, 126, 199}
 DESCUENTOS_MULTI_MES = {
     "PRESTAMOS_COMPANIA", "ANTICIPOS_OTROS", "ANTICIPO_SUELDO", "MULTAS",
     "PRESTAMOS_QUIROGRAFARIOS", "APORT_IESS_CONYUGE", "PENSION_ALIMENTICIA",
     "PRESTAMO_HIPOTECARIO", "ANTICIPOS_SURTIDOS",
 }
 CONCEPTOS_BASE = [100, 102, 110, 113, 114, 115]  # SUELDO+BONIF+MANIOBRAS+SOBRETIEMPOS
-CONCEPTOS_BASE_SIN_SOBT = [100, 102, 110]
 IESS_PCT = 0.0945
 FONDO_RESERVA_PCT = 0.0833
+# Umbral (días) y divisor del split de anticipos (ANTICIPOS_OTROS_L / ANTICIPO_L_DESAHUCIO).
+ANTICIPO_DIAS_UMBRAL = 90
+ANTICIPO_DIVISOR = 3.75
+# Días base de vacaciones (Art. 69 Código del Trabajo) usados para prorratear
+# un goce PARCIAL ya registrado en vac_registros (ver `_prorratear_por_goce`).
+VACACIONES_DIAS_BASE = 15
 
 SBU_DEFECTO = {
     "2020": 400.0, "2021": 400.0, "2022": 425.0, "2023": 450.0,
@@ -92,48 +101,98 @@ def _ultimo_dia(anio: int, mes: int) -> int:
     return calendar.monthrange(anio, mes)[1]
 
 
+def _dia_ajustado(anio: int, mes: int, dia: int) -> int:
+    """Ajusta el día si el mes de ese año no lo tiene (ej. 29 de febrero en
+    año no bisiesto)."""
+    return min(dia, _ultimo_dia(anio, mes))
+
+
 def periodos_vacaciones(fecha_ing: dt.date, fecha_sal: dt.date) -> list[tuple[dt.date, dt.date]]:
-    """Últimos 2 periodos anuales según el mes de ingreso (01/mes_ing → fin mes anterior)."""
-    mes_inicio = fecha_ing.month
-    if fecha_sal.month > mes_inicio or (fecha_sal.month == mes_inicio and fecha_sal.day >= 1):
-        anio_ultimo = fecha_sal.year
-    else:
-        anio_ultimo = fecha_sal.year - 1
-    out = []
-    for i in range(1, -1, -1):
-        ap = anio_ultimo - i
-        inicio = dt.date(ap, mes_inicio, 1)
-        if mes_inicio == 1:
-            fin = dt.date(ap, 12, 31)
-        else:
-            fin = dt.date(ap + 1, mes_inicio - 1, _ultimo_dia(ap + 1, mes_inicio - 1))
+    """TODOS los periodos de vacaciones vencidos/vigentes desde el ingreso
+    hasta la salida -- las vacaciones NO caducan en Ecuador, se acumulan y
+    deben liquidarse TODAS (no solo los últimos 2; ver `total_vacaciones_a_pagar`
+    más abajo, que sí suma todos los períodos con saldo).
+
+    CORREGIDO (respecto de la extracción inicial de este archivo, que ancla
+    en el DÍA 1 del mes de ingreso): el periodo ahora ancla en el DÍA EXACTO
+    de ingreso (aniversario real). Alguien que ingresó el 15/03/2020 tiene su
+    periodo real 15/03/2024 → 14/03/2025, no 01/03/2024 → 28/02/2025 -- una
+    diferencia de ~2 semanas que corre qué meses de sueldo entran en cada
+    periodo, y que puede no coincidir con la etiqueta real ya registrada en
+    `vac_registros` (ver `vacaciones_pagadas`/`vacaciones_gozadas`).
+
+    Retorna [(inicio1, fin1), ...] del más antiguo al más reciente. Cada
+    tupla ya viene recortada a [fecha_ing, fecha_sal] (reingreso: si esta
+    persona reingresó a mitad de un periodo anual, el inicio real a
+    considerar es su fecha de ingreso ACTUAL, no el aniversario calendario).
+    """
+    mes_inicio, dia_inicio = fecha_ing.month, fecha_ing.day
+
+    dia_aniv_este_anio = _dia_ajustado(fecha_sal.year, mes_inicio, dia_inicio)
+    aniv_este_anio = dt.date(fecha_sal.year, mes_inicio, dia_aniv_este_anio)
+    anio_ultimo = fecha_sal.year if fecha_sal >= aniv_este_anio else fecha_sal.year - 1
+
+    out: list[tuple[dt.date, dt.date]] = []
+    for i in range(59, -1, -1):  # hasta 60 periodos atrás (60 años); el filtro
+        anio_periodo = anio_ultimo - i  # de abajo descarta los que no aplican
+        dia_ini = _dia_ajustado(anio_periodo, mes_inicio, dia_inicio)
+        inicio = dt.date(anio_periodo, mes_inicio, dia_ini)
+        dia_fin = _dia_ajustado(anio_periodo + 1, mes_inicio, dia_inicio)
+        fin = dt.date(anio_periodo + 1, mes_inicio, dia_fin) - dt.timedelta(days=1)
         if fin >= fecha_ing and inicio <= fecha_sal:
-            out.append((inicio, fin))
+            out.append((max(inicio, fecha_ing), min(fin, fecha_sal)))
     return out
 
 
 def periodos_decima_tercera(fecha_ing: dt.date, fecha_sal: dt.date) -> list[tuple[dt.date, dt.date, bool]]:
-    """01/12 año-1 → 30/11 año. `pagado` = la fecha de pago (24/12) ya pasó antes de salir."""
+    """01/12 año-1 → 30/11 año (últimos 2 periodos). `pagado` = la fecha de
+    pago (24/12) ya pasó antes de salir.
+
+    CORREGIDO: cada tupla se recorta a [fecha_ing, fecha_sal] -- antes, un
+    reingreso a mitad del periodo calendario (01/12 → 30/11) sumaba
+    movimientos desde el 01/12 aunque esa persona hubiera reingresado
+    después, inflando la Décima Tercera con sueldo de un ingreso anterior ya
+    liquidado por separado.
+    """
     out = []
     for i in range(1, -1, -1):
         af = fecha_sal.year - i
         inicio, fin = dt.date(af - 1, 12, 1), dt.date(af, 11, 30)
         if fin >= fecha_ing and inicio <= fecha_sal:
-            out.append((inicio, fin, dt.date(af, 12, 24) < fecha_sal))
+            pagado = dt.date(af, 12, 24) < fecha_sal
+            out.append((max(inicio, fecha_ing), min(fin, fecha_sal), pagado))
     return out
 
 
 def periodos_decima_cuarta(
     fecha_ing: dt.date, fecha_sal: dt.date, region: str = "COSTA"
 ) -> list[tuple[dt.date, dt.date, bool]]:
-    """COSTA: 01/03 → 28-29/02 (pago 15/03). SIERRA: 01/08 → 31/07 (pago 15/08)."""
-    mes_inicio, mes_fin, dia_pago_mes = (3, 2, 3) if region == "COSTA" else (8, 7, 8)
+    """Los últimos 2 periodos (anterior + actual), igual que décima tercera.
+    COSTA: 01/03 → 28/29-02. SIERRA: 01/08 → 31/07.
+
+    CORREGIDO (bug real de la extracción inicial de este archivo, que
+    recorría TODOS los años desde el ingreso -- para alguien con varios años
+    de antigüedad esto inflaba el valor absurdamente sumando periodos ya
+    pagados año a año en su momento): ahora solo se consideran los últimos 2
+    periodos, anclados en la fecha de salida.
+
+    CORREGIDO también el criterio de "pagado": antes comparaba contra la
+    fecha LEGAL de pago (15/03 o 15/08); un periodo se considera "pagado" si
+    simplemente ya terminó antes de la fecha de salida -- confirmado contra
+    actas de finiquito reales, la empresa liquida el periodo anterior en
+    nómina regular ANTES de esa fecha legal, no en ella.
+    """
+    mes_inicio, mes_fin = (3, 2) if region == "COSTA" else (8, 7)
+
+    anio_base_actual = fecha_sal.year if fecha_sal.month >= mes_inicio else fecha_sal.year - 1
+
     out = []
-    for anio_base in range(fecha_ing.year - 1, fecha_sal.year + 2):
+    for i in range(1, -1, -1):  # i=1 (anterior), i=0 (actual)
+        anio_base = anio_base_actual - i
         inicio = dt.date(anio_base, mes_inicio, 1)
         fin = dt.date(anio_base + 1, mes_fin, _ultimo_dia(anio_base + 1, mes_fin))
         if fin >= fecha_ing and inicio <= fecha_sal:
-            pagado = dt.date(fin.year, dia_pago_mes, 15) < fecha_sal
+            pagado = fin < fecha_sal
             out.append((inicio, fin, pagado))
     return out
 
@@ -232,6 +291,159 @@ def _suma_base(empleado: str, inicio: dt.date, fin: dt.date, fuente: str) -> flo
     return round(total, 2)
 
 
+# ── Vacaciones ya pagadas/gozadas (Supabase `vac_registros`) ────────────────
+# Antes de contar un periodo de vacaciones como "pendiente", se verifica si ya
+# existe un registro en `vac_registros` (proyecto VACACIONES_SISTEMA_INSEVIG,
+# misma base Supabase) que indique que ya se pagó o que el empleado ya salió
+# de descanso esos días -- si no se revisa esto, la liquidación puede volver a
+# pagar en efectivo un periodo ya cubierto (doble pago real, caso confirmado
+# en producción). Si Supabase no responde, se degrada de forma segura: se
+# devuelve `None` (no un dict vacío) para que el llamador NO descarte ningún
+# periodo por falta de verificación, no porque conste que no está pagado.
+
+
+def _etiqueta_periodo(inicio: dt.date) -> str:
+    """Etiqueta 'YYYY-YYYY' de un periodo a partir de su fecha de INICIO
+    real -- nunca del año de "fin" (que puede venir recortado a la fecha de
+    salida, corrompiendo el año en un periodo que cruza fin de año)."""
+    return f"{inicio.year}-{inicio.year + 1}"
+
+
+def vacaciones_pagadas(cedula: str) -> dict[str, bool] | None:
+    """{periodo: True/False} -- True si ese periodo ya se pagó de verdad
+    (estado_doc='completado', o estado_doc nulo con valor_vacaciones>0,
+    caso de importaciones históricas). `None` si no se pudo verificar."""
+    ced = normalizar_cedula(cedula)
+    try:
+        sb = supabase_client.get_client()
+        r = (
+            sb.table("vac_registros")
+            .select("periodo,estado_doc,valor_vacaciones")
+            .eq("cedula", ced)
+            .eq("tipo", "pagada")
+            .execute()
+        )
+    except Exception:  # noqa: BLE001 - degradar sin bloquear la liquidación
+        return None
+    registros: dict[str, bool] = {}
+    for fila in r.data or []:
+        periodo = fila.get("periodo")
+        if not periodo:
+            continue
+        estado = fila.get("estado_doc")
+        valor = a_float(fila.get("valor_vacaciones"))
+        ya_pagado = (estado == "completado") or (not estado and valor > 0)
+        registros[periodo] = registros.get(periodo, False) or ya_pagado
+    return registros
+
+
+def vacaciones_gozadas(cedula: str) -> dict[str, float] | None:
+    """{periodo: dias_tomados_total} (tipo='gozada', estado_doc='completado').
+    `None` si no se pudo verificar."""
+    ced = normalizar_cedula(cedula)
+    try:
+        sb = supabase_client.get_client()
+        r = (
+            sb.table("vac_registros")
+            .select("periodo,dias_tomados")
+            .eq("cedula", ced)
+            .eq("tipo", "gozada")
+            .eq("estado_doc", "completado")
+            .execute()
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    dias_por_periodo: dict[str, float] = {}
+    for fila in r.data or []:
+        periodo = fila.get("periodo")
+        if periodo:
+            dias_por_periodo[periodo] = dias_por_periodo.get(periodo, 0) + a_float(fila.get("dias_tomados"))
+    return dias_por_periodo
+
+
+@dataclass
+class DetalleVacacionesPeriodo:
+    periodo: str
+    estado: str  # PAGADO | GOZADO_COMPLETO | GOZADO_PARCIAL | PENDIENTE | SIN_SALDO | SIN_VERIFICAR
+    dias_gozados: float
+    monto_bruto: float
+    incluido: bool
+
+
+def total_vacaciones_a_pagar(
+    cedula: str, sumatorias_brutas: list[float], periodos: list[tuple[dt.date, dt.date]]
+) -> tuple[float, list[str], list[DetalleVacacionesPeriodo]]:
+    """Del total bruto de CADA periodo (`sumatorias_brutas`, paralelo a
+    `periodos`), descarta los que `vac_registros` marca como ya pagados o ya
+    gozados (≥15 días: derecho base, Art. 69 CT), prorratea un goce PARCIAL
+    (< 15 días), y suma TODOS los periodos restantes con saldo -- las
+    vacaciones no caducan, así que un periodo más antiguo que el "anterior"
+    también debe pagarse si nadie lo cubrió.
+
+    Si no se puede verificar contra `vac_registros` (Supabase no responde),
+    por seguridad SOLO se calcula automáticamente el periodo más reciente
+    (igual que el comportamiento anterior a esta verificación); cualquier
+    periodo más antiguo con saldo se dej fuera del total y se alerta para
+    revisión manual -- sumarlo a ciegas podría ser un doble pago real.
+
+    Retorna (suma_total_pendiente, alertas, detalle_por_periodo). El monto a
+    pagar es `suma_total_pendiente / 24` (lo calcula el llamador).
+    """
+    pagadas = vacaciones_pagadas(cedula)
+    gozadas = vacaciones_gozadas(cedula)
+    alertas: list[str] = []
+    detalle: list[DetalleVacacionesPeriodo] = []
+    sumatorias = list(sumatorias_brutas)
+
+    if pagadas is None or gozadas is None:
+        for idx, (inicio, _fin) in enumerate(periodos):
+            label = _etiqueta_periodo(inicio)
+            es_ultimo = idx == len(periodos) - 1
+            bruto = sumatorias_brutas[idx]
+            if not es_ultimo and bruto > 0:
+                alertas.append(
+                    f"Periodo {label} NO se incluyó automáticamente (no se pudo verificar "
+                    f"contra vac_registros si ya fue pagado/gozado) -- monto potencial "
+                    f"${bruto / 24:.2f}. Revisar manualmente antes de agregarlo."
+                )
+                sumatorias[idx] = 0.0
+                detalle.append(DetalleVacacionesPeriodo(label, "SIN_VERIFICAR", 0.0, bruto, False))
+            else:
+                detalle.append(DetalleVacacionesPeriodo(
+                    label, "PENDIENTE" if bruto > 0 else "SIN_SALDO", 0.0, bruto, bruto > 0))
+        return round(sum(sumatorias), 2), alertas, detalle
+
+    for idx, (inicio, _fin) in enumerate(periodos):
+        label = _etiqueta_periodo(inicio)
+        bruto = sumatorias_brutas[idx]
+        ya_pagado = pagadas.get(label, False)
+        dias_gozados = gozadas.get(label, 0.0)
+
+        if ya_pagado and bruto > 0:
+            sumatorias[idx] = 0.0
+            detalle.append(DetalleVacacionesPeriodo(label, "PAGADO", dias_gozados, bruto, False))
+        elif dias_gozados >= VACACIONES_DIAS_BASE and bruto > 0:
+            sumatorias[idx] = 0.0
+            detalle.append(DetalleVacacionesPeriodo(label, "GOZADO_COMPLETO", dias_gozados, bruto, False))
+        elif dias_gozados > 0 and bruto > 0:
+            # Goce PARCIAL: se paga solo (15 - dias_gozados) de los 15 días base.
+            dias_pendientes = max(0, VACACIONES_DIAS_BASE - dias_gozados)
+            factor = dias_pendientes / VACACIONES_DIAS_BASE
+            monto_reducido = round(bruto * factor, 2)
+            sumatorias[idx] = monto_reducido
+            alertas.append(
+                f"Periodo {label}: {dias_gozados:g} día(s) ya gozados (parcial) -- se "
+                f"prorratea a los {dias_pendientes:g} día(s) pendientes: ${monto_reducido:.2f} "
+                f"de ${bruto:.2f}."
+            )
+            detalle.append(DetalleVacacionesPeriodo(label, "GOZADO_PARCIAL", dias_gozados, monto_reducido, True))
+        else:
+            detalle.append(DetalleVacacionesPeriodo(
+                label, "PENDIENTE" if bruto > 0 else "SIN_SALDO", dias_gozados, bruto, bruto > 0))
+
+    return round(sum(sumatorias), 2), alertas, detalle
+
+
 # ── Empleado ────────────────────────────────────────────────────────────────
 
 
@@ -286,6 +498,7 @@ class Liquidacion:
     motivo_salida: str
     dias_trabajados: int
     campos: dict[str, float] = field(default_factory=dict)
+    alertas: list[str] = field(default_factory=list)
     error: str = ""
 
 
@@ -303,7 +516,19 @@ def _parse_linea(linea: str) -> tuple[str, str, str, str] | None:
 def procesar_empleado(
     cedula: str, fecha_salida: str, motivo: str, fuente: str, cfg: ConfigLiquidacion,
     fecha_ingreso: str = "",
+    *,
+    incluir_dec13_anterior: bool = True,
+    incluir_dec14_anterior: bool = True,
 ) -> Liquidacion:
+    """Procesa un empleado y arma su liquidación.
+
+    `incluir_dec13_anterior`/`incluir_dec14_anterior` (default `True`, mismo
+    comportamiento que antes de exponer el parámetro): si el décimo tercero
+    o cuarto del periodo ANTERIOR ya se pagó por otra vía (nómina regular) y
+    no debe volver a sumarse aquí, se pasa `False` -- entonces ese valor
+    queda en `campos["DECIMA_TERCERA_ANTERIOR"]` como referencia informativa
+    (se sigue calculando y mostrando la cifra) pero NO se suma a los totales.
+    """
     emp = _empleado(cedula, fuente)
     ced = normalizar_cedula(cedula)
     if emp is None:
@@ -330,14 +555,14 @@ def procesar_empleado(
         y_ant = fsal.year - 1 if fsal.month == 1 else fsal.year
         movs, _origen = movimientos_mes(cod, y_ant, m_ant, fuente)
 
-    val: dict[str, float] = {c: 0.0 for c in set(MAPEO_CONCEPTOS.values())}
+    val: dict[str, float] = dict.fromkeys(set(CLASE_A_CONCEPTO.values()), 0.0)
     val["ANTICIPOS_OTROS_L"] = val["ANTICIPO_L_DESAHUCIO"] = val["INDEM_DESPIDO"] = 0.0
     dias_mov = 0.0
     for mv in movs:
         c = mv["clase"]
-        if c in CODIGOS_IGNORAR:
+        if c in CLASES_IGNORADAS:
             continue
-        concepto = MAPEO_CONCEPTOS.get(c)
+        concepto = CLASE_A_CONCEPTO.get(c)
         if concepto is None:
             if mv["codigo"] == "EGR":
                 val["ANTICIPOS_SURTIDOS"] += round(mv["valor"], 2)
@@ -358,26 +583,48 @@ def procesar_empleado(
             continue
         sin_datos = 0
         for mv in futuros:
-            concepto = MAPEO_CONCEPTOS.get(mv["clase"])
+            concepto = CLASE_A_CONCEPTO.get(mv["clase"])
             if concepto in DESCUENTOS_MULTI_MES:
                 val[concepto] += round(mv["valor"], 2)
 
-    # 3. Sobretiempos desde RPEMPLEA si no vinieron en movimientos
-    h25, h50, h100 = a_int(emp.get("HOR25")), a_int(emp.get("HOR50")), a_int(emp.get("HOR100"))
-    if sueldo > 0 and val["SOBRETIEMPO_25"] == 0:
-        if h25:
-            val["SOBRETIEMPO_25"] = round((sueldo / 240) * 0.25 * h25, 2)
-        if h50:
-            val["SOBRETIEMPO_50"] = round((sueldo / 240) * 1.5 * h50, 2)
-        if h100:
-            val["SOBRETIEMPO_100"] = round((sueldo / 240) * 2.0 * h100, 2)
+    # 3. Horas de sobretiempo: si YA vino un valor $ real en los movimientos,
+    # las horas se derivan de ESE $ (redondeando) y el $ final se RECALCULA
+    # desde esas horas enteras -- no se deja el $ real con su propio
+    # redondeo de nómina, que puede no cuadrar con la fórmula del MRL
+    # (corregido; antes las "horas" mostradas venían siempre de RPEMPLEA,
+    # sin relación con el $ real ya sumado -- podían no coincidir entre sí).
+    # Si NO vino un $ real, se usa el cupo asignado en RPEMPLEA (HOR25/50/100)
+    # como estimación -- mismo comportamiento que antes.
+    h25 = h50 = h100 = 0
+    if sueldo > 0:
+        valor_hora = sueldo / 240
+        if val["SOBRETIEMPO_25"] > 0:
+            h25 = int(round(val["SOBRETIEMPO_25"] / (valor_hora * 0.25)))
+            val["SOBRETIEMPO_25"] = round(valor_hora * 0.25 * h25, 2)
+        elif a_int(emp.get("HOR25")):
+            h25 = a_int(emp.get("HOR25"))
+            val["SOBRETIEMPO_25"] = round(valor_hora * 0.25 * h25, 2)
+        if val["SOBRETIEMPO_50"] > 0:
+            h50 = int(round(val["SOBRETIEMPO_50"] / (valor_hora * 1.5)))
+            val["SOBRETIEMPO_50"] = round(valor_hora * 1.5 * h50, 2)
+        elif a_int(emp.get("HOR50")):
+            h50 = a_int(emp.get("HOR50"))
+            val["SOBRETIEMPO_50"] = round(valor_hora * 1.5 * h50, 2)
+        if val["SOBRETIEMPO_100"] > 0:
+            h100 = int(round(val["SOBRETIEMPO_100"] / (valor_hora * 2.0)))
+            val["SOBRETIEMPO_100"] = round(valor_hora * 2.0 * h100, 2)
+        elif a_int(emp.get("HOR100")):
+            h100 = a_int(emp.get("HOR100"))
+            val["SOBRETIEMPO_100"] = round(valor_hora * 2.0 * h100, 2)
 
-    # 4. Vacaciones (últimos 2 periodos; calc = último / 24)
+    # 4. Vacaciones: TODOS los periodos pendientes (no caducan), descartando
+    # los ya pagados/gozados según `vac_registros` (ver total_vacaciones_a_pagar).
     pv = periodos_vacaciones(fing, fsal)
-    sumatorias = [_suma_base(cod, i, f, fuente) for i, f in pv]
-    vac_ant = sumatorias[0] if len(sumatorias) >= 2 else 0.0
-    vac_ult = sumatorias[-1] if sumatorias else 0.0
-    vac_calc = round(vac_ult / 24, 2) if vac_ult > 0 else 0.0
+    sumatorias_brutas = [_suma_base(cod, i, f, fuente) for i, f in pv]
+    vac_ant = sumatorias_brutas[-2] if len(sumatorias_brutas) >= 2 else 0.0
+    vac_ult = sumatorias_brutas[-1] if sumatorias_brutas else 0.0
+    suma_pendiente, alertas_vac, _detalle_vac = total_vacaciones_a_pagar(ced, sumatorias_brutas, pv)
+    vac_calc = round(suma_pendiente / 24, 2) if suma_pendiente > 0 else 0.0
 
     # 5. Décima tercera (total periodo / 12)
     d13_ant = d13_act = 0.0
@@ -393,13 +640,10 @@ def procesar_empleado(
     d14_ant = d14_act = 0.0
     for i, f, pagado in periodos_decima_cuarta(fing, fsal, cfg.region):
         sbu = cfg.sbu(f.year)
-        base_ini = fing if fing > i else i
-        d360 = dias360(base_ini, fsal)
-        dias_base = d360 + 1
-        ajuste_feb = 0
-        if fsal.month == 2 and (fsal + dt.timedelta(days=1)).month == 3:
-            ajuste_feb = 30 - fsal.day
-        dec = round((dias_base + ajuste_feb) * (sbu / 360), 2)
+        fecha_inicio_efectiva = max(fing, i)
+        fecha_fin_efectiva = min(fsal, f)
+        dias_periodo = dias360(fecha_inicio_efectiva, fecha_fin_efectiva) + 1
+        dec = round((sbu / 360) * dias_periodo, 2)
         if pagado:
             d14_ant += dec
         else:
@@ -422,20 +666,29 @@ def procesar_empleado(
     # 10. Indemnización por despido
     indem = indemnizacion_despido(fing, fsal, sueldo, motivo)
 
-    # 11. Split de anticipos si días < 90
-    total_liq = vac_calc + d13_act + d14_act + des
+    # 11. Split de anticipos si días < umbral (base: solo lo que SÍ se paga:
+    # vacaciones + décimos ACTUALES + desahucio -- el anterior, si se incluye,
+    # no entra en esta base, igual que en el .pyw de producción).
+    total_liq_base_split = vac_calc + d13_act + d14_act + des
     ant_otros_l = ant_l_des = 0.0
-    if dias_trab < 90:
-        if total_liq > 0:
-            ant_otros_l = float(int(total_liq / 3.75))
+    if dias_trab < ANTICIPO_DIAS_UMBRAL:
+        if total_liq_base_split > 0:
+            ant_otros_l = float(int(total_liq_base_split / ANTICIPO_DIVISOR))
         if des > 0:
-            ant_l_des = float(int(des / 3.75))
+            ant_l_des = float(int(des / ANTICIPO_DIVISOR))
 
-    # 12. Totales
+    # 12. Totales. CORREGIDO: el décimo ANTERIOR (13ro y 14to) se incluye por
+    # defecto en el total -- la extracción inicial de este archivo lo omitía
+    # siempre (subpagaba la liquidación en cualquier caso con décimo anterior
+    # pendiente). Se puede excluir explícitamente con
+    # incluir_dec13_anterior/incluir_dec14_anterior=False (ver docstring).
+    dec13_ant_incluido = d13_ant if incluir_dec13_anterior else 0.0
+    dec14_ant_incluido = d14_ant if incluir_dec14_anterior else 0.0
     total_ingresos = round(
         val["SUELDO"] + val["BONIFICACION"] + val["MANIOBRAS"] + val["MOVILIZACION"]
         + val["REEMBOLSOS"] + val["SOBRETIEMPO_25"] + val["SOBRETIEMPO_50"] + val["SOBRETIEMPO_100"]
-        + fondo_reserva + vac_calc + d13_act + d14_act + des + indem, 2,
+        + fondo_reserva + vac_calc + dec13_ant_incluido + d13_act
+        + dec14_ant_incluido + d14_act + des + indem, 2,
     )
     total_descuentos = round(
         val["ANTICIPOS_SURTIDOS"] + val["PRESTAMOS_COMPANIA"] + val["ANTICIPOS_OTROS"]
@@ -470,7 +723,7 @@ def procesar_empleado(
         cargo=str(emp.get("CARGO") or ""), depto=str(emp.get("DEPTO") or ""),
         seccion=str(emp.get("SECCION") or ""), sueldo_base=sueldo,
         fecha_ingreso=str(fing), fecha_salida=str(fsal), motivo_salida=motivo,
-        dias_trabajados=dias_trab, campos=campos,
+        dias_trabajados=dias_trab, campos=campos, alertas=alertas_vac,
     )
 
 

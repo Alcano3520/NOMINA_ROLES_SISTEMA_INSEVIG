@@ -4,6 +4,16 @@ Pegar en el chat que trabaja cada módulo Tkinter suelto (roles/, prestamos/,
 envio_roles/, SACAR_SEC/, `HISTORIAL PRESTAMOS/`, `TOTAL_OSERVACIONES/`, etc.).
 Cambiar solo la línea "Módulo:" al inicio.
 
+⚠️ **NO usar este prompt para las 5 apps Tkinter externas grandes**
+(`VACACIONES_SISTEMA_INSEVIG`, `LIQUIDACIONES_SISTEMA_INSEVIG`,
+`BITACORAS_AGENDA_EGRESOS_FORMATOS`, `sistema_sanciones_RRHH`, `CAMBIO_VALOR_TXT`)
+— esas siguen el prompt maestro de migración (tabla de 5 módulos, fases 0-4,
+`core/repos/<mod>.py` directo o trasplante de su propio `nucleo_modular/`), no
+este. Este prompt es solo para módulos sueltos *dentro* de este mismo repo
+(`NOMINA_ROLES_SISTEMA_INSEVIG/`) que aún no tienen paquete Python separado de
+Tkinter. Confundir los dos hace que se cree un `nucleo_modular/` que después
+hay que descartar, porque esas 5 apps van directo a `core/` del repo destino.
+
 ---
 
 Módulo: `<ruta de la carpeta de este módulo, ej. HISTORIAL PRESTAMOS/>`
