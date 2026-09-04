@@ -9,14 +9,18 @@ Estado: **puerto completo de REGISTRAR_PRESTAMOS_UNIFICADO.pyw** (6 pestañas).
    se muestra el **panel "carga programada"** (deducciones ya agendadas por mes). La
    **vista previa de cuotas es editable** (valor y fecha por fila, con total en vivo)
    → registrar (una fila RPINGDES por cuota, nº desde RPCONTRL.ULT_EGR).
-2. **Carga masiva de préstamos** — pegar "cédula, valor, nº cuotas, fecha" por línea
-   → previsualizar (resuelve empleado) → aplicar como Job, CSV de resultados.
+2. **Carga masiva de préstamos** — **grilla editable** (como el grid del legado):
+   se pega desde Excel en el cuadro superior (acepta TSV / `;` / `|` / `,`), "Cargar
+   en la tabla" vuelca a filas editables celda por celda, "Validar" resuelve el
+   nombre por código/cédula y marca ✓ las filas listas, "Registrar todo" corre el
+   Job (CSV de resultados). Modo nº-de-cuotas o cuota-mensual (`cuotas_tradicional`
+   / `cuotas_por_valor`).
 3. **Egresos / Ingresos** — registrar un movimiento de cualquier tipo de
    `CLASES_SIMPLIFICADAS` (multas 203, anticipos 202/217, pensión 206, hipotecario 207,
    IESS cónyuge 218, renta 219, surtidos 250, bonificación 102, maniobras 110,
-   reembolsos 111, movilización 120) — `registrar_movimiento`. Incluye una
-   **carga masiva** propia (`_bulk_egr_ing`): pegar "cédula, clase, valor, fecha,
-   observación" → preview con validación → Job + CSV.
+   reembolsos 111, movilización 120) — `registrar_movimiento`. Incluye la misma
+   **grilla editable + pegar de Excel** (`_bulk_egr_ing`, columnas código/clase/valor/
+   fecha/observación) con Validar + Job + CSV.
 4. (unificada con la 3 en la web)
 5. **BIESS quirografarios** — Excel → CLASE 204, empareja por cédula, vista previa
    con dedupe, confirmar. `preparar_biess` / `postear`. (Falta: override manual de

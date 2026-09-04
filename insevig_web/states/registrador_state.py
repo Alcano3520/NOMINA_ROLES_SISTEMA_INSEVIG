@@ -33,6 +33,26 @@ def _periodo() -> str:
     return dt.date.today().strftime("%Y-%m")
 
 
+def _split_linea(ln: str) -> list[str]:
+    """Divide una línea pegada (TSV de Excel, o ; | , ) en celdas."""
+    for sep in ("\t", ";", "|"):
+        if sep in ln:
+            return [x.strip() for x in ln.split(sep)]
+    if ln.count(",") >= 2:
+        return [x.strip() for x in ln.split(",")]
+    return [ln.strip()]
+
+
+def _fila_pm() -> dict:
+    return {"codigo": "", "nombre": "", "empleado": "", "valor_total": "",
+            "cuotas_valor": "", "fecha": _hoy(), "observacion": "", "valido": False}
+
+
+def _fila_bi() -> dict:
+    return {"codigo": "", "nombre": "", "empleado": "", "clase": "203", "valor": "",
+            "fecha": _hoy(), "observacion": "", "valido": False}
+
+
 class RegistradorState(rx.State):
     tab: str = "prestamo"
     error: str = ""
@@ -198,65 +218,126 @@ class RegistradorState(rx.State):
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
 
-    # ── 2. Carga masiva de préstamos ─────────────────────────────────────
-    masiva_texto: str = ""
-    masiva_filas: list[dict] = []   # {'cedula','valor','cuotas','fecha','empleado','nombre','estado'}
+    # ── 2. Carga masiva de préstamos (grilla editable + pegar de Excel) ──
+    pm_modo: str = "cuotas"          # "cuotas" (nº de cuotas) | "valor" (cuota mensual)
+    pm_pegar: str = ""
+    pm_grid: list[dict] = []         # filas editables
     masiva_job: int = 0
     masiva_status: str = ""
     masiva_msg: str = ""
     masiva_path: str = ""
 
     @rx.event
-    def set_masiva_texto(self, v: str):
-        self.masiva_texto = v
+    def set_pm_modo(self, v: str):
+        self.pm_modo = v
 
     @rx.event
-    async def previsualizar_masiva(self):
+    def set_pm_pegar(self, v: str):
+        self.pm_pegar = v
+
+    @rx.event
+    def pm_nueva_fila(self):
+        self.pm_grid = [*self.pm_grid, _fila_pm()]
+
+    @rx.event
+    def pm_quitar_fila(self, idx: int):
+        self.pm_grid = [r for i, r in enumerate(self.pm_grid) if i != idx]
+
+    @rx.event
+    def pm_limpiar(self):
+        self.pm_grid = []
+        self.masiva_job = 0
+        self.masiva_status = self.masiva_msg = self.masiva_path = ""
+
+    @rx.event
+    def pm_set_celda(self, idx: int, campo: str, v: str):
+        g = list(self.pm_grid)
+        if 0 <= idx < len(g):
+            g[idx] = {**g[idx], campo: v, "valido": False, "nombre": ""}
+            self.pm_grid = g
+
+    @rx.event
+    def pm_cargar_pegado(self):
+        """Convierte lo pegado (TSV de Excel, o ; | , ) en filas de la grilla."""
+        campos = ("codigo", "valor_total", "cuotas_valor", "fecha", "observacion")
+        filas = []
+        for ln in self.pm_pegar.splitlines():
+            if not ln.strip():
+                continue
+            partes = _split_linea(ln)
+            fila = _fila_pm()
+            for j, c in enumerate(campos):
+                if j < len(partes) and partes[j]:
+                    fila[c] = partes[j]
+            filas.append(fila)
+        if filas:
+            self.pm_grid = filas
+            self.pm_pegar = ""
+
+    @rx.event
+    async def pm_validar(self):
         from core.repos import observaciones
 
         self.error = ""
         fuente = await self._fuente()
-        filas: list[dict] = []
-        for ln in self.masiva_texto.splitlines():
-            p = [x.strip() for x in ln.split(",")]
-            if len(p) < 3 or not p[0]:
-                continue
-            filas.append({"cedula": p[0], "valor": p[1], "cuotas": p[2],
-                          "fecha": p[3] if len(p) > 3 else _hoy()})
-        # resolver empleado por cédula/código
-        def _resolver():
-            out = []
-            for f in filas:
-                r = observaciones.buscar_empleados(f["cedula"], fuente)
-                e = r[0] if r else None
-                out.append({**f,
-                            "empleado": e["empleado"] if e else "",
-                            "nombre": e["apellidos_nombres"] if e else "(no encontrado)"})
-            return out
+        codigos = sorted({str(r["codigo"]).strip() for r in self.pm_grid if str(r["codigo"]).strip()})
 
-        self.masiva_filas = await asyncio.to_thread(_resolver)
+        def _resolver():
+            cache = {}
+            for c in codigos:
+                r = observaciones.buscar_empleados(c, fuente)
+                cache[c] = r[0] if r else None
+            return cache
+
+        cache = await asyncio.to_thread(_resolver)
+        nueva = []
+        for r in self.pm_grid:
+            cod = str(r["codigo"]).strip()
+            e = cache.get(cod)
+            tiene_datos = bool(str(r["valor_total"]).strip()) and bool(str(r["cuotas_valor"]).strip())
+            nueva.append({
+                **r,
+                "empleado": e["empleado"] if e else "",
+                "nombre": (e["apellidos_nombres"] if e else ("NO ENCONTRADO" if cod else "")),
+                "valido": bool(e) and tiene_datos,
+            })
+        self.pm_grid = nueva
 
     @rx.event
     async def aplicar_masiva(self):
         auth = await self.get_state(AuthState)
         if "registrador:registrar_rpingdes" not in auth.permisos_flat:
             return rx.toast.error("Sin permiso.")
-        filas = [f for f in self.masiva_filas if f["empleado"]]
+        filas = [f for f in self.pm_grid if f.get("valido") and f.get("empleado")]
+        if not filas:
+            return rx.toast.error("Valida primero: no hay filas listas.")
+        modo = self.pm_modo
         usuario, roles = auth.username, set(auth.roles)
 
         def _fn(ctx):
+            import csv
+            import io
+
             from core import storage
-            from core.repos.registrador import Cuota, cuotas_tradicional, registrar_prestamo
+            from core.repos.registrador import (
+                Cuota,
+                cuotas_por_valor,
+                cuotas_tradicional,
+                registrar_prestamo,
+            )
 
             res = []
             for i, f in enumerate(filas, 1):
                 try:
-                    total = float(f["valor"])
-                    n = int(f["cuotas"])
-                    fecha = dt.date.fromisoformat(f["fecha"])
-                    cuotas = cuotas_tradicional(total, n, fecha)
+                    total = float(f["valor_total"])
+                    fecha = dt.date.fromisoformat(str(f["fecha"])[:10])
+                    if modo == "valor":
+                        cuotas, _aviso = cuotas_por_valor(total, float(f["cuotas_valor"]), fecha)
+                    else:
+                        cuotas = cuotas_tradicional(total, int(float(f["cuotas_valor"])), fecha)
                     r = registrar_prestamo(
-                        f["empleado"], total, f["fecha"], "CARGA MASIVA",
+                        f["empleado"], round(sum(c.valor for c in cuotas), 2),
+                        fecha.isoformat(), (f.get("observacion") or "CARGA MASIVA"),
                         [Cuota(c.secuencia, c.fecha_vencimiento, c.valor) for c in cuotas],
                         usuario=usuario, roles=roles, dry_run=False,
                     )
@@ -264,8 +345,6 @@ class RegistradorState(rx.State):
                 except Exception as e:  # noqa: BLE001
                     res.append({"empleado": f["empleado"], "ok": False, "detalle": str(e)[:150]})
                 ctx.progreso(i, len(filas), f"{i}/{len(filas)}")
-            import csv
-            import io
             buf = io.StringIO()
             w = csv.DictWriter(buf, fieldnames=["empleado", "ok", "detalle"])
             w.writeheader()
@@ -450,59 +529,91 @@ class RegistradorState(rx.State):
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
 
-    # ── 4b. Carga masiva de egresos / ingresos (cualquier tipo) ─────────
-    bulk_texto: str = ""
-    bulk_filas: list[dict] = []
+    # ── 4b. Carga masiva de egresos / ingresos (grilla editable) ────────
+    bulk_pegar: str = ""
+    bulk_grid: list[dict] = []
     bulk_job: int = 0
     bulk_status: str = ""
     bulk_msg: str = ""
     bulk_path: str = ""
 
     @rx.event
-    def set_bulk_texto(self, v: str):
-        self.bulk_texto = v
+    def set_bulk_pegar(self, v: str):
+        self.bulk_pegar = v
 
     @rx.event
-    async def previsualizar_bulk(self):
+    def bulk_nueva_fila(self):
+        self.bulk_grid = [*self.bulk_grid, _fila_bi()]
+
+    @rx.event
+    def bulk_quitar_fila(self, idx: int):
+        self.bulk_grid = [r for i, r in enumerate(self.bulk_grid) if i != idx]
+
+    @rx.event
+    def bulk_limpiar(self):
+        self.bulk_grid = []
+        self.bulk_job = 0
+        self.bulk_status = self.bulk_msg = self.bulk_path = ""
+
+    @rx.event
+    def bulk_set_celda(self, idx: int, campo: str, v: str):
+        g = list(self.bulk_grid)
+        if 0 <= idx < len(g):
+            g[idx] = {**g[idx], campo: v, "valido": False, "nombre": ""}
+            self.bulk_grid = g
+
+    @rx.event
+    def bulk_cargar_pegado(self):
+        campos = ("codigo", "clase", "valor", "fecha", "observacion")
+        filas = []
+        for ln in self.bulk_pegar.splitlines():
+            if not ln.strip():
+                continue
+            partes = _split_linea(ln)
+            fila = _fila_bi()
+            for j, c in enumerate(campos):
+                if j < len(partes) and partes[j]:
+                    fila[c] = partes[j]
+            filas.append(fila)
+        if filas:
+            self.bulk_grid = filas
+            self.bulk_pegar = ""
+
+    @rx.event
+    async def bulk_validar(self):
         from core.repos import observaciones
 
         self.error = ""
         fuente = await self._fuente()
-        base: list[dict] = []
-        for ln in self.bulk_texto.splitlines():
-            p = [x.strip() for x in ln.split(",")]
-            if len(p) < 3 or not p[0]:
-                continue
-            base.append({"cedula": p[0], "clase": p[1], "valor": p[2],
-                         "fecha": p[3] if len(p) > 3 else _hoy(),
-                         "observ": p[4] if len(p) > 4 else ""})
+        codigos = sorted({str(r["codigo"]).strip() for r in self.bulk_grid if str(r["codigo"]).strip()})
 
         def _resolver():
-            out = []
-            for f in base:
-                r = observaciones.buscar_empleados(f["cedula"], fuente)
-                e = r[0] if r else None
-                clase = f["clase"]
-                cfg = registrador.CLASES_SIMPLIFICADAS.get(clase)
-                out.append({
-                    **f,
-                    "empleado": e["empleado"] if e else "",
-                    "nombre": e["apellidos_nombres"] if e else "(no encontrado)",
-                    "tipo": registrador.NOMBRE_CLASE.get(clase, clase),
-                    "valido": bool(e) and cfg is not None,
-                })
-            return out
+            return {c: (observaciones.buscar_empleados(c, fuente) or [None])[0] for c in codigos}
 
-        self.bulk_filas = await asyncio.to_thread(_resolver)
+        cache = await asyncio.to_thread(_resolver)
+        nueva = []
+        for r in self.bulk_grid:
+            cod = str(r["codigo"]).strip()
+            e = cache.get(cod)
+            clase = str(r["clase"]).strip()
+            cfg = registrador.CLASES_SIMPLIFICADAS.get(clase)
+            nueva.append({
+                **r,
+                "empleado": e["empleado"] if e else "",
+                "nombre": (e["apellidos_nombres"] if e else ("NO ENCONTRADO" if cod else "")),
+                "tipo": registrador.NOMBRE_CLASE.get(clase, clase),
+                "valido": bool(e) and cfg is not None and bool(str(r["valor"]).strip()),
+            })
+        self.bulk_grid = nueva
 
     @rx.event
     async def aplicar_bulk(self):
         auth = await self.get_state(AuthState)
         if "registrador:registrar_rpingdes" not in auth.permisos_flat:
             return rx.toast.error("Sin permiso.")
-        filas = [f for f in self.bulk_filas if f.get("valido")]
+        filas = [f for f in self.bulk_grid if f.get("valido") and f.get("empleado")]
         if not filas:
-            return rx.toast.error("No hay filas válidas.")
+            return rx.toast.error("Valida primero: no hay filas listas.")
         usuario, roles = auth.username, set(auth.roles)
 
         def _fn(ctx):
@@ -510,14 +621,14 @@ class RegistradorState(rx.State):
             import io
 
             from core import storage
-            from core.repos.registrador import registrar_movimiento
+            from core.repos.registrador import NOMBRE_CLASE, registrar_movimiento
 
             res = []
             for i, f in enumerate(filas, 1):
                 try:
                     r = registrar_movimiento(
-                        f["empleado"], f["clase"], float(f["valor"]),
-                        f["fecha"], f.get("observ") or f["tipo"],
+                        f["empleado"], str(f["clase"]).strip(), float(f["valor"]),
+                        str(f["fecha"])[:10], f.get("observacion") or NOMBRE_CLASE.get(str(f["clase"]).strip(), ""),
                         usuario=usuario, roles=roles, dry_run=False,
                     )
                     res.append({"empleado": f["empleado"], "clase": f["clase"],

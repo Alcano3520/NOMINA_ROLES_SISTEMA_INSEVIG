@@ -219,11 +219,11 @@ Legado: `registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.py
 | 4 | Postear a RPINGDES (CLASE 204) con auditoría + dedupe | ✅ |
 | 5 | Alta manual de un ingreso/egreso (cualquier CLASE) | ✅ `registrar_movimiento` |
 | 6 | Préstamo individual con planificación de cuotas (nº o valor) | ✅ `cuotas_tradicional` / `cuotas_por_valor` / `proyeccion_pagos_futuros` |
-| 7 | Carga masiva de préstamos | ✅ (Job + CSV) |
+| 7 | Carga masiva de préstamos | ✅ **grilla editable** + pegar de Excel (TSV/`;`/`|`/`,`), validar (resuelve nombres), modo nº-cuotas o cuota-mensual, Job + CSV |
 | 8 | Consulta / edición (vista agrupada): lista, ver cuotas, borrar movimiento, mover cuotas | ✅ `historial_movimientos` / `cuotas_prestamo` / `eliminar_movimiento` |
 | 9 | "Mover cuotas pendientes desde una fecha" | ✅ `mover_cuotas_pendientes` + botón en Consulta |
 | 10 | **Consulta detallada fila por fila** (filtros empleado/clase/rango de fechas/nº/solo pendientes, editar VALOR, eliminar fila, exportar CSV) | ✅ `consultar_filas` / `editar_valor_fila` / `eliminar_fila` |
-| 11 | **Carga masiva de egresos/ingresos** (no solo préstamos) — pegar cédula/clase/valor/fecha/observación → preview → Job + CSV | ✅ `_bulk_egr_ing` |
+| 11 | **Carga masiva de egresos/ingresos** (no solo préstamos) — grilla editable + pegar de Excel, validar, Job + CSV | ✅ `_bulk_egr_ing` (grilla `bulk_grid`) |
 | 12 | **Panel "carga programada del empleado"** al registrar un préstamo (deducciones ya agendadas por mes) | ✅ `proyeccion_pagos_futuros` en la pestaña Préstamo |
 | 13 | **Editar el valor/fecha de cada cuota en la vista previa** antes de registrar el préstamo | ✅ inputs por fila + total en vivo |
 | 14 | Respaldo por operación | ⬜ (`modulo_seguridad_prestamos` del legado no existía; cubierto por `core.audit`) |

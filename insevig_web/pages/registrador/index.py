@@ -191,37 +191,94 @@ def _tab_prestamo() -> rx.Component:
     )
 
 
-# ── 2. Carga masiva de préstamos ────────────────────────────────────────
+def _celda(fila, i, campo, set_fn, *, tipo="text", w="110px", readonly=False, opciones=None):
+    if opciones is not None:
+        return rx.table.cell(
+            rx.el.select(
+                *[rx.el.option(o["etiqueta"], value=o["codigo"]) for o in opciones],
+                value=fila[campo], on_change=lambda v: set_fn(i, campo, v),
+                style={**_SEL, "minWidth": "150px"},
+            )
+        )
+    return rx.table.cell(
+        rx.input(
+            value=fila[campo], type=tipo, size="1", width=w, read_only=readonly,
+            on_change=lambda v: set_fn(i, campo, v),
+        )
+    )
+
+
+def _grilla(cabeceras, filas_var, fila_fn) -> rx.Component:
+    return scroll_x(
+        rx.table.root(
+            rx.table.header(rx.table.row(*[
+                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                for c in [*cabeceras, ""]
+            ])),
+            rx.table.body(rx.foreach(filas_var, fila_fn)),
+            variant="surface", size="1", width="100%",
+        )
+    )
+
+
+# ── 2. Carga masiva de préstamos (grilla editable + pegar de Excel) ─────
 def _tab_masiva() -> rx.Component:
+    def _fila(f, i):
+        return rx.table.row(
+            _celda(f, i, "codigo", _S.pm_set_celda, w="120px"),
+            rx.table.cell(rx.text(f["nombre"], size="1",
+                                  color_scheme=rx.cond(f["nombre"] == "NO ENCONTRADO", "red", "gray"))),
+            _celda(f, i, "valor_total", _S.pm_set_celda, tipo="number", w="100px"),
+            _celda(f, i, "cuotas_valor", _S.pm_set_celda, tipo="number", w="90px"),
+            _celda(f, i, "fecha", _S.pm_set_celda, tipo="date", w="150px"),
+            _celda(f, i, "observacion", _S.pm_set_celda, w="200px"),
+            rx.table.cell(
+                rx.hstack(
+                    rx.cond(f["valido"], rx.icon("check", size=14, color="green")),
+                    rx.button(rx.icon("trash-2", size=12), size="1", variant="ghost",
+                              color_scheme="red", on_click=lambda: _S.pm_quitar_fila(i)),
+                    spacing="1",
+                )
+            ),
+        )
+
     return rx.vstack(
         card(
             rx.vstack(
-                rx.text("Una línea por préstamo: cédula, valor total, nº cuotas, fecha (AAAA-MM-DD).",
-                        size="1", color_scheme="gray"),
-                rx.text_area(value=_S.masiva_texto, on_change=_S.set_masiva_texto, rows="8", width="100%",
-                             placeholder="0920116811, 600, 12, 2026-07-31\n1712345678, 300, 6, 2026-08-31"),
                 rx.hstack(
-                    rx.button("Previsualizar", on_click=_S.previsualizar_masiva, variant="soft"),
-                    rx.cond(
-                        _S.masiva_filas.length() > 0
-                        & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                        primary_button("Aplicar", on_click=_S.aplicar_masiva),
+                    rx.text("Planificar por:", size="1", weight="bold"),
+                    rx.el.select(
+                        rx.el.option("Número de cuotas", value="cuotas"),
+                        rx.el.option("Cuota mensual fija", value="valor"),
+                        value=_S.pm_modo, on_change=_S.set_pm_modo, style=_SEL,
                     ),
-                    spacing="2",
+                    spacing="2", align="center",
+                ),
+                rx.text(
+                    "Pega aquí desde Excel (una fila por préstamo): código o cédula · valor total · "
+                    "nº de cuotas (o cuota mensual) · fecha (AAAA-MM-DD) · observación.",
+                    size="1", color_scheme="gray",
+                ),
+                rx.text_area(
+                    value=_S.pm_pegar, on_change=_S.set_pm_pegar, rows="4", width="100%",
+                    placeholder="0920116811\t600\t12\t2026-07-31\tPRESTAMO\n1712345678\t300\t6\t2026-08-31",
+                ),
+                rx.hstack(
+                    rx.button("Cargar en la tabla", on_click=_S.pm_cargar_pegado, variant="soft", size="1"),
+                    rx.button("Agregar fila", on_click=_S.pm_nueva_fila, variant="soft", size="1"),
+                    rx.button("Validar", on_click=_S.pm_validar, size="1"),
+                    rx.button("Limpiar", on_click=_S.pm_limpiar, variant="ghost", size="1"),
+                    rx.cond(
+                        (_S.pm_grid.length() > 0)
+                        & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
+                        primary_button("Registrar todo", on_click=_S.aplicar_masiva),
+                    ),
+                    spacing="2", wrap="wrap",
                 ),
                 rx.cond(
-                    _S.masiva_filas.length() > 0,
-                    _tabla(
-                        ["Cédula", "Empleado", "Valor", "Cuotas", "Fecha"],
-                        _S.masiva_filas,
-                        lambda f: rx.table.row(
-                            rx.table.cell(f["cedula"]),
-                            rx.table.cell(f["nombre"]),
-                            rx.table.cell(f["valor"]),
-                            rx.table.cell(f["cuotas"]),
-                            rx.table.cell(f["fecha"]),
-                        ),
-                    ),
+                    _S.pm_grid.length() > 0,
+                    _grilla(["Código / cédula", "Nombre", "Valor total", "Cuotas / $mes", "Fecha", "Observación"],
+                            _S.pm_grid, _fila),
                 ),
                 rx.cond(
                     _S.masiva_job > 0,
@@ -464,41 +521,53 @@ def _tab_individual() -> rx.Component:
 
 
 def _bulk_egr_ing() -> rx.Component:
+    def _fila(f, i):
+        return rx.table.row(
+            _celda(f, i, "codigo", _S.bulk_set_celda, w="120px"),
+            rx.table.cell(rx.text(f["nombre"], size="1",
+                                  color_scheme=rx.cond(f["nombre"] == "NO ENCONTRADO", "red", "gray"))),
+            _celda(f, i, "clase", _S.bulk_set_celda, opciones=CLASES_OPCIONES),
+            _celda(f, i, "valor", _S.bulk_set_celda, tipo="number", w="100px"),
+            _celda(f, i, "fecha", _S.bulk_set_celda, tipo="date", w="150px"),
+            _celda(f, i, "observacion", _S.bulk_set_celda, w="200px"),
+            rx.table.cell(
+                rx.hstack(
+                    rx.cond(f["valido"], rx.icon("check", size=14, color="green")),
+                    rx.button(rx.icon("trash-2", size=12), size="1", variant="ghost",
+                              color_scheme="red", on_click=lambda: _S.bulk_quitar_fila(i)),
+                    spacing="1",
+                )
+            ),
+        )
+
     return card(
         rx.vstack(
             rx.heading("Carga masiva de egresos / ingresos", size="3"),
             rx.text(
-                "Una línea por movimiento: cédula, clase, valor, fecha (AAAA-MM-DD), observación. "
-                "Clases: 205=préstamo no, usa las simples (203 multa, 202 anticipo, 102 bonificación…).",
+                "Pega aquí desde Excel (una fila por movimiento): código o cédula · clase "
+                "(203 multa, 202 anticipo, 102 bonificación…) · valor · fecha · observación.",
                 size="1", color_scheme="gray",
             ),
             rx.text_area(
-                value=_S.bulk_texto, on_change=_S.set_bulk_texto, rows="6", width="100%",
-                placeholder="0920116811, 203, 25.00, 2026-07-31, MULTA ATRASO\n1712345678, 102, 40, 2026-07-31, BONO",
+                value=_S.bulk_pegar, on_change=_S.set_bulk_pegar, rows="4", width="100%",
+                placeholder="0920116811\t203\t25.00\t2026-07-31\tMULTA ATRASO\n1712345678\t102\t40\t2026-07-31\tBONO",
             ),
             rx.hstack(
-                rx.button("Previsualizar", on_click=_S.previsualizar_bulk, variant="soft"),
+                rx.button("Cargar en la tabla", on_click=_S.bulk_cargar_pegado, variant="soft", size="1"),
+                rx.button("Agregar fila", on_click=_S.bulk_nueva_fila, variant="soft", size="1"),
+                rx.button("Validar", on_click=_S.bulk_validar, size="1"),
+                rx.button("Limpiar", on_click=_S.bulk_limpiar, variant="ghost", size="1"),
                 rx.cond(
-                    (_S.bulk_filas.length() > 0)
+                    (_S.bulk_grid.length() > 0)
                     & AuthState.permisos_flat.contains("registrador:registrar_rpingdes"),
-                    primary_button("Aplicar", on_click=_S.aplicar_bulk),
+                    primary_button("Registrar todo", on_click=_S.aplicar_bulk),
                 ),
-                spacing="2",
+                spacing="2", wrap="wrap",
             ),
             rx.cond(
-                _S.bulk_filas.length() > 0,
-                _tabla(
-                    ["Cédula", "Empleado", "Tipo", "Valor", "Fecha", "OK"],
-                    _S.bulk_filas,
-                    lambda f: rx.table.row(
-                        rx.table.cell(f["cedula"]),
-                        rx.table.cell(f["nombre"]),
-                        rx.table.cell(f["tipo"]),
-                        rx.table.cell(f["valor"]),
-                        rx.table.cell(f["fecha"]),
-                        rx.table.cell(rx.cond(f["valido"], "✓", "✗")),
-                    ),
-                ),
+                _S.bulk_grid.length() > 0,
+                _grilla(["Código / cédula", "Nombre", "Tipo", "Valor", "Fecha", "Observación"],
+                        _S.bulk_grid, _fila),
             ),
             rx.cond(
                 _S.bulk_job > 0,

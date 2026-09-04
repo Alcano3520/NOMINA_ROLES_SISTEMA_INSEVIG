@@ -88,3 +88,13 @@ def test_editar_valor_fila_rechaza_no_positivo():
 
     with pytest.raises(ValueError, match="mayor que 0"):
         rg.editar_valor_fila("1", "1012", "203", 1, "2026-07-31", 0, usuario="t", roles=set())
+
+
+def test_split_linea_pegado_de_excel():
+    from insevig_web.states.registrador_state import _split_linea
+
+    assert _split_linea("1012\t600\t12\t2026-07-31") == ["1012", "600", "12", "2026-07-31"]
+    assert _split_linea("1012;600;12") == ["1012", "600", "12"]
+    assert _split_linea("1012, 600, 12, 2026-07-31") == ["1012", "600", "12", "2026-07-31"]
+    assert _split_linea("PEREIRA, JUAN") == ["PEREIRA, JUAN"]  # 1 sola coma = no es CSV
+    assert _split_linea("  1012  ") == ["1012"]
