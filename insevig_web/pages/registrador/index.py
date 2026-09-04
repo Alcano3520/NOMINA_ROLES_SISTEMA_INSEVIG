@@ -75,6 +75,32 @@ def _tabla(cols: list[str], filas: rx.Var, fila_fn) -> rx.Component:
 
 
 # ── 1. Préstamo individual ──────────────────────────────────────────────
+def _panel_movimientos_emp() -> rx.Component:
+    """Historial de registros vigentes del empleado elegido (como el panel lateral
+    de las pestañas Préstamo / Egresos-Ingresos del sistema anterior)."""
+    return rx.cond(
+        (_S.emp_sel != "") & (_S.emp_movimientos.length() > 0),
+        card(
+            rx.vstack(
+                rx.heading("Movimientos vigentes de " + _S.emp_nombre, size="2"),
+                _tabla(
+                    ["N°", "Tipo", "Fecha", "Valor", "Cuotas"],
+                    _S.emp_movimientos,
+                    lambda m: rx.table.row(
+                        rx.table.cell(m["numero"]),
+                        rx.table.cell(m["tipo_clase"]),
+                        rx.table.cell(m["fecha"]),
+                        rx.table.cell("$" + m["valor"].to_string()),
+                        rx.table.cell(m["cuotas"].to_string()),
+                    ),
+                ),
+                spacing="2", width="100%",
+            ),
+            width="100%",
+        ),
+    )
+
+
 def _panel_proyeccion() -> rx.Component:
     return rx.cond(
         _S.p_proyeccion.length() > 0,
@@ -106,6 +132,7 @@ def _panel_proyeccion() -> rx.Component:
 def _tab_prestamo() -> rx.Component:
     return rx.vstack(
         _buscador_empleado(),
+        _panel_movimientos_emp(),
         _panel_proyeccion(),
         card(
             rx.vstack(
@@ -483,6 +510,7 @@ def _consulta_detallada() -> rx.Component:
 def _tab_individual() -> rx.Component:
     return rx.vstack(
         _buscador_empleado(),
+        _panel_movimientos_emp(),
         card(
             rx.vstack(
                 rx.grid(

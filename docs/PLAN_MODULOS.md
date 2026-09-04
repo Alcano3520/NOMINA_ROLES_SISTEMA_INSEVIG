@@ -227,9 +227,11 @@ Legado: `registrdor_vizulizador_egresosingresos/REGISTRAR_PRESTAMOS_UNIFICADO.py
 | 12 | **Panel "carga programada del empleado"** al registrar un préstamo (deducciones ya agendadas por mes) | ✅ `proyeccion_pagos_futuros` en la pestaña Préstamo |
 | 13 | **Editar el valor/fecha de cada cuota en la vista previa** antes de registrar el préstamo | ✅ inputs por fila + total en vivo |
 | 14 | Respaldo por operación | ⬜ (`modulo_seguridad_prestamos` del legado no existía; cubierto por `core.audit`) |
-| 15 | BIESS: override manual de fila-encabezado / columnas cuando falla la autodetección | ⬜ (hoy solo autodetección) |
+| 15 | BIESS: override manual de fila-encabezado / columnas + "Ver Excel" + Releer | ✅ `biess_autodetectar` / `parse_biess_manual` / `biess_diagnostico` |
+| 16 | BIESS: tipo 204/207, observación autogenerada, mismo N° de egreso para todo el lote (modo agrupado), INSERT completo (21 columnas) | ✅ `postear_biess` (antes el INSERT era reducido y sin número compartido) |
+| 17 | Panel "movimientos vigentes del empleado" en Préstamo y Egresos/Ingresos | ✅ `historial_movimientos(..., empleado=...)` |
 
-**6 pestañas portadas.** Falta: override manual de columnas BIESS y el "respaldo por operación" (que en el legado nunca existió — reemplazado por `core.audit`).
+**6 pestañas portadas.** Falta: el modo "agrupado" exacto del legado en la carga masiva de Egresos/Ingresos (un único número + observación común para todo el lote — hoy cada fila puede tener su propia clase, BIESS sí lo tiene) y el "respaldo por operación" (que en el legado nunca existió — reemplazado por `core.audit`).
 
 ---
 

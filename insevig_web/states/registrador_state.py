@@ -102,6 +102,21 @@ class RegistradorState(rx.State):
         self.encontrados = []
         if self.tab == "prestamo":
             await self._cargar_proyeccion()
+        await self._cargar_movimientos_emp()
+
+    # movimientos vigentes (no asentados) del empleado elegido — mismo panel
+    # "Historial de Registros" que el legado muestra en Préstamo / Egresos.
+    emp_movimientos: list[dict] = []
+
+    async def _cargar_movimientos_emp(self):
+        self.emp_movimientos = []
+        if not self.emp_sel:
+            return
+        fuente = await self._fuente()
+        movs = await asyncio.to_thread(
+            registrador.historial_movimientos, fuente, "", 50, empleado=self.emp_sel
+        )
+        self.emp_movimientos = [asdict(m) for m in movs]
 
     # carga programada del empleado (deducciones ya agendadas por mes)
     p_proyeccion: list[dict] = []
@@ -215,6 +230,8 @@ class RegistradorState(rx.State):
             if res.ok:
                 self.p_preview = []
                 self.p_valor = self.p_observ = ""
+                await self._cargar_proyeccion()
+                await self._cargar_movimientos_emp()
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
 
@@ -524,6 +541,7 @@ class RegistradorState(rx.State):
             if res.ok:
                 self.resultado = res.detalle
                 self.ind_valor = self.ind_observ = self.ind_preview = ""
+                await self._cargar_movimientos_emp()
             else:
                 self.error = res.detalle
         except Exception as e:  # noqa: BLE001

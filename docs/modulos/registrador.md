@@ -3,6 +3,9 @@
 Estado: **puerto completo de REGISTRAR_PRESTAMOS_UNIFICADO.pyw** (6 pestañas).
 
 ## Pestañas (`/registrador`)
+0. **Movimientos vigentes del empleado** — al elegir empleado (en Préstamo y en
+   Egresos/Ingresos) se muestra su historial de registros no asentados (mismo panel
+   "Historial de Registros" del legado; `historial_movimientos(..., empleado=...)`).
 1. **Préstamo individual** — CLASE 205. Elige empleado, valor total, y planifica por
    nº de cuotas (`cuotas_tradicional`) o por cuota mensual fija respetando lo ya
    programado (`cuotas_por_valor` + `proyeccion_pagos_futuros`). Al elegir el empleado
@@ -22,9 +25,13 @@ Estado: **puerto completo de REGISTRAR_PRESTAMOS_UNIFICADO.pyw** (6 pestañas).
    **grilla editable + pegar de Excel** (`_bulk_egr_ing`, columnas código/clase/valor/
    fecha/observación) con Validar + Job + CSV.
 4. (unificada con la 3 en la web)
-5. **BIESS quirografarios** — Excel → CLASE 204, empareja por cédula, vista previa
-   con dedupe, confirmar. `preparar_biess` / `postear`. (Falta: override manual de
-   fila-encabezado/columnas cuando la autodetección falla.)
+5. **BIESS quirografarios / hipotecarios** — CLASE 204 o 207, autodetección de
+   fila/columnas con override manual editable + "Ver Excel" (diagnóstico) +
+   "Releer" (`biess_autodetectar` / `parse_biess_manual`). Empareja por cédula en
+   lote, marca activo/liquidado/no encontrado (solo activos se registran).
+   `postear_biess`: INSERT completo (21 columnas) con el MISMO número de egreso
+   para todo el lote (modo agrupado, igual que `_biess_subir`), RPCONTRL
+   actualizado una vez. Observación autogenerada, editable. Exporta CSV.
 6. **Consulta / edición** — dos vistas:
    - *Agrupada por NUMERO* (`historial_movimientos`): ver cuotas de un préstamo
      (`cuotas_prestamo`), borrar un movimiento no asentado (`eliminar_movimiento`),
@@ -40,6 +47,9 @@ Lectura: SQL Server o Supabase (rpingdesres). Escritura: SOLO SQL Server, con
 igual que el legado — riesgo de colisión con instancias concurrentes: aceptable v1).
 
 ## Pendiente
-- BIESS: override manual de fila-encabezado / columnas cuando la autodetección falla.
+- Egresos/Ingresos masivo: modo "agrupado" del legado (un solo número de egreso
+  para todo el lote, con observación común) — hoy cada fila puede tener su propia
+  clase y siempre se numera individualmente; funcionalmente cubre el caso de uso
+  pero no replica ese modo exacto. BIESS sí implementa el agrupado.
 - Respaldo por operación (`modulo_seguridad_prestamos` del legado — no existía nunca;
   su reemplazo real es `core.audit`).

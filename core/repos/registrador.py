@@ -171,15 +171,21 @@ class MovimientoRegistrado:
     asentado: bool = False
 
 
-def historial_movimientos(fuente: str, filtro: str = "", limite: int = 200) -> list[MovimientoRegistrado]:
+def historial_movimientos(
+    fuente: str, filtro: str = "", limite: int = 200, *, empleado: str = "",
+) -> list[MovimientoRegistrado]:
     """Movimientos de RPINGDES (ASENTADO=0) agrupados por NUMERO. Para préstamos
-    (205) agrupa las cuotas en una fila con el total. Filtro por número o nombre."""
+    (205) agrupa las cuotas en una fila con el total. Filtro por número o nombre;
+    `empleado` (código exacto) restringe al panel de un empleado."""
     filtro = (filtro or "").strip()
+    empleado = str(empleado or "").strip()
     out: list[MovimientoRegistrado] = []
     if fuente == FUENTE_SUPABASE:
         sb = supabase_client.get_client()
         cols = "numero,clase,empleado,fecha,valor,observ,concepto"
         q = sb.table("rpingdesres").select(cols).eq("codemp", "10").eq("asentado", 0)
+        if empleado:
+            q = q.eq("empleado", empleado)
         if filtro.isdigit():
             q = q.eq("numero", int(filtro))
         filas = q.order("fecha", desc=True).limit(2000).execute().data or []
@@ -206,12 +212,15 @@ def historial_movimientos(fuente: str, filtro: str = "", limite: int = 200) -> l
     flt = get_settings().sqlserver_filter
     params: list = []
     cond = ""
+    if empleado:
+        cond += " AND r.EMPLEADO = ?"
+        params.append(empleado)
     if filtro:
         if filtro.isdigit():
-            cond = " AND (CAST(r.NUMERO AS VARCHAR) LIKE ? OR CAST(r.EMPLEADO AS VARCHAR) LIKE ?)"
+            cond += " AND (CAST(r.NUMERO AS VARCHAR) LIKE ? OR CAST(r.EMPLEADO AS VARCHAR) LIKE ?)"
             params += [f"%{filtro}%", f"%{filtro}%"]
         else:
-            cond = " AND (e.APELLIDOS LIKE ? OR e.NOMBRES LIKE ?)"
+            cond += " AND (e.APELLIDOS LIKE ? OR e.NOMBRES LIKE ?)"
             params += [f"%{filtro}%", f"%{filtro}%"]
     filas = sqlserver.filas(
         f"""SELECT TOP {limite} r.NUMERO, r.CLASE, r.EMPLEADO,
