@@ -9,6 +9,9 @@ on:
       - "icon.ico"
       - ".github/workflows/build-demo-launcher-exe.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -36,3 +39,13 @@ jobs:
           name: INSEVIG_Demo-windows
           path: dist/INSEVIG_Demo.exe
           retention-days: 30
+
+      # Publica el .exe en un release de tag rodante 'demo' para tener una
+      # URL de descarga directa y permanente:
+      #   https://github.com/<owner>/<repo>/releases/latest/download/INSEVIG_Demo.exe
+      - name: Publish to rolling 'demo' release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete demo --yes --cleanup-tag || echo "no previo"
+          gh release create demo dist/INSEVIG_Demo.exe --title "Demo - Lanzador INSEVIG" --notes "Lanzador de la app web INSEVIG (Reflex). Doble clic abre el sistema en el navegador. Ver demo_launcher/README.md. Se actualiza en cada build." --latest
