@@ -108,6 +108,41 @@ función) -- ninguna es una mejora inventada en esta migración:
 Solo lectura de nómina. Por defecto **Supabase** (las tablas históricas grandes —
 `rphistor_temp` 903K filas — están ahí). También funciona contra SQL Server.
 
+## Pantalla principal (`/liquidaciones`) — reconstruida a fondo (2026-09-04)
+Tras revisar `_crear_interfaz`/`_crear_panel_preview` del `.pyw` (líneas ~1124-2000),
+se detectó que la pantalla principal solo tenía el modo Masivo (textarea + Excel) y
+le faltaba casi toda la estructura real. Añadido, en la misma pantalla:
+- **"RESUMEN DE LIQUIDACIONES GUARDADAS"**: 4 tarjetas por estado
+  (`core.repos.liquidaciones.resumen_liquidaciones`), igual que
+  `_actualizar_resumen_liquidaciones` del legado.
+- **"1. Formato de Salida"**: selector Masivo (Excel, por plantilla) ⇄ Individual
+  (PDF de simulación, 1 empleado) — cambia toda la sección 2 debajo.
+- **"2. Datos de Empleados"** en modo Individual: combo "Buscar por"
+  (Cédula/Código/Nombre, `core.repos.liquidaciones.buscar_empleado_preview`),
+  panel de solo lectura con los datos del empleado encontrado, fecha de salida,
+  motivo (campo libre + combo de `MOTIVOS_SALIDA`), y 3 de las 6 casillas del
+  legado ya conectadas al motor de cálculo: incluir Décima 13/14 ANTERIOR en la
+  vista previa (`incluir_dec13_anterior`/`incluir_dec14_anterior` de
+  `procesar_empleado` — además, paridad exacta con el legado: si la casilla
+  está desmarcada, la fila del décimo anterior NI SIQUIERA se muestra en la
+  tabla de vista previa, no solo se excluye del total) y "mostrar insumos del
+  cálculo" (`liquidacion_pdf(..., mostrar_insumos=...)`).
+- **"👁 VISTA PREVIA"**: tabla concepto/tipo/valor + totales, calculada en vivo
+  con `procesar_empleado` + `previsualizar_conceptos` (sin guardar nada) al
+  presionar "Calcular / Generar Liquidación"; botones "PDF" y "💾 Guardar
+  Liquidación" ya conectados (mismo `guardar_liquidacion`/`liquidacion_pdf`
+  que el modo Masivo).
+- Modo Masivo: sin cambios funcionales, solo reordenado bajo el nuevo selector.
+
+**Pendiente de esa misma pantalla** (3 de las 6 casillas del legado, no
+conectadas -- el motor de cálculo no expone el parámetro todavía):
+"calcular desahucio sobre ingresos reales", "usar valores YA cargados en
+RPINGDES para el mes en curso" e "incluir/excluir el sueldo del mes de
+salida". "3. Periodo para Calcular Horas", "4. Valores por Defecto" (multas/
+anticipos si el rubro es 0) y "5. Carpeta de Salida" (N/A en web, se
+descarga directo) del legado no se portaron — evaluar si siguen siendo
+necesarios ya que el modo Individual no depende de un periodo de corte fijo.
+
 ## Pendiente / a validar contra el legado
 - Sobretiempos del **mes en curso** (todavía sin cerrar, RPINGDES stale): el
   `.pyw` de producción recalcula desde el cupo mensual de la sección

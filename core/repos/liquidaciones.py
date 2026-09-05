@@ -470,6 +470,71 @@ def _empleado(cedula: str, fuente: str) -> dict | None:
     return filas[0] if filas else None
 
 
+def buscar_empleado_preview(identificador: str, modo: str, fuente: str) -> dict | None:
+    """Busca UN empleado por cédula/código/nombre para el modo "Individual" de
+    la pantalla principal (combo "Buscar por:" del `.pyw`). Devuelve un dict
+    liviano para el panel de solo-lectura (Nombre/Cargo/Sección/Fecha de
+    Ingreso/Sueldo) y la cédula normalizada para pasar a `procesar_empleado`.
+    """
+    identificador = (identificador or "").strip()
+    if not identificador:
+        return None
+    emp: dict | None = None
+    if modo == "codigo":
+        cod = identificador
+        if fuente == FUENTE_SUPABASE:
+            sb = supabase_client.get_client()
+            r = sb.table("rpemplea").select("*").eq("codemp", "10").eq("empleado", cod).limit(1).execute()
+            if r.data:
+                emp = {k.upper(): v for k, v in r.data[0].items()}
+        else:
+            flt = get_settings().sqlserver_filter
+            filas = sqlserver.filas(
+                f"""SELECT [EMPLEADO],[APELLIDOS],[NOMBRES],[CEDULA],[SUELDO],[CARGO],[DEPTO],
+                           [SECCION],[FECHA_ING],[FECHA_SAL],[ESTADO],[HOR25],[HOR50],[HOR100]
+                    FROM [insevig].[dbo].[RPEMPLEA] WHERE {flt} AND [EMPLEADO] = ?""",
+                (cod,),
+            )
+            emp = filas[0] if filas else None
+    elif modo == "nombre":
+        # Búsqueda por apellidos/nombres inline (no se importa
+        # core.repos.empleados: los repos no se cruzan entre sí, ver
+        # tests/test_arquitectura.py::test_repos_no_se_importan_entre_si).
+        texto = identificador
+        if fuente == FUENTE_SUPABASE:
+            sb = supabase_client.get_client()
+            r = (
+                sb.table("rpemplea").select("*").eq("codemp", "10")
+                .or_(f"apellidos.ilike.%{texto}%,nombres.ilike.%{texto}%")
+                .order("apellidos").limit(1).execute()
+            )
+            if r.data:
+                emp = {k.upper(): v for k, v in r.data[0].items()}
+        else:
+            flt = get_settings().sqlserver_filter
+            filas = sqlserver.filas(
+                f"""SELECT TOP 1 [EMPLEADO],[APELLIDOS],[NOMBRES],[CEDULA],[SUELDO],[CARGO],[DEPTO],
+                           [SECCION],[FECHA_ING],[FECHA_SAL],[ESTADO],[HOR25],[HOR50],[HOR100]
+                    FROM [insevig].[dbo].[RPEMPLEA]
+                    WHERE {flt} AND ([APELLIDOS] LIKE ? OR [NOMBRES] LIKE ?) ORDER BY [APELLIDOS]""",
+                (f"%{texto}%", f"%{texto}%"),
+            )
+            emp = filas[0] if filas else None
+    else:  # "cedula" (por defecto)
+        emp = _empleado(identificador, fuente)
+    if emp is None:
+        return None
+    return {
+        "cedula": normalizar_cedula(emp.get("CEDULA")),
+        "empleado": str(emp.get("EMPLEADO") or "").strip(),
+        "nombre": f"{(emp.get('APELLIDOS') or '').strip()} {(emp.get('NOMBRES') or '').strip()}".strip(),
+        "cargo": str(emp.get("CARGO") or ""),
+        "seccion": str(emp.get("SECCION") or ""),
+        "fecha_ingreso": str(emp.get("FECHA_ING") or ""),
+        "sueldo": a_float(emp.get("SUELDO")),
+    }
+
+
 def _f(v) -> dt.date | None:
     if not v:
         return None
@@ -918,6 +983,12 @@ def _construir_conceptos(liq: Liquidacion) -> list[dict]:
     return conceptos
 
 
+def previsualizar_conceptos(liq: Liquidacion) -> list[dict]:
+    """Desglose concepto/tipo/valor de una `Liquidacion` calculada, para el
+    panel "VISTA PREVIA" del modo Individual (sin guardar nada)."""
+    return _construir_conceptos(liq)
+
+
 def buscar_liquidacion_existente(cedula: str, fecha_salida_iso: str, estado: str,
                                   fecha_ingreso_iso: str = "") -> str | None:
     """Busca en `liquidaciones` un registro previo del mismo empleado + fecha
@@ -978,6 +1049,20 @@ def guardar_liquidacion(
             return True, liquidacion_id
         except Exception as e:  # noqa: BLE001
             return False, str(e)
+
+
+def resumen_liquidaciones() -> dict[str, int]:
+    """Cuenta de liquidaciones guardadas por estado, para el panel "Resumen de
+    liquidaciones guardadas" de la pantalla principal (paridad con
+    `_actualizar_resumen_liquidaciones` del `.pyw`)."""
+    sb = supabase_client.get_client()
+    filas = sb.table(TABLA_LIQ).select("estado").execute().data or []
+    conteo = dict.fromkeys(ESTADOS_LIQUIDACION, 0)
+    for f in filas:
+        e = f.get("estado")
+        if e in conteo:
+            conteo[e] += 1
+    return conteo
 
 
 def listar_liquidaciones(

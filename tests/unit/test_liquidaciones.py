@@ -274,6 +274,84 @@ def test_construir_conceptos_omite_valores_en_cero():
     assert [c["orden"] for c in conceptos] == list(range(len(conceptos)))
 
 
+def test_previsualizar_conceptos_es_wrapper_publico():
+    liq = _liq_ejemplo()
+    assert lq.previsualizar_conceptos(liq) == lq._construir_conceptos(liq)
+
+
+class _FakeExec:
+    def __init__(self, data):
+        self.data = data
+
+
+class _FakeQuery:
+    """Encadenable como el cliente real de Supabase (select/eq/or_/order/limit)."""
+
+    def __init__(self, data):
+        self._data = data
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def or_(self, *a, **k):
+        return self
+
+    def order(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def execute(self):
+        return _FakeExec(self._data)
+
+
+class _FakeClient:
+    def __init__(self, data):
+        self._data = data
+
+    def table(self, _nombre):
+        return _FakeQuery(self._data)
+
+
+def test_resumen_liquidaciones_cuenta_por_estado(monkeypatch):
+    filas = [
+        {"estado": "generada"}, {"estado": "generada"}, {"estado": "pagada"},
+        {"estado": "estado_desconocido"},
+    ]
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClient(filas))
+    resumen = lq.resumen_liquidaciones()
+    assert resumen == {"borrador": 0, "generada": 2, "pagada": 1, "anulada": 0}
+
+
+def test_buscar_empleado_preview_por_cedula_supabase(monkeypatch):
+    fila = {
+        "cedula": 920116811.0, "empleado": "1012", "apellidos": "PEREIRA", "nombres": "JUAN",
+        "cargo": "GUARDIA", "seccion": "SEC1", "fecha_ing": "2020-03-15", "sueldo": 460.0,
+    }
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClient([fila]))
+    r = lq.buscar_empleado_preview("0920116811", "cedula", lq.FUENTE_SUPABASE)
+    assert r is not None
+    assert r["nombre"] == "PEREIRA JUAN" and r["cedula"] == "0920116811" and r["sueldo"] == 460.0
+
+
+def test_buscar_empleado_preview_por_nombre_supabase(monkeypatch):
+    fila = {
+        "cedula": 920116811.0, "empleado": "1012", "apellidos": "PEREIRA", "nombres": "JUAN",
+        "cargo": "GUARDIA", "seccion": "SEC1", "fecha_ing": "2020-03-15", "sueldo": 460.0,
+    }
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClient([fila]))
+    r = lq.buscar_empleado_preview("PEREIRA", "nombre", lq.FUENTE_SUPABASE)
+    assert r is not None and r["empleado"] == "1012"
+
+
+def test_buscar_empleado_preview_sin_identificador_es_none():
+    assert lq.buscar_empleado_preview("   ", "cedula", lq.FUENTE_SUPABASE) is None
+
+
 def test_guardar_liquidacion_rechaza_estado_invalido():
     ok, msg = lq.guardar_liquidacion(
         _liq_ejemplo(), "estado_invalido", lq.ConfigLiquidacion(), usuario="t", roles=set()
