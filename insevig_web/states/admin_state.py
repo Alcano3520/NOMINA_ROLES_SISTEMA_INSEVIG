@@ -149,6 +149,25 @@ class AdminState(rx.State):
         )
 
     @rx.event
+    async def exportar_auditoria(self):
+        from core.excel.admin_builders import auditoria_xlsx
+        from core.repos.admin import buscar_auditoria
+
+        _, filas = await asyncio.to_thread(
+            buscar_auditoria,
+            usuario=self.aud_usuario,
+            modulo=self.aud_modulo,
+            estado=self.aud_status,
+            desde=self.aud_desde,
+            hasta=self.aud_hasta,
+            limite=10000,
+        )
+        if not filas:
+            self.msg = "No hay registros que exportar con esos filtros."
+            return
+        return rx.download(data=auditoria_xlsx(filas), filename="auditoria.xlsx")
+
+    @rx.event
     def set_nu(self, campo: str, v: str):
         setattr(self, f"nu_{campo}", v)
 

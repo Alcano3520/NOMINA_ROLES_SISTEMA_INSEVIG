@@ -72,3 +72,32 @@ def test_buscar_auditoria_fecha_invalida_se_ignora(app_db):
     )
     total, _ = buscar_auditoria(desde="no-es-fecha")
     assert total == 1
+
+
+def test_auditoria_xlsx_es_un_xlsx_valido():
+    import io
+
+    import openpyxl
+
+    from core.excel.admin_builders import auditoria_xlsx
+
+    filas = [
+        {"ts": "2026-06-01 08:00:00", "usuario": "ana", "modulo": "empleados",
+         "accion": "editar", "objetivo": "RPEMPLEA 1012", "status": "ok"},
+    ]
+    wb = openpyxl.load_workbook(io.BytesIO(auditoria_xlsx(filas)))
+    ws = wb.active
+    assert ws["A1"].value == "FECHA/HORA"
+    assert ws["B2"].value == "ana"
+    assert ws["F2"].value == "ok"
+
+
+def test_auditoria_xlsx_sin_filas_no_revienta():
+    import io
+
+    import openpyxl
+
+    from core.excel.admin_builders import auditoria_xlsx
+
+    wb = openpyxl.load_workbook(io.BytesIO(auditoria_xlsx([])))
+    assert wb.active["A1"].value == "FECHA/HORA"

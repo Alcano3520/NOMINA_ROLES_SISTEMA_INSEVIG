@@ -59,8 +59,11 @@ def auditoria() -> rx.Component:
                 ),
                 rx.button("Filtrar", on_click=AdminState.cargar_auditoria, size="2"),
                 rx.button("Limpiar", on_click=AdminState.limpiar_auditoria, size="2", variant="soft"),
+                rx.button(rx.icon("download", size=15), "Excel",
+                          on_click=AdminState.exportar_auditoria, size="2", variant="soft"),
                 spacing="2", wrap="wrap", align="center",
             ),
+            rx.cond(AdminState.msg != "", rx.callout(AdminState.msg, size="1", margin_top="0.5rem")),
             width="100%", margin_bottom="0.75rem",
         ),
         scroll_x(

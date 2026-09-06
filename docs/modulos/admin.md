@@ -18,7 +18,9 @@ Ver `docs/CONTRATOS.md`. No editar el núcleo congelado.
 - `/admin/usuarios` — alta, activar/desactivar, resetear clave. OK.
 - `/admin/auditoria` — tabla de `app_audit_log` con filtros usuario (substring),
   módulo, estado y rango de fechas (inclusivo), + contador de coincidencias.
-  Muestra las 200 más recientes. Lógica en `core/repos/admin.buscar_auditoria`.
+  Muestra las 200 más recientes; botón "Excel" exporta todas las coincidencias
+  (`core/excel/admin_builders.auditoria_xlsx`). Lógica en
+  `core/repos/admin.buscar_auditoria`.
 - `/admin/parametros` — SBU por año, proveedor de narrativa IA. OK.
 - `/admin/roles` — **solo lectura** de `auth.PERMISOS_POR_DEFECTO`. Pendiente:
   hacerla editable (matriz `RolePermission` en la BD de la app que sobreescriba
@@ -26,4 +28,3 @@ Ver `docs/CONTRATOS.md`. No editar el núcleo congelado.
 
 ## Pendiente
 - `admin/roles` editable (ver arriba).
-- Exportar la auditoría filtrada a Excel/CSV.
