@@ -46,9 +46,15 @@ Ver `docs/CONTRATOS.md`. Reutiliza `core.db.*`, `core.jobs`, `core.storage`,
 `core.narrativa`, `components/ui/*`, `AuthState`, `DataSourceState`. No edita el
 núcleo congelado.
 
+## Migración del histórico (una vez, en el NAS)
+`python -m core.migrations_legacy.sqlite_to_appdb <ruta>\Saldo_prestamos_driver.db`
+carga `historial_prestamos` en `LoanHistoryMigrated`. Es **idempotente**: correrlo
+otra vez no duplica (salta las filas ya presentes por
+empleado+fecha+numero_fila+ingreso+egreso); una fila nueva en el SQLite sí entra.
+`--reemplazar` borra lo migrado antes de cargar.
+
 ## Pendiente
 - Dedupe fino de la vista combinada validado contra datos reales (RPINGDES vs
   RPHISTOR para un préstamo que se cerró a mitad de período).
-- Cargar el SQLite legado real (`Saldo_prestamos_driver.db`) en el NAS con
-  `python -m core.migrations_legacy.sqlite_to_appdb <ruta>`.
+- Ejecutar la migración del histórico en el NAS con el `.db` real.
 - Validar saldos e historial contra el `.pyw` para una muestra de empleados.

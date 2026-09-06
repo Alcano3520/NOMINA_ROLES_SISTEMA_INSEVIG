@@ -38,7 +38,14 @@ def _leer_sqlite(ruta: str) -> list[dict]:
         con.close()
 
 
+def _clave(empleado: str, fecha: str, numero_fila, ingreso: float, egreso: float) -> tuple:
+    return (empleado, fecha, numero_fila, round(ingreso, 2), round(egreso, 2))
+
+
 def migrar(ruta_sqlite: str, *, reemplazar: bool = False) -> int:
+    """Carga `historial_prestamos` en `LoanHistoryMigrated`. Idempotente: una
+    segunda corrida no duplica (salta las filas ya presentes). Devuelve cuántas
+    filas NUEVAS se insertaron. `reemplazar=True` borra lo migrado antes."""
     filas = _leer_sqlite(ruta_sqlite)
     appdb.crear_tablas()
     insertadas = 0
@@ -46,13 +53,27 @@ def migrar(ruta_sqlite: str, *, reemplazar: bool = False) -> int:
         if reemplazar:
             s.exec(sqlmodel.delete(LoanHistoryMigrated))  # type: ignore[call-overload]
             s.commit()
+            existentes: set[tuple] = set()
+        else:
+            existentes = {
+                _clave(x.empleado, x.fecha, x.numero_fila, x.ingreso, x.egreso)
+                for x in s.exec(sqlmodel.select(LoanHistoryMigrated)).all()
+            }
         for r in filas:
+            emp = str(r["empleado"]).strip()
+            fecha = str(r.get("fecha") or "")[:10]
+            ingreso = float(r.get("ingreso") or 0)
+            egreso = float(r.get("egreso") or 0)
+            k = _clave(emp, fecha, r.get("numero_fila"), ingreso, egreso)
+            if k in existentes:
+                continue
+            existentes.add(k)
             s.add(
                 LoanHistoryMigrated(
-                    empleado=str(r["empleado"]).strip(),
-                    fecha=str(r.get("fecha") or "")[:10],
-                    ingreso=float(r.get("ingreso") or 0),
-                    egreso=float(r.get("egreso") or 0),
+                    empleado=emp,
+                    fecha=fecha,
+                    ingreso=ingreso,
+                    egreso=egreso,
                     concepto=str(r.get("concepto") or ""),
                     tipo=str(r.get("tipo") or ""),
                     numero_fila=r.get("numero_fila"),
@@ -70,7 +91,7 @@ def main() -> None:
     p.add_argument("--reemplazar", action="store_true", help="borra lo migrado antes de cargar")
     args = p.parse_args()
     n = migrar(args.ruta_sqlite, reemplazar=args.reemplazar)
-    print(f"Migradas {n} filas a LoanHistoryMigrated.", file=sys.stderr)
+    print(f"Insertadas {n} filas nuevas en LoanHistoryMigrated.", file=sys.stderr)
 
 
 if __name__ == "__main__":

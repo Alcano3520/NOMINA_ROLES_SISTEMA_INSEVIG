@@ -180,3 +180,21 @@ def test_migracion_sqlite_a_appdb(app_db, tmp_path):
     assert len(movs) == 2
     assert any(m.es_cuadre for m in movs)
     assert any(m.valor == -50.0 for m in movs)  # egreso -> negativo
+
+    # idempotente: correr de nuevo no duplica
+    assert migrar(str(ruta)) == 0
+    assert len(prestamos._historial_migrado("1012")) == 2
+
+    # una fila nueva en el SQLite sí entra
+    con = sqlite3.connect(ruta)
+    con.execute(
+        "INSERT INTO historial_prestamos VALUES (?,?,?,?,?,?,?)",
+        ("1012", "2021-03-10", 0, 25.0, "CUOTA", "NORMAL", 3),
+    )
+    con.commit()
+    con.close()
+    assert migrar(str(ruta)) == 1
+    assert len(prestamos._historial_migrado("1012")) == 3
+
+    # --reemplazar deja solo lo del SQLite
+    assert migrar(str(ruta), reemplazar=True) == 3
