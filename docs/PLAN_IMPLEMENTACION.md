@@ -49,8 +49,9 @@ Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` act
 - **Roles**: preview del PDF embebido en la página (`<iframe>`); logo automático.
 - **Reportes**: prueba de integración `test_concepts_cubre_periodo_real` (que el
   mapa CLASE→concepto cubra todas las CLASE de un período real).
-- **Auditoría**: filtros por módulo/usuario/fecha en `/admin/auditoria`;
-  `admin/roles` editable (hoy solo lectura de la matriz por defecto).
+- **Auditoría**: [x] filtros usuario/módulo/estado/rango de fechas + contador
+  de coincidencias en `/admin/auditoria` (`core/repos/admin.buscar_auditoria`).
+  [ ] `admin/roles` editable (hoy solo lectura de la matriz por defecto).
 
 ---
 

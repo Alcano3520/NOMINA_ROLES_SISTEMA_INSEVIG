@@ -16,8 +16,17 @@ from insevig_web.states.auth_state import AuthState
     on_load=[AuthState.cargar_sesion, AdminState.cargar_auditoria],
 )
 def auditoria() -> rx.Component:
+    _sel_style = {"padding": "6px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
+                  "background": "#fff"}
     return pagina(
-        page_heading("Auditoría", "Acciones registradas en el sistema (máx. 200)."),
+        page_heading(
+            "Auditoría",
+            rx.cond(
+                AdminState.aud_total > 200,
+                f"Mostrando 200 de {AdminState.aud_total} registros que coinciden.",
+                f"{AdminState.aud_total} registros.",
+            ),
+        ),
         card(
             rx.hstack(
                 rx.input(value=AdminState.aud_usuario, on_change=lambda v: AdminState.set_aud("usuario", v),
@@ -27,11 +36,30 @@ def auditoria() -> rx.Component:
                     *[rx.el.option(m.titulo, value=m.nombre) for m in MODULES],
                     value=AdminState.aud_modulo,
                     on_change=lambda v: AdminState.set_aud("modulo", v),
-                    style={"padding": "6px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
-                           "background": "#fff"},
+                    style=_sel_style,
+                ),
+                rx.el.select(
+                    rx.el.option("Cualquier estado", value=""),
+                    rx.el.option("OK", value="ok"),
+                    rx.el.option("Error", value="error"),
+                    rx.el.option("Pendiente", value="pending"),
+                    value=AdminState.aud_status,
+                    on_change=lambda v: AdminState.set_aud("status", v),
+                    style=_sel_style,
+                ),
+                rx.tooltip(
+                    rx.input(type="date", value=AdminState.aud_desde,
+                             on_change=lambda v: AdminState.set_aud("desde", v), size="2"),
+                    content="Desde",
+                ),
+                rx.tooltip(
+                    rx.input(type="date", value=AdminState.aud_hasta,
+                             on_change=lambda v: AdminState.set_aud("hasta", v), size="2"),
+                    content="Hasta",
                 ),
                 rx.button("Filtrar", on_click=AdminState.cargar_auditoria, size="2"),
-                spacing="2", wrap="wrap",
+                rx.button("Limpiar", on_click=AdminState.limpiar_auditoria, size="2", variant="soft"),
+                spacing="2", wrap="wrap", align="center",
             ),
             width="100%", margin_bottom="0.75rem",
         ),

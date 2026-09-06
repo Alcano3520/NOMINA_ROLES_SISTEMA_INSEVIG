@@ -8,7 +8,7 @@ import reflex as rx
 import sqlmodel
 
 from core.db import appdb
-from core.db.models import AuditLog, User, UserRole
+from core.db.models import User, UserRole
 from insevig_web import auth
 from insevig_web.states.auth_state import AuthState
 
@@ -47,10 +47,20 @@ class AdminState(rx.State):
 
     aud_usuario: str = ""
     aud_modulo: str = ""
+    aud_status: str = ""
+    aud_desde: str = ""
+    aud_hasta: str = ""
+    aud_total: int = 0
 
     @rx.event
     def set_aud(self, campo: str, v: str):
         setattr(self, f"aud_{campo}", v)
+
+    @rx.event
+    async def limpiar_auditoria(self):
+        self.aud_usuario = self.aud_modulo = self.aud_status = ""
+        self.aud_desde = self.aud_hasta = ""
+        await self.cargar_auditoria()
 
     # ── Parámetros de negocio: SBU por año ─────────────────────────────
     sbu: list[dict] = []   # [{'anio','valor'}]
@@ -127,29 +137,16 @@ class AdminState(rx.State):
 
     @rx.event
     async def cargar_auditoria(self):
-        f_user, f_mod = self.aud_usuario.strip(), self.aud_modulo.strip()
+        from core.repos.admin import buscar_auditoria
 
-        def _q():
-            with appdb.session() as s:
-                q = sqlmodel.select(AuditLog).order_by(sqlmodel.col(AuditLog.ts).desc())
-                if f_user:
-                    q = q.where(sqlmodel.col(AuditLog.username).ilike(f"%{f_user}%"))
-                if f_mod:
-                    q = q.where(AuditLog.module == f_mod)
-                filas = s.exec(q.limit(200)).all()
-                return [
-                    {
-                        "ts": str(a.ts)[:19],
-                        "usuario": a.username,
-                        "modulo": a.module,
-                        "accion": a.action,
-                        "objetivo": f"{a.target_table} {a.target_key}".strip(),
-                        "status": a.status,
-                    }
-                    for a in filas
-                ]
-
-        self.auditoria = await asyncio.to_thread(_q)
+        self.aud_total, self.auditoria = await asyncio.to_thread(
+            buscar_auditoria,
+            usuario=self.aud_usuario,
+            modulo=self.aud_modulo,
+            estado=self.aud_status,
+            desde=self.aud_desde,
+            hasta=self.aud_hasta,
+        )
 
     @rx.event
     def set_nu(self, campo: str, v: str):
