@@ -1,32 +1,23 @@
-# Proxy inverso para INSEVIG. Copiar a C:\insevig\caddy\Caddyfile.
-# Caddy pasa el Upgrade/WebSocket que Reflex necesita para el estado y el progreso de jobs.
+# Proxy inverso para INSEVIG — producción en el NAS (192.168.2.181).
+# Copiar a C:\insevig\caddy\Caddyfile. Servicio Windows: insevig-caddy (NSSM).
 #
-# Opción A (recomendada en LAN sin CA pública): certificado interno de Caddy.
-#   Los navegadores mostrarán aviso salvo que se distribuya la CA raíz de Caddy
-#   (C:\insevig\caddy\data\caddy\pki\authorities\local\root.crt) por GPO.
+# La app corre con:
+#   reflex run --env prod --single-port --frontend-port 3000
+# Por eso TODO (frontend + API + WebSocket /_event + uploads) va por :3000;
+# Caddy solo termina HTTPS y hace reverse_proxy. No hay split a :8000.
 #
-# Opción B: si RRHH tiene un cert emitido por la CA interna de la empresa,
-#   reemplaza `tls internal` por `tls C:\ruta\cert.pem C:\ruta\key.pem`.
+# HTTPS automático: con los puertos 80 y 443 reenviados desde el router hacia
+# este servidor, Caddy obtiene y renueva el certificado de Let's Encrypt solo.
+# El dominio lo da DuckDNS (actualizar la IP pública en duckdns.org).
+#
+# LAN sin dominio público: reemplazar el nombre por `insevig-rrhh.local` y
+# añadir `tls internal` dentro del bloque (aviso de cert salvo que se
+# distribuya la CA raíz de Caddy por GPO).
 
-insevig-rrhh.local {
-	tls internal
-
+insevig-rrhh.duckdns.org {
 	encode zstd gzip
 
-	# Frontend estático (salida de `reflex export`)
-	handle {
-		root * C:/insevig/app/.web/build/client
-		try_files {path} /index.html
-		file_server
-	}
-
-	# Backend Reflex (API + WebSocket de estado) en :8000
-	@backend {
-		path /_event* /ping /_upload* /backend/*
-	}
-	handle @backend {
-		reverse_proxy 127.0.0.1:8000
-	}
+	reverse_proxy 127.0.0.1:3000
 
 	log {
 		output file C:/insevig/logs/caddy-access.log {
@@ -34,9 +25,4 @@ insevig-rrhh.local {
 			roll_keep 8
 		}
 	}
-}
-
-# Redirige HTTP -> HTTPS
-http://insevig-rrhh.local {
-	redir https://{host}{uri}
 }
