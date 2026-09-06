@@ -17,8 +17,13 @@ bonif, maniobras, movilización), 11 descuentos, totales y firma.
   2-por-hoja, logo, progreso en vivo, cancelación.
 
 ## Pendiente
-- Test de regresión "golden" contra PDFs reales del legado (texto + posiciones).
 - Visualizador para navegar roles ya generados en STORAGE_DIR.
+
+## Hecho
+- Test de regresión "golden": `tests/unit/test_fase4.py` compara el texto del
+  rol generado contra `docs/pereira_test.pdf` (rol real del legado, empleado
+  1012, período 2026-06) — coincide línea por línea. Cubre orden de conceptos,
+  totales y la regla del fondo de reserva de BD (sin línea "EN IESS").
 
 ## Origen legado
 roles/Roles_Principal.pyw, envio_roles/ENVIO_ROLES_7_NUEVO.pyw

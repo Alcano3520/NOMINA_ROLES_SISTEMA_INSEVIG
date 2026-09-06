@@ -1,6 +1,7 @@
 """Fase 4: PDF de rol de pago + formateadores de nombre."""
 
 import io
+from pathlib import Path
 
 import pypdf
 import pytest
@@ -8,6 +9,13 @@ import pytest
 from core.datos.port import EmpleadoNomina
 from core.pdf.layout import FORMATOS, formatear_nombre_archivo
 from core.pdf.rol_pago import OpcionesRol, rol_pago_pdf
+
+_GOLDEN_PDF = Path(__file__).resolve().parents[2] / "docs" / "pereira_test.pdf"
+
+
+def _lineas_norm(texto: str) -> list[str]:
+    """Líneas sin espacios de más ni vacías, para comparar dos PDF."""
+    return [" ".join(ln.split()) for ln in texto.splitlines() if ln.strip()]
 
 
 def _emp() -> EmpleadoNomina:
@@ -47,6 +55,60 @@ def test_fondo_reserva_calculado_aparece_como_ingreso_y_descuento():
     texto = pypdf.PdfReader(io.BytesIO(data)).pages[0].extract_text()
     assert "FONDOS DE RESERVA 8.33%" in texto
     assert "EN IESS" in texto  # 900 * 0.0833 = 74.97
+
+
+def _emp_pereira() -> EmpleadoNomina:
+    """Empleado 1012 del rol real `docs/pereira_test.pdf` (período 2026-06)."""
+    return EmpleadoNomina(
+        empleado="1012",
+        apellidos_nombres="PEREIRA CAMPOVERDE CARLOS DANIEL",
+        cedula="0704948983",
+        cargo="COORDINADOR",
+        depto="URBANIZACION RIVERA PLAYAS",
+        dias=30.0,
+        total_ingresos=1246.50,
+        total_egresos=960.39,
+        total_recibir=286.11,
+        conceptos={
+            "SUELDO": 491.35,
+            "SOBRETIEMPO_50": 384.68,  # HORAS EXTRAS
+            "FONDO_RESERVA": 86.13,    # viene de BD -> solo ingreso, sin "EN IESS"
+            "DECIMO_TERCERA": 86.17,
+            "DECIMO_CUARTA": 40.17,
+            "BONIFICACION": 158.00,
+            "APORT_IESS": 97.72,
+            "PRESTAMOS_QUIROGRAFARIOS": 112.67,
+            "PRESTAMOS_COMPANIA": 100.00,
+            "ANTICIPO_SUELDO": 350.00,
+            "ANTICIPOS_SURTIDOS": 300.00,
+        },
+    )
+
+
+def test_rol_pago_golden_pereira_coincide_con_el_pdf_del_legado():
+    """Regresión: el texto extraído del rol generado == el del PDF real del legado."""
+    data = rol_pago_pdf(
+        _emp_pereira(), OpcionesRol(fecha_desde="2026-06-01", fecha_hasta="2026-06-30")
+    )
+    generado = _lineas_norm(pypdf.PdfReader(io.BytesIO(data)).pages[0].extract_text())
+    esperado = _lineas_norm(pypdf.PdfReader(str(_GOLDEN_PDF)).pages[0].extract_text())
+    assert generado == esperado
+
+
+def test_rol_pago_golden_totales_y_orden():
+    data = rol_pago_pdf(_emp_pereira(), OpcionesRol())
+    texto = pypdf.PdfReader(io.BytesIO(data)).pages[0].extract_text()
+    # Orden de conceptos tal como en el legado
+    orden = [
+        "SUELDO", "HORAS EXTRAS", "FONDOS DE RESERVA 8.33%", "DECIMO TERCER SUELDO",
+        "DECIMO CUARTO SUELDO", "BONIFICACION", "APORT.IESS", "PRESTAMOS QUIROGRAFARIOS",
+        "PRESTAMOS COMPAÑIA", "ANTICIPO DE SUELDO", "ANTICIPOS SURTIDOS",
+    ]
+    posiciones = [texto.index(x) for x in orden]
+    assert posiciones == sorted(posiciones)
+    assert "EN IESS" not in texto  # el fondo venía de BD
+    for total in ("1246.50", "960.39", "286.11"):
+        assert total in texto
 
 
 def test_dos_por_hoja_dibuja_dos():
