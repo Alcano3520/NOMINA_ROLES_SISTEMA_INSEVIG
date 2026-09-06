@@ -29,31 +29,68 @@ class PrestamosState(rx.State):
     cargando_hist: bool = False
     filtro_desde: str = ""  # YYYY-MM-DD
     filtro_hasta: str = ""
+    filtro_tipo: str = ""    # "" | ingreso | egreso
+    filtro_origen: str = ""  # "" | RPINGDES | RPHISTOR | MIGRADO
+    filtro_numero: str = ""
+    filtro_texto: str = ""
+    filtro_monto_min: str = ""
+    filtro_monto_max: str = ""
     exportar_job: int = 0
     exportar_status: str = ""
     exportar_path: str = ""
 
     @rx.event
-    def set_filtro_desde(self, v: str):
-        self.filtro_desde = v.strip()
+    def set_filtro(self, campo: str, v: str):
+        setattr(self, f"filtro_{campo}", v.strip())
 
     @rx.event
-    def set_filtro_hasta(self, v: str):
-        self.filtro_hasta = v.strip()
+    def limpiar_filtros(self):
+        self.filtro_desde = self.filtro_hasta = self.filtro_tipo = ""
+        self.filtro_origen = self.filtro_numero = self.filtro_texto = ""
+        self.filtro_monto_min = self.filtro_monto_max = ""
+
+    def _filtros_kwargs(self) -> dict:
+        def _num(s: str):
+            try:
+                return float(s.replace(",", "")) if s.strip() else None
+            except ValueError:
+                return None
+
+        return {
+            "tipo": self.filtro_tipo,
+            "origen": self.filtro_origen,
+            "numero": self.filtro_numero,
+            "texto": self.filtro_texto,
+            "desde": self.filtro_desde,
+            "hasta": self.filtro_hasta,
+            "monto_min": _num(self.filtro_monto_min),
+            "monto_max": _num(self.filtro_monto_max),
+        }
+
+    @rx.var
+    def hay_filtros(self) -> bool:
+        return any(
+            [
+                self.filtro_desde, self.filtro_hasta, self.filtro_tipo, self.filtro_origen,
+                self.filtro_numero, self.filtro_texto, self.filtro_monto_min, self.filtro_monto_max,
+            ]
+        )
 
     @rx.var
     def movimientos_filtrados(self) -> list[dict]:
-        d, h = self.filtro_desde, self.filtro_hasta
-        if not d and not h:
+        if not self.hay_filtros:
             return self.movimientos
-        return [
-            m for m in self.movimientos
-            if (not d or m["fecha"] >= d) and (not h or m["fecha"] <= h)
-        ]
+        return prestamos.filtrar_movimientos(list(self.movimientos), **self._filtros_kwargs())
 
     @rx.var
     def total_filtrado(self) -> float:
         return round(sum(m["valor"] for m in self.movimientos_filtrados), 2)
+
+    @rx.var
+    def conteo_filtrado(self) -> str:
+        vis = sum(1 for m in self.movimientos_filtrados if not m["es_cuadre"])
+        tot = sum(1 for m in self.movimientos if not m["es_cuadre"])
+        return f"{vis} de {tot}" + (" (filtrado)" if vis != tot else "")
 
     # narrativa IA (Job)
     narrativa: str = ""
@@ -120,13 +157,22 @@ class PrestamosState(rx.State):
             return rx.toast.error("Selecciona un empleado.")
         fuente = await self._fuente()
         cod, nombre = self.empleado_sel, self.nombre_sel
+        filtros = self._filtros_kwargs() if self.hay_filtros else None
 
         def _fn(ctx):
+            from dataclasses import asdict as _asdict
+
             from core import storage
             from core.excel.prestamos_builders import historial_xlsx
 
             ctx.progreso(0, 1, "Generando Excel…")
             movs = prestamos.historial_empleado(cod, fuente)
+            if filtros:
+                claves = {
+                    (m["fecha"], round(m["valor"], 2), m["numero"], m["origen"])
+                    for m in prestamos.filtrar_movimientos([_asdict(m) for m in movs], **filtros)
+                }
+                movs = [m for m in movs if (m.fecha, round(m.valor, 2), m.numero, m.origen) in claves]
             data = historial_xlsx(cod, nombre, movs)
             ruta = storage.guardar(ctx.job_id, f"PRESTAMOS_{cod}.xlsx", data)
             ctx.set_resultado(str(ruta))

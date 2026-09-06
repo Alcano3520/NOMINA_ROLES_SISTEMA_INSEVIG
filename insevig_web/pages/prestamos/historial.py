@@ -88,6 +88,45 @@ def _tabla_resumen() -> rx.Component:
     )
 
 
+_INP = {"size": "1", "width": "120px"}
+_SEL_STYLE = {"padding": "5px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
+              "background": "#fff", "fontSize": "13px"}
+
+
+def _filtros() -> rx.Component:
+    S = PrestamosState
+    return rx.hstack(
+        rx.el.select(
+            rx.el.option("Todo tipo", value=""),
+            rx.el.option("Solo ingresos", value="ingreso"),
+            rx.el.option("Solo egresos", value="egreso"),
+            value=S.filtro_tipo, on_change=lambda v: S.set_filtro("tipo", v), style=_SEL_STYLE,
+        ),
+        rx.el.select(
+            rx.el.option("Todo origen", value=""),
+            rx.el.option("Sistema actual", value="RPINGDES"),
+            rx.el.option("Histórico", value="RPHISTOR"),
+            rx.el.option("Migrado", value="MIGRADO"),
+            value=S.filtro_origen, on_change=lambda v: S.set_filtro("origen", v), style=_SEL_STYLE,
+        ),
+        rx.input(value=S.filtro_numero, on_change=lambda v: S.set_filtro("numero", v),
+                 placeholder="N°", **_INP),
+        rx.input(value=S.filtro_texto, on_change=lambda v: S.set_filtro("texto", v),
+                 placeholder="Concepto…", **_INP),
+        rx.input(value=S.filtro_desde, on_change=lambda v: S.set_filtro("desde", v),
+                 placeholder="Desde AAAA-MM-DD", **{**_INP, "width": "150px"}),
+        rx.input(value=S.filtro_hasta, on_change=lambda v: S.set_filtro("hasta", v),
+                 placeholder="Hasta AAAA-MM-DD", **{**_INP, "width": "150px"}),
+        rx.input(value=S.filtro_monto_min, on_change=lambda v: S.set_filtro("monto_min", v),
+                 placeholder="Monto min", **{**_INP, "width": "100px"}),
+        rx.input(value=S.filtro_monto_max, on_change=lambda v: S.set_filtro("monto_max", v),
+                 placeholder="Monto max", **{**_INP, "width": "100px"}),
+        rx.cond(S.hay_filtros,
+                rx.button("Limpiar", on_click=S.limpiar_filtros, variant="soft", size="1")),
+        spacing="2", align="center", wrap="wrap",
+    )
+
+
 def _detalle_prestamo() -> rx.Component:
     return rx.cond(
         PrestamosState.detalle_movs.length() > 0,
@@ -167,14 +206,10 @@ def historial() -> rx.Component:
                             align="center",
                             wrap="wrap",
                         ),
+                        _filtros(),
                         rx.hstack(
-                            rx.text("Desde", size="1"),
-                            rx.input(value=PrestamosState.filtro_desde, on_change=PrestamosState.set_filtro_desde,
-                                     placeholder="AAAA-MM-DD", width="130px", size="1"),
-                            rx.text("Hasta", size="1"),
-                            rx.input(value=PrestamosState.filtro_hasta, on_change=PrestamosState.set_filtro_hasta,
-                                     placeholder="AAAA-MM-DD", width="130px", size="1"),
-                            rx.badge("Total: " + PrestamosState.total_filtrado.to_string()),
+                            rx.badge("Mostrando " + PrestamosState.conteo_filtrado),
+                            rx.badge("Total: " + PrestamosState.total_filtrado.to_string(), color_scheme="blue"),
                             rx.button("Exportar a Excel", on_click=PrestamosState.exportar_empleado, variant="soft", size="1"),
                             rx.cond(
                                 PrestamosState.exportar_path != "",

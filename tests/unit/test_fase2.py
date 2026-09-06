@@ -116,6 +116,29 @@ def test_agrupar_detecta_brecha_y_cancelado():
     assert len(det) == 3 and det[0].fecha == "2025-01-05"
 
 
+def test_filtrar_movimientos():
+    from dataclasses import asdict
+
+    M = prestamos.MovimientoPrestamo
+    movs = [
+        asdict(M("2025-01-05", 500.0, "PRESTAMO INICIAL", "9", "RPHISTOR")),
+        asdict(M("2025-02-28", -100.0, "CUOTA", "9", "RPINGDES")),
+        asdict(M("2025-03-31", -250.0, "CUOTA EXTRA", "12", "RPINGDES")),
+        asdict(M("2025-04-30", -50.0, "CUADRE", "9", "MIGRADO", es_cuadre=True)),
+    ]
+    f = prestamos.filtrar_movimientos
+    assert len(f(movs, tipo="ingreso")) == 1
+    assert len(f(movs, tipo="egreso")) == 3
+    assert [m["numero"] for m in f(movs, numero="12")] == ["12"]
+    assert len(f(movs, origen="RPINGDES")) == 2
+    assert len(f(movs, texto="extra")) == 1
+    assert len(f(movs, desde="2025-03-01")) == 2
+    assert len(f(movs, hasta="2025-02-28")) == 2
+    assert len(f(movs, monto_min=200)) == 2  # 500 y 250 (valor absoluto)
+    assert len(f(movs, monto_max=100)) == 2  # 100 y 50
+    assert f(movs) == movs  # sin filtros, todo
+
+
 def test_historial_xlsx_tiene_hoja_resumen():
     import io
 

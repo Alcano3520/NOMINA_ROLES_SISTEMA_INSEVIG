@@ -282,3 +282,48 @@ def agrupar_por_numero(movs: list[MovimientoPrestamo]) -> list[ResumenPrestamo]:
 def movimientos_de_numero(movs: list[MovimientoPrestamo], numero: str) -> list[MovimientoPrestamo]:
     """Los movimientos individuales de un préstamo (para el detalle por fila)."""
     return sorted((m for m in movs if (m.numero or "(sin nº)") == numero), key=lambda m: m.fecha)
+
+
+def filtrar_movimientos(
+    movs: list[dict],
+    *,
+    tipo: str = "",       # "" | "ingreso" | "egreso"
+    origen: str = "",     # "" | RPINGDES | RPHISTOR | MIGRADO
+    numero: str = "",     # substring del N°
+    texto: str = "",      # substring del concepto/observación
+    desde: str = "",      # fecha ISO YYYY-MM-DD
+    hasta: str = "",
+    monto_min: float | None = None,   # sobre el valor absoluto
+    monto_max: float | None = None,
+) -> list[dict]:
+    """Filtra la lista de movimientos (dicts como los de `MovimientoPrestamo`),
+    con los mismos criterios que `aplicar_filtros` del `.pyw`."""
+    num = numero.strip()
+    txt = texto.strip().lower()
+    orig = origen.strip().upper()
+
+    def _ok(m: dict) -> bool:
+        v = a_float(m.get("valor"))
+        if tipo == "ingreso" and v <= 0:
+            return False
+        if tipo == "egreso" and v >= 0:
+            return False
+        if orig and str(m.get("origen", "")).upper() != orig:
+            return False
+        if num and num not in str(m.get("numero", "")):
+            return False
+        if txt and txt not in str(m.get("concepto", "")).lower():
+            return False
+        f = str(m.get("fecha", ""))[:10]
+        if desde and f < desde:
+            return False
+        if hasta and f > hasta:
+            return False
+        av = abs(v)
+        if monto_min is not None and av < monto_min:
+            return False
+        if monto_max is not None and av > monto_max:  # noqa: SIM103
+            return False
+        return True
+
+    return [m for m in movs if _ok(m)]
