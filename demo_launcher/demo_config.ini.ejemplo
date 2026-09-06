@@ -1,0 +1,13 @@
+; Copiar como "demo_config.ini" junto al .exe SOLO si hace falta cambiar los
+; valores por defecto. Sin este archivo el lanzador ya usa la URL del NAS y
+; busca el proyecto en X: / \\192.168.2.181\Sistemas_Dev$.
+;
+; Rutas: UNC (\\192.168.2.181\...) o unidad de red mapeada (X:, Y:).
+; NUNCA rutas locales fijas tipo C:\.
+
+[demo]
+url = http://192.168.2.181:3000
+; proyecto: solo lo usan las PC de desarrollo (GRP_DEVS) para levantar el
+; servidor si el servicio del NAS estuviera caído. Dejar en blanco en las
+; PC de RRHH/general.
+proyecto = X:\

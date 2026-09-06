@@ -1,21 +1,24 @@
 """Lanzador de demo INSEVIG — abre la app web (Reflex) en el navegador.
 
-Uso: doble clic en el .exe generado (ver .github/workflows/
-build-demo-launcher-exe.yml). Si el servidor ya está corriendo en la URL
-configurada, solo abre el navegador. Si no está corriendo y hay una
-instalación local del proyecto junto al .exe (una carpeta con `insevig_web`
-y `.venv` al lado, o la ruta indicada en `demo_config.ini`), lo levanta
-primero con el mismo comando de `scripts/dev.sh`
+Uso: doble clic en el .exe (desplegado en `\\\\192.168.2.181\\Apps_Empresa$\\
+Lanzadores\\` — unidad Y:). El personal de RRHH/general solo necesita esto:
+si el servidor Reflex está corriendo como servicio en el NAS, abre el
+navegador y listo.
+
+Si el servidor NO responde y el .exe encuentra el proyecto de desarrollo
+accesible (share oculto `\\\\192.168.2.181\\Sistemas_Dev$` — unidad X:, solo
+GRP_DEVS), lo levanta con el mismo comando de `scripts/dev.sh`
 (`reflex run --env prod --single-port --frontend-port 3000`).
 
 Config opcional -- archivo `demo_config.ini` junto al .exe:
 
     [demo]
-    url = http://192.168.2.50:3000
-    proyecto = C:\\INSEVIG\\web
+    url = http://192.168.2.181:3000
+    proyecto = X:\\
 
-Sin ese archivo, se asume `http://localhost:3000` y se busca el proyecto
-en la misma carpeta que el .exe.
+Rutas siempre UNC (`\\\\192.168.2.181\\...`) o unidad de red mapeada
+(X:, Y:); nunca rutas locales fijas tipo C:\\. Sin `demo_config.ini` se
+asume la URL del NAS y se buscan las ubicaciones candidatas de abajo.
 """
 
 from __future__ import annotations
@@ -28,9 +31,20 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-URL_DEFECTO = "http://localhost:3000"
+URL_DEFECTO = "http://192.168.2.181:3000"
 PUERTO_DEFECTO = "3000"
 SEGUNDOS_ESPERA_MAXIMOS = 60
+
+# Ubicaciones candidatas del proyecto Reflex (share oculto de desarrollo).
+# Solo GRP_DEVS puede leerlas; para el resto del personal fallan en silencio
+# y el lanzador simplemente abre el navegador. UNC o unidad mapeada, jamás
+# una ruta local fija.
+RUTAS_PROYECTO_CANDIDATAS = (
+    "X:\\",
+    "X:\\web",
+    "\\\\192.168.2.181\\Sistemas_Dev$",
+    "\\\\192.168.2.181\\Sistemas_Dev$\\web",
+)
 
 
 def _directorio_exe() -> Path:
@@ -38,6 +52,20 @@ def _directorio_exe() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return Path(__file__).resolve().parent
+
+
+def _es_proyecto(ruta: Path) -> bool:
+    try:
+        return (ruta / "insevig_web").exists()
+    except OSError:  # share no accesible (permisos) o ruta inválida
+        return False
+
+
+def _buscar_proyecto(base: Path) -> Path | None:
+    for ruta in (base, *(Path(r) for r in RUTAS_PROYECTO_CANDIDATAS)):
+        if _es_proyecto(ruta):
+            return ruta
+    return None
 
 
 def _leer_config(base: Path) -> tuple[str, Path | None]:
@@ -51,8 +79,8 @@ def _leer_config(base: Path) -> tuple[str, Path | None]:
         ruta = cfg.get("demo", "proyecto", fallback="")
         if ruta:
             proyecto = Path(ruta)
-    if proyecto is None and (base / "insevig_web").exists():
-        proyecto = base
+    if proyecto is None:
+        proyecto = _buscar_proyecto(base)
     return url, proyecto
 
 
@@ -72,6 +100,8 @@ def _iniciar_servidor(proyecto: Path) -> None:
     flags = 0
     if sys.platform == "win32":
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    # cwd puede ser UNC o unidad mapeada; CreateProcess acepta UNC como
+    # directorio de trabajo (a diferencia de cmd.exe).
     subprocess.Popen(comando, cwd=str(proyecto), creationflags=flags)  # noqa: S603
 
 
@@ -93,8 +123,10 @@ def main() -> None:
                 print("El sistema está tardando más de lo normal en arrancar; "
                       "se abrirá igual la página, reintente en unos segundos.")
         else:
-            print("No se encontró una instalación local junto al lanzador "
-                  "(ni demo_config.ini). Se abrirá la URL de todas formas.")
+            print("El servidor no responde y no se llegó al proyecto de "
+                  "desarrollo (X: / Sistemas_Dev$). Se abrirá la URL igual; "
+                  "si no carga, avise a Sistemas para que arranque el "
+                  "servicio en el NAS.")
 
     webbrowser.open(url)
     time.sleep(2)

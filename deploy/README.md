@@ -2,6 +2,10 @@
 
 Runbook para poner la app en producción. Contexto: `docs/PLAN_IMPLEMENTACION.md` §D.
 
+> **Puesta en marcha rápida en el NAS 192.168.2.181** (app en `:3000` como
+> servicio, sin Caddy todavía): ver **`NAS-192.168.2.181.md`**. Este README es
+> la versión completa con HTTPS/Caddy, cuenta de servicio dedicada y piloto.
+
 ## Requisitos del servidor
 - Windows Server 2019/2022, segmento interno con **línea de vista a `192.168.2.115`**
   (SQL Server). El SMB de préstamos ya NO se usa (se migra a Postgres una vez).
