@@ -32,7 +32,10 @@ editarlos inline y guardar (advisory lock + auditoría), ver historial completo.
 - Validar nombres de columna de RPEMPLEA contra la BD real (algunos son columnas
   varchar genéricas reutilizadas; el legado los escribe pero conviene confirmar).
 - Adjuntar imágenes de certificados (el legado solo dibuja recuadros vacíos).
-- Impresión del historial de observaciones a PDF/HTML (hoy se lista en pantalla).
+
+## Hecho recientemente
+- Historial de observaciones descargable como HTML imprimible (botón en el
+  editor → `observaciones.historial_observaciones_html`).
 
 ## Origen legado
 empleados/SISTEMA_GESTION_EMPLEADOS_10.pyw, empleados/CARGA_MASIVA_EMPLEADOS.pyw, empleados/historial_empleado_GUI.pyw

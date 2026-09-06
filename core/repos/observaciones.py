@@ -441,6 +441,38 @@ def reporte_html(empleado: str, nombre: str, obs: list[dict], multas_: list[dict
 </body></html>"""
 
 
+def historial_observaciones_html(empleado: str, nombre: str, filas: list[dict]) -> str:
+    """HTML imprimible solo del historial de observaciones (todas las filas de
+    RPEMPOBSERV), con cada slot refer1..7 en su propia línea. `filas` con la
+    forma de `historial_observaciones()` (`{fecha_ven, textos}`)."""
+    import datetime as _dt
+    import html as _h
+
+    def _fila(o: dict) -> str:
+        f = _h.escape(str(o.get("fecha_ven", "")))
+        textos = o.get("textos") or ([o["texto"]] if o.get("texto") else [])
+        items = "".join(f"<li>{_h.escape(str(t))}</li>" for t in textos)
+        return f"<tr><td style='white-space:nowrap;vertical-align:top'>{f}</td><td><ul>{items}</ul></td></tr>"
+
+    ahora = _dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+    cuerpo = "".join(_fila(o) for o in filas) or "<tr><td colspan=2>Sin observaciones</td></tr>"
+    nom, emp = _h.escape(nombre), _h.escape(str(empleado))
+    return f"""<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Historial de observaciones — {nom}</title><style>
+ body{{font-family:'Segoe UI',Arial,sans-serif;margin:32px;color:#222}}
+ h1{{font-size:18px}}
+ table{{border-collapse:collapse;width:100%;font-size:12px;margin-top:10px}}
+ th,td{{border:1px solid #bbb;padding:4px 6px;text-align:left}} th{{background:#1a4d8f;color:#fff}}
+ ul{{margin:0;padding-left:18px}} .info{{color:#555;font-size:12px;margin-bottom:12px}}
+</style></head><body>
+<h1>INSEVIG — Historial de observaciones</h1>
+<div class="info">Empleado: <b>{nom}</b> &nbsp;|&nbsp; Código: {emp} &nbsp;|&nbsp;
+ {len(filas)} registro(s) &nbsp;|&nbsp; Generado: {ahora}</div>
+<table><tr><th>Fecha</th><th>Observaciones</th></tr>{cuerpo}</table>
+<p style="margin-top:24px;font-size:12px;color:#666">Listo para imprimir (Ctrl+P).</p>
+</body></html>"""
+
+
 def empleados_con_observaciones(fuente: str, *, limite: int = 500) -> list[dict]:
     """[{'empleado','apellidos_nombres','meses','ultima'}] — empleados que tienen
     al menos una fila en RPEMPOBSERV con algún slot con texto ("Mostrar todos")."""

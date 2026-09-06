@@ -320,7 +320,12 @@ def _observaciones() -> rx.Component:
             rx.cond(
                 _S.obs_historial.length() > 0,
                 rx.vstack(
-                    rx.heading("Historial", size="2"),
+                    rx.hstack(
+                        rx.heading("Historial", size="2"),
+                        rx.button(rx.icon("download", size=14), "HTML",
+                                  on_click=_S.descargar_historial_obs, variant="ghost", size="1"),
+                        justify="between", width="100%", align="center",
+                    ),
                     rx.foreach(
                         _S.obs_historial,
                         lambda h: rx.box(

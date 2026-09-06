@@ -48,6 +48,28 @@ def test_reporte_html_observaciones():
     assert "MULTA" in html
 
 
+def test_historial_observaciones_html():
+    from core.repos import observaciones as obs
+
+    filas = [
+        {"fecha_ven": "2026-06-15", "textos": ["Llegó tarde", "Sin uniforme <x>"]},
+        {"fecha_ven": "2026-05-02", "textos": ["Felicitación del cliente"]},
+    ]
+    html = obs.historial_observaciones_html("1012", "PEREIRA JUAN", filas)
+    assert "<!DOCTYPE html>" in html
+    assert "PEREIRA JUAN" in html and "1012" in html
+    assert "2 registro(s)" in html
+    assert "<li>Llegó tarde</li>" in html
+    assert "&lt;x&gt;" in html  # escapado
+
+
+def test_historial_observaciones_html_vacio_no_revienta():
+    from core.repos import observaciones as obs
+
+    html = obs.historial_observaciones_html("1012", "X", [])
+    assert "Sin observaciones" in html and "0 registro(s)" in html
+
+
 def test_falta_suma_total():
     f = _falta({"FECHA_VEN": "2026-06-15", "TOTAUS": 8, "TOTFJ": 0, "TOTFI": 4})
     assert f.periodo == "2026-06"

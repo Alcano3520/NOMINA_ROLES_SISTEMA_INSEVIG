@@ -702,6 +702,24 @@ class EmpleadosState(rx.State):
         self.obs_historial = [
             {"fecha_ven": f["fecha_ven"], "texto": " · ".join(f["textos"])} for f in filas
         ]
+        self._obs_historial_slots = [f["textos"] for f in filas]
+
+    _obs_historial_slots: list = []
+
+    @rx.event
+    async def descargar_historial_obs(self):
+        if not self.edit_empleado or not self.obs_historial:
+            return
+        filas = [
+            {"fecha_ven": o["fecha_ven"], "textos": self._obs_historial_slots[i]}
+            for i, o in enumerate(self.obs_historial)
+        ]
+        html = await asyncio.to_thread(
+            observaciones.historial_observaciones_html, self.edit_empleado, self.nombre_editor, filas
+        )
+        return rx.download(
+            data=html.encode("utf-8"), filename=f"historial_observaciones_{self.edit_empleado}.html"
+        )
 
     @rx.event
     def set_confirmar_borrado(self, v: str):
