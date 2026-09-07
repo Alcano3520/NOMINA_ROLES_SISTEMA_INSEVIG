@@ -101,6 +101,65 @@ Requires `msodbcsql17`/`msodbcsql18` (see `INSTALACION_LINUX.md` for install ste
 
 `docs/INFRAESTRUCTURA_RRHH.txt` has the full inventory (credentials, SMB paths, table schemas, PyInstaller/CI details) — check it before assuming a path or credential from a module's CLAUDE.md is still current, since infra details occasionally drift between module docs.
 
-## Windows Deployment
+## Windows Deployment (Legado — en migración)
 
 Modules are packaged to Windows `.exe` via PyInstaller (`.spec` files inside each module folder) and, for at least the `HISTORIAL PRESTAMOS/` nested repo, built via a GitHub Actions workflow (`HISTORIAL PRESTAMOS/.github/workflows/build_windows.yml`) — there is no such workflow at the top-level repo. Deployed EXEs are copied to `\\roberto-pc\...\1.TURNOS\` (or the module's documented equivalent); if the EXE is locked by a running instance on Windows, copy as `_NUEVO.exe` and rename from Explorer rather than overwriting directly.
+
+---
+
+## Objetivo de Arquitectura Final: Reflex Web en Servidor Interno (Producción)
+
+**Modelo destino** — cada módulo migrado a `core/` + `insevig_web/` se sirve **solo como web**, no como `.exe`:
+
+```
+Servidor Windows oficina (IP fija, ej. 192.168.2.XX)
+  ├─ PostgreSQL local (BD operativa + tablas app)
+  ├─ Backend Reflex (FastAPI) corriendo como SERVICIO WINDOWS (NSSM)
+  │    ├─ Puerto 8000 (API) — solo interno
+  │    └─ Auto-arranque + reinicio si falla
+  └─ Frontend Reflex servido por el mismo backend
+       └─ http://192.168.2.XX:3000  (o DNS interno: http://rrhh.insevig.local)
+            └─ Usuarios abren en navegador → SIEMPRE versión actual
+```
+
+### Flujo de despliegue (una vez montado el servidor)
+
+```bash
+# En el servidor (RDP/SSH)
+cd C:\INSEVIG\web  # o /opt/insevig_web
+git pull origin main
+# Si hay migraciones BD:
+alembic upgrade head
+# Reiniciar servicio (segundos):
+net stop insevig-web && net start insevig-web
+# O con NSSM: nssm restart insevig-web
+```
+
+### Ventajas vs .exe en red
+| .exe en red (actual) | Reflex web (objetivo) |
+|---------------------|----------------------|
+| Compilar → subir → copiar → desbloquear | `git pull` + `restart` (1 vez) |
+| Usuario ejecuta versión vieja si no cierra | Usuario recarga (F5) → versión nueva al instante |
+| Bloqueos de archivo al actualizar | Cero bloqueos (solo reinicio servicio) |
+| Instalación/atajo en cada PC | Solo navegador, cero instalación |
+| No hay logs centralizados | Logs centralizados en servidor |
+| Offline = no funciona | Offline = no funciona (igual, pero se puede añadir PWA + cache) |
+
+### Requisitos previos en el servidor
+1. **IP fija** (no DHCP) + regla Firewall entrante: 3000 (frontend) + 8000 (API).
+2. **PostgreSQL** instalado y BD creada (`insevig_app`).
+3. **Python 3.12+** + dependencias (`pip install -e .[web]`).
+4. **NSSM** para instalar `insevig-web` como servicio Windows (`nssm install insevig-web python -m reflex run --env prod`).
+5. (Opcional) DNS interno `rrhh.insevig.local` → IP servidor, para no usar IP dura.
+6. (Opcional) Nginx/IIS como reverse proxy en puerto 80/443 si se quiere HTTPS + dominio bonito.
+
+### Qué NO cambia
+- **SQL Server 2008 R2** sigue siendo *source of truth* (solo lectura, filtro `CODEMP='10' AND CODSUC='10'`).
+- **Supabase** sigue como mirror + tablas módulo + auditoría.
+- **SQLite local** en `core/storage` para colas/offline si se implementa futuro sync worker.
+- **Credenciales** en `config/supabase.yaml` + variables de entorno del servicio Windows.
+
+### Migración incremental
+Cada módulo que se complete en `core/repos/<mod>.py` + `insevig_web/pages/<mod>/` + `registry.py` **aparece automáticamente** en `http://servidor:3000` sin tocar ningún PC usuario. Los `.exe` legacy se retiran módulo a módulo cuando su contraparte Reflex alcanza paridad.
+
+**Decisión registrada**: no se invierte más en automatizar despliegue de `.exe` (launcher, ClickOnce, MSIX). El esfuerzo va 100% a completar la migración a `core/` + `insevig_web/` y montar el servidor Reflex una sola vez.

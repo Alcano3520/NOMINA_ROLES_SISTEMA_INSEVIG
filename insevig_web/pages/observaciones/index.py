@@ -176,6 +176,10 @@ def _mostrar_todos() -> rx.Component:
 def index() -> rx.Component:
     return pagina(
         page_heading("Observaciones, Multas y Faltas", "Consulta por empleado."),
+        rx.cond(
+            AuthState.permisos_flat.contains("observaciones:crear"),
+            rx.link("Carga masiva de observaciones →", href="/observaciones/carga-masiva", size="2"),
+        ),
         rx.vstack(
             employee_search(
                 texto=ObservacionesState.texto_busqueda,

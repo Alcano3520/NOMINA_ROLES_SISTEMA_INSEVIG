@@ -43,6 +43,43 @@ def parse_carga_masiva_empleados(datos: bytes) -> tuple[list[dict], list[str]]:
     return validas, errores
 
 
+def parse_carga_masiva_observaciones(datos: bytes) -> tuple[list[dict], list[str]]:
+    """Excel con columnas EMPLEADO, PERIODO (AAAA-MM) y TEXTO. Una observación
+    por fila. Devuelve `[{empleado, periodo, texto}]` y la lista de errores."""
+    import datetime as _dt
+
+    ws = _hoja(datos)
+    filas = list(ws.iter_rows(values_only=True))
+    if not filas:
+        return [], ["El archivo está vacío."]
+    headers = [str(h).strip().upper() if h is not None else "" for h in filas[0]]
+    faltan = [c for c in ("EMPLEADO", "PERIODO", "TEXTO") if c not in headers]
+    if faltan:
+        return [], [f"Faltan columnas obligatorias: {', '.join(faltan)}."]
+    i_emp, i_per, i_txt = (headers.index(c) for c in ("EMPLEADO", "PERIODO", "TEXTO"))
+    validas: list[dict] = []
+    errores: list[str] = []
+    for n, fila in enumerate(filas[1:], start=2):
+        cod = fila[i_emp] if i_emp < len(fila) else None
+        per = fila[i_per] if i_per < len(fila) else None
+        txt = fila[i_txt] if i_txt < len(fila) else None
+        if cod in (None, "") and per in (None, "") and txt in (None, ""):
+            continue
+        if cod in (None, "") or txt in (None, ""):
+            errores.append(f"Fila {n}: falta EMPLEADO o TEXTO.")
+            continue
+        per_str = per.strftime("%Y-%m") if isinstance(per, _dt.datetime) else str(per or "").strip()[:7]
+        try:
+            _dt.datetime.strptime(per_str, "%Y-%m")
+        except ValueError:
+            errores.append(f"Fila {n}: PERIODO '{per}' no es AAAA-MM.")
+            continue
+        validas.append(
+            {"empleado": str(cod).strip(), "periodo": per_str, "texto": str(txt).strip()[:256]}
+        )
+    return validas, errores
+
+
 # ── BIESS quirografarios ─────────────────────────────────────────────────────
 
 

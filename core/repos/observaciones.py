@@ -229,6 +229,34 @@ def guardar_observacion(empleado: str, periodo: str, texto: str, *, usuario: str
         return "nueva_fila"
 
 
+def job_carga_masiva_observaciones(ctx, filas: list[dict], *, usuario: str, roles: set[str]) -> None:
+    """Aplica una carga masiva de observaciones fila por fila (cada una usa
+    `guardar_observacion`: primer slot libre, dedupe, advisory lock, auditoría).
+    Deja un xlsx de resultados."""
+    from core import storage
+    from core.excel.observaciones_builders import resultados_carga_xlsx
+
+    resultados: list[dict] = []
+    total = len(filas)
+    for i, fila in enumerate(filas, 1):
+        if ctx.cancelado:
+            break
+        cod = str(fila.get("empleado") or "").strip()
+        per = str(fila.get("periodo") or "").strip()
+        try:
+            r = guardar_observacion(cod, per, str(fila.get("texto") or ""), usuario=usuario, roles=roles)
+            aplicada = r != "duplicado"
+            resultados.append({"empleado": cod, "periodo": per, "ok": aplicada,
+                               "detalle": f"guardada ({r})" if aplicada else "ya existía"})
+        except Exception as e:  # noqa: BLE001
+            resultados.append({"empleado": cod, "periodo": per, "ok": False, "detalle": str(e)[:200]})
+        ctx.progreso(i, total, f"{i}/{total} · OK {sum(r['ok'] for r in resultados)}")
+    ruta = storage.guardar(ctx.job_id, "CARGA_OBSERVACIONES_RESULTADO.xlsx", resultados_carga_xlsx(resultados))
+    ctx.set_resultado(str(ruta))
+    ok = sum(r["ok"] for r in resultados)
+    ctx.progreso(total, total, f"Terminado: {ok} OK, {len(resultados) - ok} sin aplicar")
+
+
 def _rango_mes(periodo: str) -> tuple[str, str]:
     anio, mes = periodo.split("-")
     ini = f"{anio}-{int(mes):02d}-01"

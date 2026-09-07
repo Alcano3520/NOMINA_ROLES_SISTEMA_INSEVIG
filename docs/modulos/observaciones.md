@@ -20,6 +20,14 @@ Estado: **consulta completa + alta de observaciones + reporte imprimible**.
 ## Datos
 Lectura SQL Server o Supabase; escritura solo SQL Server (RPEMPOBSERV).
 
+## Carga masiva
+`/observaciones/carga-masiva` (enlace desde la página principal; gated en
+`observaciones:crear`). Sube un `.xlsx` con columnas **EMPLEADO**, **PERIODO**
+(AAAA-MM) y **TEXTO** — una observación por fila. Previsualiza, y "Aplicar" corre
+un Job que llama `guardar_observacion` fila por fila (primer slot refer libre del
+mes, dedupe, advisory lock, auditoría por fila) y deja un xlsx de resultados
+(OK / ya existía / error). Parser: `core.excel.parsers.parse_carga_masiva_observaciones`.
+Job: `observaciones.job_carga_masiva_observaciones`.
+
 ## Pendiente
-- Carga masiva de observaciones desde Excel (plantilla + Job), como
-  `agregar_observaciones_masivas.py`.
+- Validar los nombres de tabla `rphortot` / `rphorhis` en Supabase contra la BD real.

@@ -70,6 +70,86 @@ def test_historial_observaciones_html_vacio_no_revienta():
     assert "Sin observaciones" in html and "0 registro(s)" in html
 
 
+def _xlsx_obs(filas):
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for f in filas:
+        ws.append(f)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_parse_carga_masiva_observaciones():
+    import datetime as dt
+
+    from core.excel.parsers import parse_carga_masiva_observaciones
+
+    data = _xlsx_obs(
+        [
+            ["EMPLEADO", "PERIODO", "TEXTO"],
+            ["1012", "2026-06", "Llegó tarde"],
+            [1013, dt.datetime(2026, 5, 1), "  Sin uniforme  "],
+            ["", "", ""],                       # fila vacía -> ignorada
+            ["1014", "2026-13", "mes malo"],     # periodo inválido -> error
+            ["1015", "2026-07", ""],             # sin texto -> error
+        ]
+    )
+    filas, errores = parse_carga_masiva_observaciones(data)
+    assert filas == [
+        {"empleado": "1012", "periodo": "2026-06", "texto": "Llegó tarde"},
+        {"empleado": "1013", "periodo": "2026-05", "texto": "Sin uniforme"},
+    ]
+    assert len(errores) == 2
+
+
+def test_parse_carga_masiva_observaciones_falta_columna():
+    from core.excel.parsers import parse_carga_masiva_observaciones
+
+    filas, errores = parse_carga_masiva_observaciones(_xlsx_obs([["EMPLEADO", "TEXTO"], ["1012", "x"]]))
+    assert filas == [] and "PERIODO" in errores[0]
+
+
+def test_job_carga_masiva_observaciones(monkeypatch, tmp_path):
+    from core.repos import observaciones as obs
+
+    llamadas = []
+
+    def _fake_guardar(empleado, periodo, texto, *, usuario, roles):
+        llamadas.append((empleado, periodo, texto))
+        return "duplicado" if texto == "repe" else "refer1"
+
+    monkeypatch.setattr(obs, "guardar_observacion", _fake_guardar)
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
+
+    class _Ctx:
+        job_id = 1
+        cancelado = False
+
+        def progreso(self, *a):
+            pass
+
+        def set_resultado(self, r):
+            self.resultado = r
+
+    ctx = _Ctx()
+    obs.job_carga_masiva_observaciones(
+        ctx,
+        [
+            {"empleado": "1012", "periodo": "2026-06", "texto": "ok"},
+            {"empleado": "1013", "periodo": "2026-06", "texto": "repe"},
+        ],
+        usuario="admin",
+        roles={"admin"},
+    )
+    assert len(llamadas) == 2
+    assert ctx.resultado.endswith(".xlsx")
+
+
 def test_falta_suma_total():
     f = _falta({"FECHA_VEN": "2026-06-15", "TOTAUS": 8, "TOTFJ": 0, "TOTFI": 4})
     assert f.periodo == "2026-06"

@@ -8,9 +8,12 @@ from dataclasses import asdict
 
 import reflex as rx
 
+from core.jobs.runner import JobRunner, get_runner, leer_job
 from core.repos import observaciones
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.datasource_state import DataSourceState
+
+_TERMINALES = {"ok", "error", "cancelado"}
 
 
 class ObservacionesState(rx.State):
@@ -162,6 +165,76 @@ class ObservacionesState(rx.State):
         return rx.download(
             data=html.encode("utf-8"), filename="observaciones_varios.html"
         )
+
+    # ── Carga masiva de observaciones ────────────────────────────────────
+    masiva_filas: list[dict] = []
+    masiva_errores: list[str] = []
+    masiva_job: int = 0
+    masiva_status: str = ""
+    masiva_msg: str = ""
+    masiva_path: str = ""
+
+    @rx.event
+    async def subir_masiva(self, files: list[rx.UploadFile]):
+        from core.excel.parsers import parse_carga_masiva_observaciones
+
+        if not files:
+            return
+        datos = await files[0].read()
+        filas, errores = parse_carga_masiva_observaciones(datos)
+        self.masiva_filas = filas[:1000]
+        self.masiva_errores = errores[:50]
+        self.masiva_msg = ""
+
+    @rx.event
+    async def aplicar_masiva(self):
+        auth = await self.get_state(AuthState)
+        if "observaciones:crear" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso para crear observaciones.")
+        if not self.masiva_filas:
+            return rx.toast.error("Primero sube y previsualiza un archivo.")
+        filas = [dict(f) for f in self.masiva_filas]
+        usuario, roles = auth.username, set(auth.roles)
+
+        def _fn(ctx):
+            observaciones.job_carga_masiva_observaciones(ctx, filas, usuario=usuario, roles=roles)
+
+        self.masiva_path = ""
+        self.masiva_job = get_runner().encolar(
+            "carga_masiva_observaciones", {"n": len(filas)}, creado_por=usuario, fn=_fn
+        )
+        self.masiva_status = "pendiente"
+        return ObservacionesState.vigilar_masiva
+
+    @rx.event(background=True)
+    async def vigilar_masiva(self):
+        for _ in range(3600):
+            async with self:
+                jid = self.masiva_job
+            j = leer_job(jid)
+            if j is None:
+                return
+            async with self:
+                self.masiva_status = j.status
+                self.masiva_msg = j.message
+                self.masiva_path = j.result_path
+            if j.status in _TERMINALES:
+                return
+            await asyncio.sleep(1)
+
+    @rx.event
+    def cancelar_masiva(self):
+        if self.masiva_job:
+            JobRunner.cancelar(self.masiva_job)
+
+    @rx.event
+    def descargar_masiva(self):
+        from pathlib import Path
+
+        if not self.masiva_path:
+            return
+        p = Path(self.masiva_path)
+        return rx.download(data=p.read_bytes(), filename=p.name)
 
     @rx.event
     def descargar_reporte(self):

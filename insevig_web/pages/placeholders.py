@@ -32,6 +32,7 @@ _RUTAS_MIGRADAS = {
     "/prestamos/historial",
     "/prestamos/saldos",
     "/observaciones",
+    "/observaciones/carga-masiva",
     "/empleados/historial",
     "/empleados/buscar",
     "/empleados/avanzada",

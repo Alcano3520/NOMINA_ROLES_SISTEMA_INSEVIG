@@ -35,7 +35,7 @@ Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` act
 |---|---|---|
 | Reportes | consolidado actual + histórico (RPHISTOR ~2.5M) + comparador | pool SQLAlchemy para el histórico; nombres de tabla Supabase (`rpingdesres`/`rphistor_temp`) |
 | Préstamos | historial combinado (RPINGDES + RPHISTOR + migrado) + saldos + narrativa IA. [x] filtros completos (tipo/origen/N°/concepto/fecha/monto) + export que los respeta | dedupe de la vista combinada; cargar el SQLite con `python -m core.migrations_legacy.sqlite_to_appdb <ruta>` |
-| Observaciones | obs / multas (CLASE 203) / faltas (RPHORTOT, RPHORHIS) | nombres de tablas `rphortot`/`rphorhis` en Supabase (verificar) |
+| Observaciones | obs / multas (CLASE 203) / faltas (RPHORTOT, RPHORHIS). [x] alta individual + [x] carga masiva desde Excel (Job) | nombres de tablas `rphortot`/`rphorhis` en Supabase (verificar) |
 | Empleados | buscar, editor (hoy ~32 de 68 campos de RPEMPLEA), CRUD auditado, carga masiva | **ampliar `GRUPOS` en `core/repos/empleados.py`** a los 68 campos si RRHH los usa; probar concurrencia optimista con 2 sesiones |
 | Roles PDF | [x] golden test de texto contra `docs/pereira_test.pdf` (empleado 1012, coincide línea por línea). Falta: ampliar a más fixtures (décimos asentados/no, 2-por-hoja) y validar contra roles reales de otros empleados | |
 | Envío | lote a buzones internos, intervalo, sin doble envío | registrar app en Entra ID (Graph) o cuenta SMTP; SPF/DKIM |

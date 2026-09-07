@@ -62,7 +62,8 @@ MODULES: list[ModuleSpec] = [
     ),
     ModuleSpec(
         "observaciones", "Observaciones", "clipboard-list",
-        [NavItem("Observaciones / Multas / Faltas", "/observaciones")],
+        [NavItem("Observaciones / Multas / Faltas", "/observaciones"),
+         NavItem("Carga masiva", "/observaciones/carga-masiva", "crear")],
     ),
     ModuleSpec(
         "bitacora", "Agenda de liquidaciones", "calendar-clock",
