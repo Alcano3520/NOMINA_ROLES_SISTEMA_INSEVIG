@@ -172,7 +172,7 @@ le faltaba casi toda la estructura real. Añadido, en la misma pantalla:
   que el modo Masivo).
 - Modo Masivo: sin cambios funcionales, solo reordenado bajo el nuevo selector.
 
-**Casillas del modo Individual** (2026-09-06): 5 de 6 conectadas.
+**Casillas del modo Individual**: 6 de 6 conectadas.
 - `incluir_dec13_anterior` / `incluir_dec14_anterior` — ✅ (ocultan la fila si
   se desmarcan, paridad exacta con el legado).
 - `mostrar_insumos` — ✅.

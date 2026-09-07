@@ -106,6 +106,16 @@ def test_marcar_aplicados_lista_vacia_no_llama(monkeypatch):
     assert cli.log == []
 
 
+def test_mes_de_fecha():
+    from insevig_web.states.liquidaciones_state import _mes_de_fecha
+
+    assert _mes_de_fecha("30/06/2026") == "2026-06"
+    assert _mes_de_fecha("2026-06-30") == "2026-06"
+    assert _mes_de_fecha("2026-06") == "2026-06"
+    assert _mes_de_fecha("") == ""
+    assert _mes_de_fecha("basura") == ""
+
+
 def test_state_helper_marca_los_ids_de_la_liquidacion(monkeypatch):
     from core.repos.liquidaciones import Liquidacion
     from insevig_web.states import liquidaciones_state as st

@@ -244,6 +244,20 @@ def _panel_individual() -> rx.Component:
                 "sueldo básico)",
                 _S.ind_desahucio_ingresos_reales, _S.set_ind_desahucio_ingresos_reales,
             ),
+            _checkbox_ind(
+                "Usar los valores YA cargados en RPINGDES para el mes en curso (sobretiempos "
+                "por cupo de sección, prorrateados)",
+                _S.ind_usar_valores_reales, _S.set_ind_usar_valores_reales,
+            ),
+            rx.cond(
+                _S.ind_usar_valores_reales,
+                rx.hstack(
+                    rx.text("Periodo para calcular horas:", size="1", weight="bold"),
+                    rx.input(value=_S.ind_periodo_calc, on_change=_S.set_ind_periodo_calc,
+                             placeholder="AAAA-MM (vacío = mes de salida)", width="200px", size="1"),
+                    spacing="2", align="center",
+                ),
+            ),
             rx.hstack(
                 primary_button("Calcular / Generar Liquidación", on_click=_S.calcular_individual),
                 rx.button(rx.icon("file-text", size=14), "PDF", on_click=_S.generar_pdf_individual,

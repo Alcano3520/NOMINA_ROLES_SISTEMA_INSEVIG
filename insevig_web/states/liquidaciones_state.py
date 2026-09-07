@@ -17,6 +17,18 @@ from insevig_web.states.datasource_state import DataSourceState
 _TERMINALES = {"ok", "error", "cancelado"}
 
 
+def _mes_de_fecha(fecha: str) -> str:
+    """'dd/mm/aaaa' o 'aaaa-mm-dd' -> 'AAAA-MM'. '' si no parsea."""
+    t = (fecha or "").strip()
+    if "/" in t:
+        p = t.split("/")
+        if len(p) == 3:
+            return f"{int(p[2]):04d}-{int(p[1]):02d}"
+    if "-" in t and len(t) >= 7:
+        return t[:7]
+    return ""
+
+
 def _marcar_descuentos_aplicados(liq: repo.Liquidacion, usuario: str) -> None:
     """Tras GUARDAR una liquidación, marca 'aplicado' los descuentos pendientes
     que su cálculo consumió (`liq.descuentos_aplicados`). Nunca en preview."""
@@ -135,6 +147,18 @@ class LiquidacionesState(rx.State):
     def set_ind_indemnizacion(self, v: str):
         self.ind_indemnizacion = v
 
+    # 6ta casilla + "3. Periodo para Calcular Horas" del .pyw
+    ind_usar_valores_reales: bool = False
+    ind_periodo_calc: str = ""   # AAAA-MM; vacío => mes de la fecha de salida
+
+    @rx.event
+    def set_ind_usar_valores_reales(self, v: bool):
+        self.ind_usar_valores_reales = v
+
+    @rx.event
+    def set_ind_periodo_calc(self, v: str):
+        self.ind_periodo_calc = v
+
     @rx.event
     async def cargar_pantalla(self):
         """on_load: fecha de hoy por defecto + resumen de guardadas."""
@@ -204,10 +228,22 @@ class LiquidacionesState(rx.State):
             self.ind_msg = f"Indemnización «{self.ind_indemnizacion}» no es un número."
             return
 
+        usar_reales = self.ind_usar_valores_reales
+        pc_anio = pc_mes = None
+        if usar_reales:
+            pc_txt = self.ind_periodo_calc.strip() or _mes_de_fecha(fecha)
+            try:
+                pc_anio, pc_mes = (int(x) for x in pc_txt.split("-")[:2])
+            except (ValueError, IndexError):
+                self.ind_msg = "Periodo para calcular horas: use AAAA-MM."
+                return
+
         def _run():
             return repo.procesar_empleado(
                 cedula, fecha, motivo, fuente, cfg, fecha_ing,
                 indemnizacion_manual=indem,
+                periodo_calc_anio=pc_anio, periodo_calc_mes=pc_mes,
+                usar_valores_reales_mes_actual=usar_reales,
                 incluir_dec13_anterior=dec13, incluir_dec14_anterior=dec14,
                 incluir_sueldo=incl_sueldo, usar_ingresos_reales_desahucio=des_reales,
             )
