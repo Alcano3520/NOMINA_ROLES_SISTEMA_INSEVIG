@@ -30,10 +30,14 @@ SQL Server (`192.168.2.115`) ni el Supabase reales**. Orden sugerido:
 
 ### A1. Validación por módulo (comparar con el legado)
 
-**Herramienta**: `python -m scripts.validar_datos --periodo AAAA-MM --muestra 15`
-compara, para una muestra de empleados, lo que `core/` produce desde SQL Server
-vs. Supabase (consolidado de nómina campo a campo + saldo de préstamos). Sale
-con código ≠ 0 si hay diferencias. Correr en el NAS (tiene los dos orígenes).
+**Herramienta**: `python -m scripts.validar_datos --periodo AAAA-MM --muestra 20`
+compara, para una muestra de empleados (por cédula), lo que `core/` produce
+desde SQL Server vs. Supabase (consolidado campo a campo + saldo de préstamos).
+Categoriza OK / DIF / SOLO-SQL / SOLO-SUP / ERROR; falla solo con DIF o ERROR.
+Correr en el NAS. **Hallazgo 2026-09-06**: el espejo de Supabase tiene empleados
+huérfanos que ya no existen en SQL Server (el sync solo hace upsert, nunca
+DELETE) — por eso la muestra sale de SQL Server por defecto. SQL Server es la
+única lista de empleados confiable.
 
 Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` actual:
 
