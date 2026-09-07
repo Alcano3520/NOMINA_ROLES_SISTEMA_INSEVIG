@@ -29,6 +29,12 @@ SQL Server (`192.168.2.115`) ni el Supabase reales**. Orden sugerido:
 - [ ] `python -m insevig_web.seed`, `reflex run`, validar módulo por módulo (A1).
 
 ### A1. Validación por módulo (comparar con el legado)
+
+**Herramienta**: `python -m scripts.validar_datos --periodo AAAA-MM --muestra 15`
+compara, para una muestra de empleados, lo que `core/` produce desde SQL Server
+vs. Supabase (consolidado de nómina campo a campo + saldo de préstamos). Sale
+con código ≠ 0 si hay diferencias. Correr en el NAS (tiene los dos orígenes).
+
 Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` actual:
 
 | Módulo | Qué validar | Riesgo |
