@@ -53,8 +53,38 @@ otra vez no duplica (salta las filas ya presentes por
 empleado+fecha+numero_fila+ingreso+egreso); una fila nueva en el SQLite sí entra.
 `--reemplazar` borra lo migrado antes de cargar.
 
+## ⚠️ Divergencia de modelo con el legado (hallada 2026-09-06, sin resolver)
+
+La validación en el NAS (`scripts/validar_datos`, 10/25 empleados con saldo de
+préstamos distinto entre SQL Server y Supabase, **siempre SQL > Supabase**)
+destapó dos cosas:
+
+1. **[corregido, commit siguiente]** `_NUMEROS_MIGRADOS` no se excluía en la
+   ruta SQL Server: `NUMERO` es float en las tablas → `str()` daba `'35923.0'`
+   → nunca casaba el frozenset (que tiene `'35923'`). El legado lo hace en SQL
+   (`NUMERO NOT IN (...)`, conversión implícita). Fix: `_num_norm()`.
+
+2. **[SIN resolver — necesita rework deliberado]** el modelo de préstamo de
+   `core/repos/prestamos` NO coincide con el `.pyw`:
+   - Legado: los movimientos de **RPHISTOR** CLASE 205 son **egresos (pagos)**;
+     el **saldo de un préstamo = suma de `RPINGDES.VALOR` de ese `NUMERO`**
+     (`obtener_datos_rpingdes_combinados` → `saldos_por_numero`). El "ingreso"
+     (monto prestado) es **sintético**: `total_pagado (RPHISTOR) + saldo_pendiente
+     (RPINGDES)`.
+   - `core/`: `historial_empleado` mete RPINGDES + RPHISTOR como movimientos con
+     `valor` positivo, y `agrupar_por_numero` los cuenta todos como "prestado".
+     `saldo_total` suma todo → número sin sentido.
+   - `prestamos.saldos()` (masivo, `SUM(RPINGDES.VALOR)`) **sí** coincide con el
+     legado; el problema es la vista por empleado (`historial_empleado`,
+     `agrupar_por_numero`, `saldo_total`, `_historial_supabase`, y la página
+     `/prestamos/historial`).
+   - Rehacer `core/repos/prestamos` para el modelo del legado: RPHISTOR/SQLite =
+     egresos; RPINGDES = saldo pendiente por número; ingreso sintético. Tocar
+     también `core/excel/prestamos_builders.historial_xlsx` y el state/página.
+
 ## Pendiente
-- Dedupe fino de la vista combinada validado contra datos reales (RPINGDES vs
-  RPHISTOR para un préstamo que se cerró a mitad de período).
+- **Rework del modelo de préstamo (punto 2 de arriba).**
+- Dedupe RPINGDES vs RPHISTOR cuando el mismo `NUMERO` aparece en ambas (visto
+  en el empleado 9091: NUMERO 46141 en RPINGDES 24/06 y RPHISTOR 30/06).
 - Ejecutar la migración del histórico en el NAS con el `.db` real.
-- Validar saldos e historial contra el `.pyw` para una muestra de empleados.
+- Validar contra el `.pyw` para una muestra tras el rework.

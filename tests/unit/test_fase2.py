@@ -181,6 +181,19 @@ def test_agrupar_por_numero():
     assert g["700"].saldo == 300.0
 
 
+def test_num_norm_normaliza_float_y_string():
+    f = prestamos._num_norm
+    assert f("35923") == "35923"
+    assert f("35923.0") == "35923"      # NUMERO es float en las tablas -> str da '35923.0'
+    assert f(35923.0) == "35923"
+    assert f(35923) == "35923"
+    assert f("  35923 ") == "35923"
+    assert f(None) == ""
+    assert f("MIG_5") == "MIG_5"        # no numérico -> tal cual
+    # todos los números migrados normalizan a algo que está en el frozenset
+    assert all(f(n + ".0") in prestamos._NUMEROS_MIGRADOS for n in prestamos._NUMEROS_MIGRADOS)
+
+
 def test_agrupar_detecta_brecha_y_cancelado():
     M = prestamos.MovimientoPrestamo
     movs = [

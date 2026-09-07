@@ -29,6 +29,18 @@ _NUMEROS_MIGRADOS = frozenset({
 })
 
 
+def _num_norm(v: object) -> str:
+    """NUMERO canónico. En estas tablas `NUMERO` es numérico (float), así que
+    `str(x)` puede dar `'35923.0'`; sin normalizar, la exclusión de
+    `_NUMEROS_MIGRADOS` fallaba en silencio y esos movimientos se contaban de
+    más (doble conteo cuando el SQLite ya está migrado)."""
+    s = str(v or "").strip()
+    try:
+        return str(int(float(s)))
+    except (ValueError, TypeError):
+        return s
+
+
 @dataclass
 class SaldoPrestamo:
     empleado: str
@@ -158,7 +170,7 @@ def _historial_sqlserver(codigo: str) -> list[MovimientoPrestamo]:
             (str(codigo),),
         )
         for r in filas:
-            num = str(r.get("NUMERO") or "").strip()
+            num = _num_norm(r.get("NUMERO"))
             if origen == "RPHISTOR" and num in _NUMEROS_MIGRADOS:
                 continue
             fecha = str(r.get("FECHA") or "")[:10]
@@ -187,7 +199,7 @@ def _historial_supabase(codigo: str) -> list[MovimientoPrestamo]:
             .execute()
         )
         for row in r.data or []:
-            num = str(row.get("numero") or "").strip()
+            num = _num_norm(row.get("numero"))
             if origen == "RPHISTOR" and num in _NUMEROS_MIGRADOS:
                 continue
             out.append(
