@@ -30,11 +30,12 @@ TOLERANCIA = 0.02  # centavos
 
 
 def _muestra(n: int, fuente: str) -> list[str]:
-    """Cédulas (clave estable entre las dos fuentes) de N empleados."""
+    """Cédulas (clave estable) de N empleados ACT — mismo criterio que usa
+    `datos_empleado` (que filtra `[ESTADO]='ACT'`, igual que el legado)."""
     from core.repos.empleados import buscar
 
     out: list[str] = []
-    for e in buscar("", fuente, limite=n):
+    for e in buscar("", fuente, solo_activos=True, limite=n):
         ced = normalizar_cedula(e.get("cedula"))
         if ced and ced != "0000000000":
             out.append(ced)
@@ -64,9 +65,13 @@ def _clasificar(periodo: str, ident: str) -> tuple[str, list[str]]:
     if sq is None and su is None:
         return "ERROR", ["no está en ninguna de las dos fuentes"]
     if su is None:
-        return "SOLO-SQL", [f"{sq.empleado} / {sq.cedula}"]  # type: ignore[union-attr]
+        return "SOLO-SQL", [
+            f"ACT en SQL Server ({sq.empleado}/{sq.cedula}) — falta en el espejo de Supabase"  # type: ignore[union-attr]
+        ]
     if sq is None:
-        return "SOLO-SUP", [f"{su.empleado} / {su.cedula}"]
+        return "SOLO-SUP", [
+            f"en Supabase ({su.empleado}/{su.cedula}) — no es un empleado ACT en SQL Server"
+        ]
 
     if normalizar_cedula(sq.cedula) != normalizar_cedula(su.cedula):
         return "ERROR", [
