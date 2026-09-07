@@ -159,6 +159,44 @@ def test_indemnizacion_manual_se_suma_al_total(monkeypatch):
     assert con_con.campos["TOTAL_A_RECIBIR"] == round(con_sin.campos["TOTAL_A_RECIBIR"] + 500.0, 2)
 
 
+def test_descuentos_pendientes_se_suman_y_quedan_marcados_para_aplicar(monkeypatch):
+    """Descuentos Pendientes (préstamo no descontado, dotación no
+    devuelta): se suman al total como un descuento más, y sus ids quedan en
+    Liquidacion.descuentos_aplicados para que guardar_liquidacion los marque
+    'aplicado' recién cuando se guarda de verdad -- generar/previsualizar
+    nunca los consume por sí solo."""
+    emp = {
+        "EMPLEADO": "999", "APELLIDOS": "PEREZ", "NOMBRES": "JUAN", "CEDULA": "0920116811",
+        "SUELDO": 800.0, "CARGO": "GUARDIA", "DEPTO": "OPERACIONES", "SECCION": "MATRIZ",
+        "FECHA_ING": "2015-01-01", "FECHA_SAL": "2026-06-01",
+        "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
+    }
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
+    datos = {"descuentos_pendientes": [
+        {"id": "d1", "monto": 50.0, "motivo": "Dotación no devuelta"},
+        {"id": "d2", "monto": 25.5, "motivo": "Préstamo no descontado"},
+    ]}
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClientPorTabla(datos))
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado(
+        "0920116811", "2026-06-01", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+    )
+    assert con.error == ""
+    assert con.campos["DESCUENTOS_REGISTRADOS"] == 75.5
+    assert set(con.descuentos_aplicados) == {"d1", "d2"}
+
+
+def test_descuentos_pendientes_degrada_sin_supabase(monkeypatch):
+    """Igual que vacaciones_pagadas/_gozadas: si Supabase no responde, se
+    degrada a None (sin descuentos), no bloquea la liquidación."""
+    def _raise():
+        raise RuntimeError("sin conexión")
+    monkeypatch.setattr(lq.supabase_client, "get_client", _raise)
+    assert lq.descuentos_pendientes_de("0920116811") is None
+
+
 def test_sbu_por_anio_fallback():
     cfg = lq.ConfigLiquidacion()
     assert cfg.sbu(2026) == 482.0

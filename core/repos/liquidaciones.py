@@ -422,6 +422,32 @@ def vacaciones_gozadas(cedula: str) -> dict[str, float] | None:
     return dias_por_periodo
 
 
+def descuentos_pendientes_de(cedula: str) -> list[dict] | None:
+    """Descuentos conocidos de antemano por cédula (préstamo no descontado
+    en nómina, dotación no devuelta, etc. -- tabla `descuentos_pendientes`,
+    pantalla "Descuentos Pendientes" del `.pyw`) que todavía no se aplicaron
+    a ninguna liquidación. `None` si no se pudo consultar (se degrada sin
+    bloquear la liquidación, igual que `vacaciones_pagadas`/`_gozadas`).
+    Cada item: `{"id", "monto", "motivo"}`.
+    """
+    ced = normalizar_cedula(cedula)
+    try:
+        sb = supabase_client.get_client()
+        r = (
+            sb.table("descuentos_pendientes")
+            .select("id,monto,motivo")
+            .eq("empleado_cedula", ced)
+            .eq("estado", "pendiente")
+            .execute()
+        )
+    except Exception:  # noqa: BLE001 - degradar sin bloquear la liquidación
+        return None
+    return [
+        {"id": f["id"], "monto": a_float(f.get("monto")), "motivo": f.get("motivo") or ""}
+        for f in (r.data or [])
+    ]
+
+
 @dataclass
 class DetalleVacacionesPeriodo:
     periodo: str
@@ -635,6 +661,11 @@ class Liquidacion:
     # proyecto (decimo_anterior_no_pagado_no_debe_aparecer): el .pyw
     # original tampoco persiste ese detalle, ni siquiera como referencia.
     detalle_decimo_tercera: list[DetalleMesDecimo] = field(default_factory=list)
+    # Ids de `descuentos_pendientes` (estado='pendiente') consumidos en el
+    # cálculo de esta liquidación -- ver `descuentos_pendientes_de`. Quien
+    # persista (guardar_liquidacion) debe marcarlos 'aplicado' recién
+    # cuando la liquidación se guarda de verdad, nunca en una simulación.
+    descuentos_aplicados: list[str] = field(default_factory=list)
 
 
 def _parse_linea(linea: str) -> tuple[str, str, str, str] | None:
@@ -917,11 +948,21 @@ def procesar_empleado(
         + fondo_reserva + vac_calc + dec13_ant_incluido + d13_act
         + dec14_ant_incluido + d14_act + des + indem, 2,
     )
+    # 13. Descuentos pendientes registrados de antemano (pantalla "Descuentos
+    # Pendientes" del .pyw): se suman aquí como un descuento más. Solo pasan
+    # a 'aplicado' cuando la liquidación se GUARDA de verdad (responsabilidad
+    # de guardar_liquidacion/quien persista, con los ids de
+    # descuentos_aplicados) -- generar/previsualizar nunca los consume, se
+    # puede repetir la simulación las veces que haga falta.
+    pendientes = descuentos_pendientes_de(ced) or []
+    monto_descuentos_pendientes = round(sum(p["monto"] for p in pendientes), 2)
+    descuentos_aplicados = [p["id"] for p in pendientes]
+
     total_descuentos = round(
         val["ANTICIPOS_SURTIDOS"] + val["PRESTAMOS_COMPANIA"] + val["ANTICIPOS_OTROS"]
         + val["ANTICIPO_SUELDO"] + val["MULTAS"] + ant_otros_l + ant_l_des
         + val["PRESTAMOS_QUIROGRAFARIOS"] + val["APORT_IESS_CONYUGE"] + val["PENSION_ALIMENTICIA"]
-        + val["PRESTAMO_HIPOTECARIO"] + iess + val["IMPUESTO_RENTA"], 2,
+        + val["PRESTAMO_HIPOTECARIO"] + iess + val["IMPUESTO_RENTA"] + monto_descuentos_pendientes, 2,
     )
 
     campos = {
@@ -943,6 +984,7 @@ def procesar_empleado(
         "PRESTAMO_HIPOTECARIO": val["PRESTAMO_HIPOTECARIO"], "APORT_IESS": iess,
         "IMPUESTO_RENTA": val["IMPUESTO_RENTA"],
         "TOTAL_INGRESOS": total_ingresos, "TOTAL_DESCUENTOS": total_descuentos,
+        "DESCUENTOS_REGISTRADOS": monto_descuentos_pendientes,
         "TOTAL_A_RECIBIR": round(total_ingresos - total_descuentos, 2),
     }
     return Liquidacion(
@@ -953,6 +995,7 @@ def procesar_empleado(
         dias_trabajados=dias_trab, campos=campos, alertas=alertas_vac,
         apellidos=apellidos_emp, nombres=nombres_emp, detalle_vacaciones=detalle_vac,
         detalle_decimo_tercera=detalle_dec13,
+        descuentos_aplicados=descuentos_aplicados,
     )
 
 
