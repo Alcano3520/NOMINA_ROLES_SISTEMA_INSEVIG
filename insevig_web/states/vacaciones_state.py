@@ -99,21 +99,22 @@ class VacacionesState(rx.State):
         self.tab = v
 
     # ── Nueva gozada ──────────────────────────────────────────────────────
-    form_gozada: dict = dict(_FORM_GOZADA_VACIO)
+    form_gozada: dict[str, str] = dict(_FORM_GOZADA_VACIO)
     mostrar_form_gozada: bool = False
 
     @rx.event
     def nueva_gozada(self):
-        self.form_gozada = dict(_FORM_GOZADA_VACIO)
+        form = dict(_FORM_GOZADA_VACIO)
         if self.periodos_emp:
-            self.form_gozada["periodo"] = self.periodos_emp[0]["label"]
-        self.form_gozada["fecha_comprobante"] = dt.date.today().strftime("%Y-%m-%d")
+            form["periodo"] = self.periodos_emp[0]  # ya es la etiqueta (str), no un dict
+        form["fecha_comprobante"] = dt.date.today().strftime("%Y-%m-%d")
+        self.form_gozada = form
         self.mostrar_form_gozada = True
         self.msg = ""
 
     @rx.event
     def set_campo_gozada(self, campo: str, v: str):
-        self.form_gozada[campo] = v
+        self.form_gozada = {**self.form_gozada, campo: v}
 
     @rx.event
     def cerrar_form_gozada(self):
@@ -159,7 +160,7 @@ class VacacionesState(rx.State):
     calc_total_periodo: float = 0.0
     calc_resultado: dict = {}
     calc_cargando: bool = False
-    form_pago: dict = dict(_FORM_PAGO_VACIO)
+    form_pago: dict[str, str] = dict(_FORM_PAGO_VACIO)
 
     @rx.event
     def set_calc_periodo(self, v: str):
@@ -204,7 +205,7 @@ class VacacionesState(rx.State):
 
     @rx.event
     def set_campo_pago(self, campo: str, v: str):
-        self.form_pago[campo] = v
+        self.form_pago = {**self.form_pago, campo: v}
 
     @rx.event
     async def registrar_pagada(self):
