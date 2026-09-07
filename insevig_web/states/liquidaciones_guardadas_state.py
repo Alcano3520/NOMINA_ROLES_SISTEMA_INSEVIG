@@ -165,6 +165,40 @@ class LiquidacionesGuardadasState(rx.State):
             self.cerrar_detalle()
         await self.buscar()
 
+    # ── Bot MRL (selección múltiple) ────────────────────────────────
+    seleccion: list[str] = []
+
+    @rx.event
+    def toggle_seleccion(self, liquidacion_id: str):
+        self.seleccion = (
+            [x for x in self.seleccion if x != liquidacion_id]
+            if liquidacion_id in self.seleccion
+            else [*self.seleccion, liquidacion_id]
+        )
+
+    @rx.event
+    async def generar_bot_mrl(self):
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:ver" not in auth.permisos_flat:
+            yield rx.toast.error("Sin permiso.")
+            return
+        ids = list(self.seleccion)
+        if not ids:
+            yield rx.toast.error("Marca una o más liquidaciones en la lista.")
+            return
+        from core.excel.liquidaciones_bot_mrl import bot_mrl_xlsx
+
+        data, advertencias, error = await asyncio.to_thread(bot_mrl_xlsx, ids)
+        if error:
+            yield rx.toast.error(error)
+            return
+        for a in advertencias[:4]:
+            yield rx.toast.warning(a)
+        self.msg = f"Bot MRL generado ({len(ids)} liquidación(es))." + (
+            f" {len(advertencias)} advertencia(s)." if advertencias else ""
+        )
+        yield rx.download(data=data, filename="bot_mrl_liquidaciones.xlsx")
+
     @rx.event
     def generar_pdf(self, liquidacion_id: str):
         registro, conceptos = repo.obtener_liquidacion(liquidacion_id)

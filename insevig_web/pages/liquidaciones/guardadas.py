@@ -29,6 +29,12 @@ def _badge_estado(estado: rx.Var) -> rx.Component:
 
 def _fila(f) -> rx.Component:
     return rx.table.row(
+        rx.table.cell(
+            rx.checkbox(
+                checked=_S.seleccion.contains(f["id"]),
+                on_change=lambda _v: _S.toggle_seleccion(f["id"]),
+            )
+        ),
         rx.table.cell(f["empleado_codigo"]),
         rx.table.cell(f["nombre"]),
         rx.table.cell(f["cargo"]),
@@ -211,7 +217,14 @@ def guardadas() -> rx.Component:
                         default_value="(todos)", on_change=_S.set_estado_filtro, style=_SEL,
                     ),
                     rx.button("Buscar", on_click=_S.buscar, size="2"),
-                    spacing="2", wrap="wrap",
+                    rx.spacer(),
+                    rx.button(
+                        rx.icon("bot", size=15),
+                        "Generar Bot MRL (" + _S.seleccion.length().to_string() + ")",
+                        on_click=_S.generar_bot_mrl, size="2", variant="soft",
+                        disabled=_S.seleccion.length() == 0,
+                    ),
+                    spacing="2", wrap="wrap", align="center", width="100%",
                 ),
                 width="100%",
             ),
@@ -224,7 +237,7 @@ def guardadas() -> rx.Component:
                     rx.table.root(
                         rx.table.header(rx.table.row(*[
                             rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
-                            for c in ("Código", "Empleado", "Cargo", "Fecha salida", "Tipo", "Estado", "Total", "")
+                            for c in ("", "Código", "Empleado", "Cargo", "Fecha salida", "Tipo", "Estado", "Total", "")
                         ])),
                         rx.table.body(rx.foreach(_S.filas, _fila)),
                         variant="surface", size="1", width="100%",

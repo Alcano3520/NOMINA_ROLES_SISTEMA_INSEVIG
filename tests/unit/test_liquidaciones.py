@@ -444,6 +444,72 @@ def test_editar_valores_liquidacion_no_toca_pagada(monkeypatch):
     assert not ok and "pagada" in err
 
 
+class _FakeQueryPorTabla:
+    def __init__(self, datos_por_tabla, tabla):
+        self._d, self._t = datos_por_tabla, tabla
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def execute(self):
+        return _FakeExec(list(self._d.get(self._t, [])))
+
+
+class _FakeClientPorTabla:
+    def __init__(self, datos_por_tabla):
+        self._d = datos_por_tabla
+
+    def table(self, nombre):
+        return _FakeQueryPorTabla(self._d, nombre)
+
+
+def test_bot_mrl_xlsx_genera_excel_con_encabezados(monkeypatch):
+    import io
+
+    import openpyxl
+
+    from core.excel import liquidaciones_bot_mrl as bm
+
+    datos = {
+        "liquidaciones": [{
+            "id": "L1", "empleado_codigo": "9091", "empleado_cedula": "1207158815.0",
+            "empleado_apellidos": "ACOSTA FLORES", "empleado_nombres": "ALCI",
+            "fecha_salida": "2026-06-24", "dias_trabajados": 24, "seccion": "S1",
+            "total_descuentos": 60.0, "total_liquido": 540.0, "vacaciones_pendientes": 10.0,
+        }],
+        "liquidaciones_detalle": [
+            {"concepto_codigo": "SUELDO", "valor_total": 400.0},
+            {"concepto_codigo": "DEC_TERCERA_ACT", "valor_total": 33.0},
+            {"concepto_codigo": "IESS", "valor_total": 60.0},
+        ],
+        "liquidaciones_periodos_calculo": [],
+    }
+    monkeypatch.setattr(bm.supabase_client, "get_client", lambda: _FakeClientPorTabla(datos))
+    monkeypatch.setattr(bm, "_sueldo_basico_rpemplea", lambda c: 450.0)
+
+    data, advertencias, error = bm.bot_mrl_xlsx(["L1"])
+    assert error is None and data is not None
+    ws = openpyxl.load_workbook(io.BytesIO(data)).active
+    cab = [c.value for c in next(ws.iter_rows())]
+    assert cab[:3] == ["Cod", "Nombres", "cedula"]
+    fila = [c.value for c in list(ws.iter_rows())[1]]
+    assert fila[0] == "9091" and fila[2] == "1207158815"
+    assert any("desglose mensual" in a for a in advertencias)  # periodos_calculo vacío
+
+
+def test_bot_mrl_xlsx_sin_ids():
+    from core.excel.liquidaciones_bot_mrl import bot_mrl_xlsx
+
+    data, _, error = bot_mrl_xlsx([])
+    assert data is None and "una o más" in error
+
+
 def test_guardar_liquidacion_rechaza_estado_invalido():
     ok, msg = lq.guardar_liquidacion(
         _liq_ejemplo(), "estado_invalido", lq.ConfigLiquidacion(), usuario="t", roles=set()

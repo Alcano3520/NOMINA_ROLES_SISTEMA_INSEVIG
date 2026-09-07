@@ -173,8 +173,16 @@ necesarios ya que el modo Individual no depende de un periodo de corte fijo.
   - **Verificación de pago contra cartas bancarias** (`pagos_cartas.py` en
     `nucleo_modular`, carpeta `PAGOS_CARTAS/`) — columna "¿Pagado?" de
     Gestión de Liquidaciones.
-  - **Generar Bot MRL** (exportar al formato del bot RPA del SUT) — lógica ya
-    portada en `nucleo_modular/generacion_bot_mrl.py`, no conectada aquí.
+  - ~~**Generar Bot MRL**~~ ✅ **hecho** (2026-09-06):
+    `core/excel/liquidaciones_bot_mrl.bot_mrl_xlsx` (port 1:1 de
+    `nucleo_modular/generacion_bot_mrl.py`). En `/liquidaciones/guardadas`:
+    checkbox por fila + botón "Generar Bot MRL (N)" → Excel de 99 columnas del
+    formato SUT. **Limitación**: las 24 columnas mensuales del décimo tercero
+    salen en 0 porque `guardar_liquidacion` no persiste
+    `liquidaciones_periodos_calculo` (falta que el motor exponga el desglose
+    mensual, `detalle_decimo_tercera` — coordinar con la sesión de
+    LIQUIDACIONES_SISTEMA_INSEVIG). Los totales generales sí funcionan; el
+    export avisa por cada liquidación afectada.
   - **Edición masiva / carga masiva de ajuste de cuadre** (diálogos del
     legado, ~825 líneas de Tkinter entre los dos) — no evaluados todavía.
   - Desglose mensual de vacaciones/décimos en el PDF regenerado desde un
