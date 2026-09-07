@@ -292,6 +292,46 @@ def _suma_base(empleado: str, inicio: dt.date, fin: dt.date, fuente: str) -> flo
     return round(total, 2)
 
 
+MESES_NOMBRE = {
+    1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
+    7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
+}
+
+
+def _suma_base_mensual(
+    empleado: str, inicio: dt.date, fin: dt.date, fuente: str,
+) -> tuple[float, list[DetalleMesDecimo]]:
+    """Igual que `_suma_base`, pero además devuelve el desglose mes a mes.
+
+    Porta `obtener_total_periodo_decimos` de
+    `LIQUIDACIONES_SISTEMA_INSEVIG/nucleo_modular/calculos_decimos.py`
+    (sin la rama de prorrateo del mes en curso -- este repo no la
+    implementaba antes de este cambio y no es parte de lo pedido; si se
+    necesita, es un cálculo aparte). Etiqueta EXACTA que ya consume el bot
+    RPA MRL: ``f"{nombre_mes} -{año}"`` (espacio antes del guion, ninguno
+    después) -- no cambiar el formato sin avisar al lado que lo lee.
+    """
+    total = 0.0
+    detalle: list[DetalleMesDecimo] = []
+    y, mth = inicio.year, inicio.month
+    while dt.date(y, mth, 1) <= fin:
+        mes_total = 0.0
+        movs, _ = movimientos_mes(empleado, y, mth, fuente)
+        for mv in movs:
+            if mv["clase"] in CONCEPTOS_BASE:
+                mes_total += mv["valor"]
+        total += mes_total
+        detalle.append(DetalleMesDecimo(label=f"{MESES_NOMBRE[mth]} -{y}", valor=round(mes_total, 2)))
+        mth, y = (1, y + 1) if mth == 12 else (mth + 1, y)
+    return round(total, 2), detalle
+
+
+@dataclass
+class DetalleMesDecimo:
+    label: str
+    valor: float
+
+
 # ── Vacaciones ya pagadas/gozadas (Supabase `vac_registros`) ────────────────
 # Antes de contar un periodo de vacaciones como "pendiente", se verifica si ya
 # existe un registro en `vac_registros` (proyecto VACACIONES_SISTEMA_INSEVIG,
@@ -569,6 +609,12 @@ class Liquidacion:
     apellidos: str = ""
     nombres: str = ""
     detalle_vacaciones: list[DetalleVacacionesPeriodo] = field(default_factory=list)
+    # Desglose mes a mes de la Décima Tercera ACTUAL (para el bot RPA MRL,
+    # tabla `liquidaciones_periodos_calculo`). La ANTERIOR nunca se detalla
+    # aquí -- ver el docstring de `_suma_base_mensual` y la memoria de este
+    # proyecto (decimo_anterior_no_pagado_no_debe_aparecer): el .pyw
+    # original tampoco persiste ese detalle, ni siquiera como referencia.
+    detalle_decimo_tercera: list[DetalleMesDecimo] = field(default_factory=list)
 
 
 def _parse_linea(linea: str) -> tuple[str, str, str, str] | None:
@@ -699,9 +745,15 @@ def procesar_empleado(
 
     # 5. Décima tercera (total periodo / 12)
     d13_ant = d13_act = 0.0
+    detalle_dec13: list[DetalleMesDecimo] = []
     p13 = periodos_decima_tercera(fing, fsal)
     for idx, (i, f, _pag) in enumerate(p13):
-        dec = round(_suma_base(cod, i, f, fuente) / 12, 2)
+        es_actual = idx > 0 or len(p13) == 1
+        if es_actual:
+            total_periodo, detalle_dec13 = _suma_base_mensual(cod, i, f, fuente)
+        else:
+            total_periodo = _suma_base(cod, i, f, fuente)
+        dec = round(total_periodo / 12, 2)
         if idx == 0 and len(p13) > 1:
             d13_ant = dec
         else:
@@ -796,6 +848,7 @@ def procesar_empleado(
         fecha_ingreso=str(fing), fecha_salida=str(fsal), motivo_salida=motivo,
         dias_trabajados=dias_trab, campos=campos, alertas=alertas_vac,
         apellidos=apellidos_emp, nombres=nombres_emp, detalle_vacaciones=detalle_vac,
+        detalle_decimo_tercera=detalle_dec13,
     )
 
 
@@ -828,6 +881,7 @@ TABLA_LIQ = "liquidaciones"
 TABLA_LIQ_DETALLE = "liquidaciones_detalle"
 TABLA_LIQ_HISTORIAL = "liquidaciones_historial_estados"
 TABLA_LIQ_ELIMINADAS = "liquidaciones_eliminadas_historial"
+TABLA_LIQ_PERIODOS = "liquidaciones_periodos_calculo"
 
 ESTADOS_LIQUIDACION = ("borrador", "generada", "pagada", "anulada")
 
@@ -1033,6 +1087,10 @@ def guardar_liquidacion(
                 sb.table(TABLA_LIQ_DETALLE).delete().eq(
                     "liquidacion_id", liquidacion_id_existente
                 ).execute()
+                with contextlib.suppress(Exception):
+                    sb.table(TABLA_LIQ_PERIODOS).delete().eq(
+                        "liquidacion_id", liquidacion_id_existente
+                    ).execute()
                 liquidacion_id = liquidacion_id_existente
             else:
                 resultado = sb.table(TABLA_LIQ).insert(registro).execute()
@@ -1041,6 +1099,17 @@ def guardar_liquidacion(
                 for c in conceptos:
                     c["liquidacion_id"] = liquidacion_id
                 sb.table(TABLA_LIQ_DETALLE).insert(conceptos).execute()
+            # Desglose mensual de la Décima Tercera ACTUAL -> el bot MRL lo lee.
+            if liq.detalle_decimo_tercera:
+                with contextlib.suppress(Exception):
+                    sb.table(TABLA_LIQ_PERIODOS).insert({
+                        "liquidacion_id": liquidacion_id,
+                        "tipo": "DEC_TERCERA",
+                        "meses": [
+                            {"label": d.label, "valor": d.valor}
+                            for d in liq.detalle_decimo_tercera
+                        ],
+                    }).execute()
             with contextlib.suppress(Exception):
                 sb.table(TABLA_LIQ_HISTORIAL).insert({
                     "liquidacion_id": liquidacion_id, "estado": estado,

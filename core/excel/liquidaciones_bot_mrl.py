@@ -9,10 +9,11 @@ adaptado a este repo: lee de Supabase (`liquidaciones`, `liquidaciones_detalle`,
 LIMITACIÓN HEREDADA: `_MESES_DECIMO_VIGENTE` está fijo al periodo Dic2025-Nov2026.
 Desde diciembre 2026 hay que actualizarlo a mano.
 
-LIMITACIÓN DE ESTA CAPA: si `liquidaciones_periodos_calculo` no tiene el desglose
-mensual del décimo tercero (hoy `guardar_liquidacion` no lo persiste — falta que
-el motor de cálculo exponga `detalle_decimo_tercera`), las 24 columnas mensuales
-del décimo salen en 0; los totales generales sí funcionan.
+Las 24 columnas mensuales del décimo tercero salen del desglose que
+`guardar_liquidacion` persiste en `liquidaciones_periodos_calculo` (tipo
+`DEC_TERCERA`, sólo el periodo ACTUAL — el anterior nunca se detalla, regla de
+negocio). Una liquidación guardada ANTES de ese cambio no tiene ese desglose:
+sus 24 columnas salen en 0 y el export lo avisa.
 """
 
 from __future__ import annotations

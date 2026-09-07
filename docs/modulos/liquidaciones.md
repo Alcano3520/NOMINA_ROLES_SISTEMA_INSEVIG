@@ -177,12 +177,11 @@ necesarios ya que el modo Individual no depende de un periodo de corte fijo.
     `core/excel/liquidaciones_bot_mrl.bot_mrl_xlsx` (port 1:1 de
     `nucleo_modular/generacion_bot_mrl.py`). En `/liquidaciones/guardadas`:
     checkbox por fila + botón "Generar Bot MRL (N)" → Excel de 99 columnas del
-    formato SUT. **Limitación**: las 24 columnas mensuales del décimo tercero
-    salen en 0 porque `guardar_liquidacion` no persiste
-    `liquidaciones_periodos_calculo` (falta que el motor exponga el desglose
-    mensual, `detalle_decimo_tercera` — coordinar con la sesión de
-    LIQUIDACIONES_SISTEMA_INSEVIG). Los totales generales sí funcionan; el
-    export avisa por cada liquidación afectada.
+    formato SUT. El desglose mensual del décimo tercero (24 columnas) sale de
+    `liquidaciones_periodos_calculo`, que `guardar_liquidacion` ahora persiste
+    desde `Liquidacion.detalle_decimo_tercera` (motor: sólo el periodo ACTUAL,
+    el anterior nunca se detalla — regla de negocio). Liquidaciones guardadas
+    antes de este cambio tienen esas 24 columnas en 0 y el export lo avisa.
   - **Edición masiva / carga masiva de ajuste de cuadre** (diálogos del
     legado, ~825 líneas de Tkinter entre los dos) — no evaluados todavía.
   - Desglose mensual de vacaciones/décimos en el PDF regenerado desde un

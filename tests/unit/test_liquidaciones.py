@@ -398,6 +398,8 @@ class _FakeRecTable:
     def execute(self):
         if self.op:
             self.log.append((self.n, self.op, self.payload))
+            if self.op == "insert" and self.n == "liquidaciones":
+                return _FakeExec([{"id": "NEW1"}])
             return _FakeExec([{"ok": 1}] if self.op == "update" else [])
         return _FakeExec(self.datos.get(self.n, []))
 
@@ -508,6 +510,31 @@ def test_bot_mrl_xlsx_sin_ids():
 
     data, _, error = bot_mrl_xlsx([])
     assert data is None and "una o más" in error
+
+
+def test_guardar_liquidacion_persiste_desglose_mensual_del_decimo(monkeypatch, app_db):
+    liq = _liq_ejemplo()
+    liq.detalle_decimo_tercera = [
+        lq.DetalleMesDecimo(label="mayo -2026", valor=40.0),
+        lq.DetalleMesDecimo(label="junio -2026", valor=45.0),
+    ]
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, _id = lq.guardar_liquidacion(liq, "generada", lq.ConfigLiquidacion(), usuario="ana", roles=set())
+    assert ok
+
+    periodos_ins = [
+        pl for (t, op, pl) in cliente.log
+        if t == lq.TABLA_LIQ_PERIODOS and op == "insert"
+    ]
+    assert len(periodos_ins) == 1
+    p = periodos_ins[0]
+    assert p["tipo"] == "DEC_TERCERA"
+    assert p["meses"] == [
+        {"label": "mayo -2026", "valor": 40.0},
+        {"label": "junio -2026", "valor": 45.0},
+    ]
 
 
 def test_guardar_liquidacion_rechaza_estado_invalido():
