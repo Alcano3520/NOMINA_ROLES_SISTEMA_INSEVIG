@@ -250,6 +250,43 @@ def _rango_mes(anio: int, mes: int) -> tuple[str, str]:
     return ini, fin
 
 
+def _horas_seccion(seccion_codigo: str | None, fuente: str) -> tuple[float, float, float]:
+    """Horas mensuales de sobretiempo (25%/50%/100%) configuradas para una
+    sección en DBTABLAS (TIPO='SEC'): FACTOR/T_C/T_P. Solo se usa para el
+    "mes en curso" (ver `calcular_desde_dbtablas` en `procesar_empleado`) --
+    RPINGDES todavía no tiene $ real posteado para ese mes. Porta
+    `obtener_horas_seccion` de `nucleo_modular/acceso_sqlserver.py`.
+    `(0.0, 0.0, 0.0)` si no se encuentra o falta `seccion_codigo`.
+    """
+    codigo = str(seccion_codigo or "").strip()
+    if not codigo:
+        return (0.0, 0.0, 0.0)
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        for con_codemp in (True, False):
+            q = sb.table("dbtablas").select("factor,t_c,t_p").eq("tipo", "SEC").eq("codigo", codigo)
+            if con_codemp:
+                q = q.eq("codemp", "10")
+            try:
+                r = q.limit(1).execute()
+            except Exception:  # noqa: BLE001 - degradar sin bloquear la liquidación
+                return (0.0, 0.0, 0.0)
+            if r.data:
+                f = r.data[0]
+                return (a_float(f.get("factor")), a_float(f.get("t_c")), a_float(f.get("t_p")))
+        return (0.0, 0.0, 0.0)
+    for query in (
+        "SELECT FACTOR, T_C, T_P FROM dbo.DBTABLAS WHERE TIPO='SEC' AND "
+        "LTRIM(RTRIM(CODIGO))=? AND CODEMP='10'",
+        "SELECT FACTOR, T_C, T_P FROM dbo.DBTABLAS WHERE TIPO='SEC' AND LTRIM(RTRIM(CODIGO))=?",
+    ):
+        filas = sqlserver.filas(query, (codigo,))
+        if filas:
+            f = filas[0]
+            return (a_float(f.get("FACTOR")), a_float(f.get("T_C")), a_float(f.get("T_P")))
+    return (0.0, 0.0, 0.0)
+
+
 def movimientos_mes(empleado: str, anio: int, mes: int, fuente: str) -> tuple[list[dict], str]:
     """Devuelve (movs, origen). Busca primero el período abierto, luego el cerrado."""
     ini, fin = _rango_mes(anio, mes)
@@ -688,6 +725,9 @@ def procesar_empleado(
     incluir_sueldo: bool = True,
     usar_ingresos_reales_desahucio: bool = False,
     indemnizacion_manual: float = 0.0,
+    periodo_calc_anio: int | None = None,
+    periodo_calc_mes: int | None = None,
+    usar_valores_reales_mes_actual: bool = False,
 ) -> Liquidacion:
     """Procesa un empleado y arma su liquidación.
 
@@ -705,6 +745,25 @@ def procesar_empleado(
     `campos["INDEM_DESPIDO"]` y se suma al total en el mismo lugar donde
     antes iba el auto-cálculo (ver corrección de más arriba: nunca se
     calcula solo, es puramente lo que el llamador decida pasar).
+
+    `periodo_calc_anio`/`periodo_calc_mes` (default `None`, ambos): "3.
+    Periodo para Calcular Horas" del `.pyw` -- cuando coinciden con el año/
+    mes de `fecha_salida`, ese mes se trata como "en curso" (todavía
+    abierto, sin $ real posteado): las horas de sobretiempo se estiman
+    desde el cupo mensual de la sección (DBTABLAS SEC) en vez del $ real de
+    los movimientos, y Sueldo/Bonificación se prorratean por días
+    trabajados. Si se omiten (default), el comportamiento es idéntico al de
+    antes de agregar este parámetro -- SIEMPRE se trata el mes como
+    "cerrado" (horas derivadas del $ real). `usar_valores_reales_mes_actual`
+    NO tiene efecto si no se configura este periodo (ver ese parámetro).
+
+    `usar_valores_reales_mes_actual` (default `False`): solo importa cuando
+    `periodo_calc_anio`/`periodo_calc_mes` coinciden con el mes de salida
+    (mes "en curso"). Si `True`, en vez de la fórmula del cupo de sección
+    usa lo que YA esté cargado en RPINGDES para ese mes (igual que un mes
+    cerrado) -- útil cuando se sabe que ya hay valores reales aunque el mes
+    no esté formalmente cerrado. No afecta el prorrateo de Sueldo/
+    Bonificación, que depende solo de `periodo_calc_anio`/`periodo_calc_mes`.
 
     `usar_ingresos_reales_desahucio` (default `False`): si `True`, la base
     mensual del desahucio deja de ser el sueldo básico de RPEMPLEA y pasa a
@@ -795,35 +854,81 @@ def procesar_empleado(
             if concepto in DESCUENTOS_MULTI_MES:
                 val[concepto] += round(mv["valor"], 2)
 
-    # 3. Horas de sobretiempo: si YA vino un valor $ real en los movimientos,
-    # las horas se derivan de ESE $ (redondeando) y el $ final se RECALCULA
-    # desde esas horas enteras -- no se deja el $ real con su propio
-    # redondeo de nómina, que puede no cuadrar con la fórmula del MRL
-    # (corregido; antes las "horas" mostradas venían siempre de RPEMPLEA,
-    # sin relación con el $ real ya sumado -- podían no coincidir entre sí).
-    # Si NO vino un $ real, se usa el cupo asignado en RPEMPLEA (HOR25/50/100)
-    # como estimación -- mismo comportamiento que antes.
+    # 3. Horas de sobretiempo.
+    #
+    # calcular_desde_dbtablas: True solo si periodo_calc_anio/periodo_calc_mes
+    # (parámetros opcionales, "3. Periodo para Calcular Horas" del .pyw)
+    # coinciden con el mes de salida -- normalmente ese mes está todavía
+    # abierto, sin $ real posteado. Si no se pasan (default), esto nunca es
+    # True y el comportamiento es idéntico al de antes de este cambio.
+    calcular_desde_dbtablas = (
+        periodo_calc_anio is not None and periodo_calc_mes is not None
+        and fsal.year == periodo_calc_anio and fsal.month == periodo_calc_mes
+    )
+    inicio_mes = dt.date(fsal.year, fsal.month, 1)
+    if fing.year == fsal.year and fing.month == fsal.month and fing > inicio_mes:
+        inicio_mes = fing
+    dias_laborados = max(0, (fsal - inicio_mes).days + 1)
+
     h25 = h50 = h100 = 0
-    if sueldo > 0:
-        valor_hora = sueldo / 240
-        if val["SOBRETIEMPO_25"] > 0:
-            h25 = int(round(val["SOBRETIEMPO_25"] / (valor_hora * 0.25)))
-            val["SOBRETIEMPO_25"] = round(valor_hora * 0.25 * h25, 2)
-        elif a_int(emp.get("HOR25")):
-            h25 = a_int(emp.get("HOR25"))
-            val["SOBRETIEMPO_25"] = round(valor_hora * 0.25 * h25, 2)
-        if val["SOBRETIEMPO_50"] > 0:
-            h50 = int(round(val["SOBRETIEMPO_50"] / (valor_hora * 1.5)))
-            val["SOBRETIEMPO_50"] = round(valor_hora * 1.5 * h50, 2)
-        elif a_int(emp.get("HOR50")):
-            h50 = a_int(emp.get("HOR50"))
-            val["SOBRETIEMPO_50"] = round(valor_hora * 1.5 * h50, 2)
-        if val["SOBRETIEMPO_100"] > 0:
-            h100 = int(round(val["SOBRETIEMPO_100"] / (valor_hora * 2.0)))
-            val["SOBRETIEMPO_100"] = round(valor_hora * 2.0 * h100, 2)
-        elif a_int(emp.get("HOR100")):
-            h100 = a_int(emp.get("HOR100"))
-            val["SOBRETIEMPO_100"] = round(valor_hora * 2.0 * h100, 2)
+    if calcular_desde_dbtablas and not usar_valores_reales_mes_actual:
+        # Mes en curso: horas desde el cupo mensual de la sección (DBTABLAS),
+        # prorrateado por días trabajados -- todavía no hay $ real posteado.
+        hrs_sec = _horas_seccion(emp.get("SECCION"), fuente)
+        if hrs_sec[0] > 0:
+            h25 = int(round((hrs_sec[0] / 30) * dias_laborados))
+        if hrs_sec[1] > 0:
+            h50 = int(round((hrs_sec[1] / 30) * dias_laborados))
+        if hrs_sec[2] > 0:
+            h100 = int(round((hrs_sec[2] / 30) * dias_laborados))
+        if sueldo > 0:
+            val["SOBRETIEMPO_25"] = round((sueldo / 240) * 0.25 * h25, 2)
+            val["SOBRETIEMPO_50"] = round((sueldo / 240) * 1.5 * h50, 2)
+            val["SOBRETIEMPO_100"] = round((sueldo / 240) * 2.0 * h100, 2)
+    else:
+        # Mes cerrado (o usar_valores_reales_mes_actual=True): si YA vino un
+        # valor $ real en los movimientos, las horas se derivan de ESE $
+        # (redondeando) y el $ final se RECALCULA desde esas horas enteras
+        # -- no se deja el $ real con su propio redondeo de nómina, que
+        # puede no cuadrar con la fórmula del MRL (corregido; antes las
+        # "horas" mostradas venían siempre de RPEMPLEA, sin relación con el
+        # $ real ya sumado -- podían no coincidir entre sí). Si NO vino un
+        # $ real, se usa el cupo asignado en RPEMPLEA (HOR25/50/100) como
+        # estimación -- mismo comportamiento que antes.
+        if sueldo > 0:
+            valor_hora = sueldo / 240
+            if val["SOBRETIEMPO_25"] > 0:
+                h25 = int(round(val["SOBRETIEMPO_25"] / (valor_hora * 0.25)))
+                val["SOBRETIEMPO_25"] = round(valor_hora * 0.25 * h25, 2)
+            elif a_int(emp.get("HOR25")):
+                h25 = a_int(emp.get("HOR25"))
+                val["SOBRETIEMPO_25"] = round(valor_hora * 0.25 * h25, 2)
+            if val["SOBRETIEMPO_50"] > 0:
+                h50 = int(round(val["SOBRETIEMPO_50"] / (valor_hora * 1.5)))
+                val["SOBRETIEMPO_50"] = round(valor_hora * 1.5 * h50, 2)
+            elif a_int(emp.get("HOR50")):
+                h50 = a_int(emp.get("HOR50"))
+                val["SOBRETIEMPO_50"] = round(valor_hora * 1.5 * h50, 2)
+            if val["SOBRETIEMPO_100"] > 0:
+                h100 = int(round(val["SOBRETIEMPO_100"] / (valor_hora * 2.0)))
+                val["SOBRETIEMPO_100"] = round(valor_hora * 2.0 * h100, 2)
+            elif a_int(emp.get("HOR100")):
+                h100 = a_int(emp.get("HOR100"))
+                val["SOBRETIEMPO_100"] = round(valor_hora * 2.0 * h100, 2)
+
+    # 3c. Prorratear Sueldo/Bonificación al mes en curso -- ligado SOLO a
+    # calcular_desde_dbtablas (no a usar_valores_reales_mes_actual, igual
+    # que el .pyw real): RPINGDES trae el Sueldo/Bonificación proyectados al
+    # mes completo (DIAS=30 en el movimiento) porque a esa fecha el sistema
+    # de nómina no sabe todavía que el empleado va a salir antes de que
+    # termine el mes.
+    if calcular_desde_dbtablas:
+        dias_base_mov = dias_mov if dias_mov else 30
+        if dias_base_mov and dias_laborados < dias_base_mov:
+            factor_prorateo = dias_laborados / dias_base_mov
+            val["SUELDO"] = round(val["SUELDO"] * factor_prorateo, 2)
+            val["BONIFICACION"] = round(val["BONIFICACION"] * factor_prorateo, 2)
+            dias_mov = dias_laborados
 
     # 3b. incluir_sueldo=False: excluye TODO el rol regular del mes de salida
     # (no solo Sueldo) -- si ese rol ya se pagó/descontó por otra vía, las

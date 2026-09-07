@@ -180,25 +180,32 @@ le faltaba casi toda la estructura real. Añadido, en la misma pantalla:
   salida") — ✅ cableada.
 - `usar_ingresos_reales_desahucio` (default `False`, "desahucio sobre
   ingresos reales") — ✅ cableada.
-- `usar_valores_reales_mes_actual` ("usar valores YA cargados en RPINGDES
-  para el mes en curso"): ⛔ el motor **todavía no tiene** la alternativa que
-  este flag debería togglear -- el cálculo de sobretiempos del mes en curso
-  vía cupo de sección (DBTABLAS SEC) simplemente no está portado (ver más
-  abajo), así que exponer el parámetro ahora sería un no-op. Portar esa
-  fórmula primero.
+- `usar_valores_reales_mes_actual` (2026-09-06): ✅ motor listo --
+  `procesar_empleado` ya soporta `periodo_calc_anio`/`periodo_calc_mes`
+  ("3. Periodo para Calcular Horas") + `usar_valores_reales_mes_actual`.
+  **Falta cablear del lado web**: hoy nada llama a `procesar_empleado` con
+  `periodo_calc_anio`/`periodo_calc_mes`, así que esta 6ta casilla sigue
+  siendo un no-op en la UI hasta que se agregue ese selector de periodo (no
+  es una casilla suelta -- sin el periodo configurado, `usar_valores_reales_
+  mes_actual` no tiene nada que togglear, ver docstring de
+  `procesar_empleado`). `_horas_seccion(seccion_codigo, fuente)` (nuevo,
+  consulta `DBTABLAS`/`dbtablas` tipo SEC) resuelve el cupo mensual.
 
-"3. Periodo para Calcular Horas", "4. Valores por Defecto" (multas/
-anticipos si el rubro es 0) y "5. Carpeta de Salida" (N/A en web, se
-descarga directo) del legado no se portaron — evaluar si siguen siendo
-necesarios ya que el modo Individual no depende de un periodo de corte fijo.
+"3. Periodo para Calcular Horas" (año/mes) es entonces la pieza que falta
+agregar a la UI para que la 6ta casilla sirva de algo -- no un checkbox
+más, sino un selector de periodo que gatilla todo el camino "mes en
+curso" (sobretiempos + prorrateo de Sueldo/Bonificación). "4. Valores por
+Defecto" (multas/anticipos si el rubro es 0) y "5. Carpeta de Salida"
+(N/A en web, se descarga directo) del legado no se portaron — evaluar si
+siguen siendo necesarios ya que el modo Individual no depende de un
+periodo de corte fijo.
 
 ## Pendiente / a validar contra el legado
-- Sobretiempos del **mes en curso** (todavía sin cerrar, RPINGDES stale): el
-  `.pyw` de producción recalcula desde el cupo mensual de la sección
-  (DBTABLAS SEC), prorrateado por días trabajados; aquí se sigue usando el
-  cupo fijo de RPEMPLEA (HOR25/50/100) tal cual, sin ese prorrateo por días
-  del mes en curso. Diferencia solo relevante para simulaciones a mitad del
-  mes en curso, no para meses ya cerrados.
+- **Sobretiempos del mes en curso: portado (2026-09-06)** -- ver
+  `procesar_empleado(periodo_calc_anio, periodo_calc_mes,
+  usar_valores_reales_mes_actual)` y `_horas_seccion`. Falta cablear el
+  selector de periodo en la UI web (ver "Pendiente de esa misma pantalla"
+  arriba) -- sin eso, este camino no se activa nunca desde `insevig_web/`.
 - `DETALLE_MOVIMIENTOS` (desglose por movimiento -- fecha, código, número,
   observación -- de cada concepto): existe en `nucleo_modular` para que un
   futuro Editor pueda mostrar "de dónde salió" cada valor; no se portó aquí

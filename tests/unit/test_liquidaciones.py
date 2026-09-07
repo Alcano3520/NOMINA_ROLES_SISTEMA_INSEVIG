@@ -197,6 +197,121 @@ def test_descuentos_pendientes_degrada_sin_supabase(monkeypatch):
     assert lq.descuentos_pendientes_de("0920116811") is None
 
 
+def _emp_mes_actual():
+    return {
+        "EMPLEADO": "999", "APELLIDOS": "PEREZ", "NOMBRES": "JUAN", "CEDULA": "0920116811",
+        "SUELDO": 500.0, "CARGO": "GUARDIA", "DEPTO": "OPERACIONES", "SECCION": "SEC1",
+        "FECHA_ING": "2015-01-01", "FECHA_SAL": "2026-06-15",
+        "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
+    }
+
+
+def test_periodo_calc_no_configurado_no_cambia_nada(monkeypatch):
+    """Si periodo_calc_anio/periodo_calc_mes se omiten (default), el
+    comportamiento es idéntico al de antes de agregar estos parámetros --
+    calcular_desde_dbtablas nunca es True."""
+    emp = _emp_mes_actual()
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+
+    def _raise():
+        raise RuntimeError("sin conexión")
+    monkeypatch.setattr(lq.supabase_client, "get_client", _raise)
+
+    def _movs(cod, anio, mes, fuente):
+        if (anio, mes) == (2026, 6):
+            return ([
+                {"clase": 100, "valor": 500.0, "dias": 30, "codigo": ""},
+                {"clase": 102, "valor": 50.0, "dias": None, "codigo": ""},
+                {"clase": 113, "valor": 20.0, "dias": None, "codigo": ""},
+            ], "RPINGDES")
+        return ([], "RPINGDES")
+    monkeypatch.setattr(lq, "movimientos_mes", _movs)
+    monkeypatch.setattr(lq, "_horas_seccion", lambda *a, **k: (999.0, 999.0, 999.0))
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado("0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg)
+    assert con.error == ""
+    # SUELDO/BONIFICACION sin prorratear (mes "cerrado", comportamiento previo)
+    assert con.campos["SUELDO"] == 500.0
+    # SOBRETIEMPO_25 derivado del $ real (20.0), no del cupo mockeado (999.0)
+    valor_hora = 500.0 / 240
+    h25_esperado = round(20.0 / (valor_hora * 0.25))
+    assert con.campos["HORAS_25"] == h25_esperado
+    assert con.campos["VAL_SOBT_25"] == round(valor_hora * 0.25 * h25_esperado, 2)
+
+
+def test_calcular_desde_dbtablas_prorratea_y_usa_cupo_de_seccion(monkeypatch):
+    """periodo_calc_anio/periodo_calc_mes coincidiendo con el mes de salida
+    -> mes "en curso": Sueldo/Bonificación se prorratean por días
+    trabajados, y (sin usar_valores_reales_mes_actual) las horas de
+    sobretiempo salen del cupo de sección (DBTABLAS), no del $ real de los
+    movimientos."""
+    emp = _emp_mes_actual()
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+
+    def _raise():
+        raise RuntimeError("sin conexión")
+    monkeypatch.setattr(lq.supabase_client, "get_client", _raise)
+
+    def _movs(cod, anio, mes, fuente):
+        if (anio, mes) == (2026, 6):
+            return ([
+                {"clase": 100, "valor": 500.0, "dias": 30, "codigo": ""},
+                {"clase": 102, "valor": 50.0, "dias": None, "codigo": ""},
+                {"clase": 113, "valor": 999.0, "dias": None, "codigo": ""},  # ignorado
+            ], "RPINGDES")
+        return ([], "RPINGDES")
+    monkeypatch.setattr(lq, "movimientos_mes", _movs)
+    monkeypatch.setattr(lq, "_horas_seccion", lambda seccion, fuente: (30.0, 0.0, 0.0))
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado(
+        "0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+        periodo_calc_anio=2026, periodo_calc_mes=6,
+    )
+    assert con.error == ""
+    # Salida el 15/06 -> 15 días laborados de 30 -> factor 0.5
+    assert con.campos["SUELDO"] == 250.0  # 500.0 * 0.5
+    # Horas 25%: cupo 30hrs/mes prorrateado a 15 días -> 15 horas
+    assert con.campos["HORAS_25"] == 15
+    assert con.campos["VAL_SOBT_25"] == round((500.0 / 240) * 0.25 * 15, 2)
+    assert con.campos["HORAS_50"] == 0 and con.campos["VAL_SOBT_50"] == 0.0
+
+
+def test_usar_valores_reales_mes_actual_ignora_cupo_de_seccion(monkeypatch):
+    """Con calcular_desde_dbtablas=True pero usar_valores_reales_mes_actual
+    =True: se usa lo que YA está cargado en RPINGDES (como un mes cerrado),
+    no el cupo de sección -- pero el prorrateo de Sueldo/Bonificación sigue
+    aplicando igual (depende solo de periodo_calc_anio/mes)."""
+    emp = _emp_mes_actual()
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+
+    def _raise():
+        raise RuntimeError("sin conexión")
+    monkeypatch.setattr(lq.supabase_client, "get_client", _raise)
+
+    def _movs(cod, anio, mes, fuente):
+        if (anio, mes) == (2026, 6):
+            return ([
+                {"clase": 100, "valor": 500.0, "dias": 30, "codigo": ""},
+                {"clase": 113, "valor": 20.0, "dias": None, "codigo": ""},
+            ], "RPINGDES")
+        return ([], "RPINGDES")
+    monkeypatch.setattr(lq, "movimientos_mes", _movs)
+    monkeypatch.setattr(lq, "_horas_seccion", lambda *a, **k: (999.0, 999.0, 999.0))
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado(
+        "0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+        periodo_calc_anio=2026, periodo_calc_mes=6, usar_valores_reales_mes_actual=True,
+    )
+    assert con.error == ""
+    assert con.campos["SUELDO"] == 250.0  # prorrateo sigue aplicando
+    valor_hora = 500.0 / 240
+    h25_esperado = round(20.0 / (valor_hora * 0.25))
+    assert con.campos["HORAS_25"] == h25_esperado  # del $ real, no del cupo mockeado
+
+
 def test_sbu_por_anio_fallback():
     cfg = lq.ConfigLiquidacion()
     assert cfg.sbu(2026) == 482.0
