@@ -199,12 +199,18 @@ def guardadas() -> rx.Component:
             "Editor y Gestión: liquidaciones ya guardadas en el sistema — buscar, ver, "
             "cambiar estado, eliminar y regenerar PDF.",
         ),
-        rx.link(
-            rx.button(
-                rx.icon("arrow-left", size=14), "Ir a Generar liquidaciones",
-                variant="soft", size="2",
+        rx.hstack(
+            rx.link(
+                rx.button(rx.icon("arrow-left", size=14), "Generar liquidaciones",
+                          variant="soft", size="2"),
+                href="/liquidaciones",
             ),
-            href="/liquidaciones",
+            rx.link(
+                rx.button(rx.icon("wallet", size=14), "Descuentos pendientes",
+                          variant="soft", size="2"),
+                href="/liquidaciones/descuentos-pendientes",
+            ),
+            spacing="2", wrap="wrap",
         ),
         rx.vstack(
             card(

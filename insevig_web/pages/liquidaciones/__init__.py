@@ -1,1 +1,5 @@
-from insevig_web.pages.liquidaciones import guardadas, index  # noqa: F401
+from insevig_web.pages.liquidaciones import (  # noqa: F401
+    descuentos_pendientes,
+    guardadas,
+    index,
+)
