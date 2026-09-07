@@ -167,6 +167,33 @@ class AdminState(rx.State):
             return
         return rx.download(data=auditoria_xlsx(filas), filename="auditoria.xlsx")
 
+    # ── Trabajos en segundo plano / descargas ────────────────────────────
+    trabajos: list[dict] = []
+
+    @rx.event
+    async def cargar_trabajos(self):
+        from core.repos.admin import trabajos_recientes
+
+        auth_st = await self.get_state(AuthState)
+        es_admin = "admin" in auth_st.roles
+        self.trabajos = await asyncio.to_thread(
+            trabajos_recientes, usuario=auth_st.username, ver_todos=es_admin
+        )
+
+    @rx.event
+    def descargar_trabajo(self, job_id: str):
+        from pathlib import Path
+
+        from core.jobs.runner import leer_job
+
+        j = leer_job(int(job_id))
+        if not j or not j.result_path:
+            return rx.toast.error("Ese trabajo no dejó archivo.")
+        p = Path(j.result_path)
+        if not p.exists():
+            return rx.toast.error("El archivo ya no está disponible.")
+        return rx.download(data=p.read_bytes(), filename=p.name)
+
     @rx.event
     def set_nu(self, campo: str, v: str):
         setattr(self, f"nu_{campo}", v)

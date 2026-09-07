@@ -12,7 +12,7 @@ import sqlmodel
 from sqlalchemy import func
 
 from core.db import appdb
-from core.db.models import AuditLog
+from core.db.models import AuditLog, Job
 
 LIMITE_AUDITORIA = 200
 
@@ -75,3 +75,34 @@ def buscar_auditoria(
             }
             for a in filas
         ]
+
+
+def trabajos_recientes(
+    *, usuario: str = "", ver_todos: bool = False, limite: int = 40
+) -> list[dict[str, str]]:
+    """Trabajos en segundo plano recientes (exports, lotes, cargas masivas).
+    Si `ver_todos` es False solo devuelve los de `usuario`."""
+    import os
+
+    with appdb.session() as s:
+        q = sqlmodel.select(Job).order_by(sqlmodel.col(Job.created_at).desc()).limit(limite)
+        if not ver_todos:
+            q = q.where(Job.created_by == usuario)
+        filas = s.exec(q).all()
+        out: list[dict[str, str]] = []
+        for j in filas:
+            archivo = os.path.basename(j.result_path) if j.result_path else ""
+            pct = f"{round(100 * j.progress / j.total)}%" if j.total else ""
+            out.append(
+                {
+                    "id": str(j.id),
+                    "tipo": j.tipo,
+                    "estado": j.status,
+                    "avance": pct,
+                    "mensaje": j.message,
+                    "creado_por": j.created_by,
+                    "creado": str(j.created_at)[:19],
+                    "archivo": archivo,
+                }
+            )
+        return out

@@ -47,6 +47,7 @@ def job_progress(
                 ),
                 spacing="2",
             ),
+            rx.link("Ver todos mis trabajos y descargas →", href="/trabajos", size="1"),
             spacing="3",
             width="100%",
         ),

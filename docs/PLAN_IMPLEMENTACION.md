@@ -51,7 +51,11 @@ Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` act
   mapa CLASE→concepto cubra todas las CLASE de un período real).
 - **Auditoría**: [x] filtros usuario/módulo/estado/rango de fechas + contador
   de coincidencias en `/admin/auditoria` (`core/repos/admin.buscar_auditoria`).
-  [ ] `admin/roles` editable (hoy solo lectura de la matriz por defecto).
+  [ ] `admin/roles` editable (hoy solo lectura de la matriz por defecto) —
+  requiere que `auth.puede()` (★ congelado) consulte `RolePermission`: es
+  cambio de contrato, hay que aprobarlo.
+- **Descargas / jobs**: [x] `/trabajos` — el `downloads_panel` del plan
+  (`core/repos/admin.trabajos_recientes`, enlace desde `job_progress`).
 
 ---
 

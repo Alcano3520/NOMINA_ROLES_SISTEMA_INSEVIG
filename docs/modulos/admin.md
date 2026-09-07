@@ -22,6 +22,11 @@ Ver `docs/CONTRATOS.md`. No editar el núcleo congelado.
   (`core/excel/admin_builders.auditoria_xlsx`). Lógica en
   `core/repos/admin.buscar_auditoria`.
 - `/admin/parametros` — SBU por año, proveedor de narrativa IA. OK.
+- `/trabajos` — trabajos en segundo plano recientes (exports, lotes, cargas
+  masivas) con su estado y un botón de descarga del resultado. Cualquier usuario
+  autenticado ve los suyos; un admin ve los de todos. Enlace en el panel de
+  progreso de cada Job (`components/job_progress`).
+  `core/repos/admin.trabajos_recientes`.
 - `/admin/roles` — **solo lectura** de `auth.PERMISOS_POR_DEFECTO`. Pendiente:
   hacerla editable (matriz `RolePermission` en la BD de la app que sobreescriba
   los defaults; toca `auth.py` congelado → cambio de contrato).

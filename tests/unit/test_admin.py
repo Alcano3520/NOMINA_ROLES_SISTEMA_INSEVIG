@@ -5,8 +5,8 @@ from __future__ import annotations
 import datetime as dt
 
 from core.db import appdb
-from core.db.models import AuditLog
-from core.repos.admin import buscar_auditoria
+from core.db.models import AuditLog, Job
+from core.repos.admin import buscar_auditoria, trabajos_recientes
 
 
 def _sembrar(filas: list[dict]) -> None:
@@ -90,6 +90,24 @@ def test_auditoria_xlsx_es_un_xlsx_valido():
     assert ws["A1"].value == "FECHA/HORA"
     assert ws["B2"].value == "ana"
     assert ws["F2"].value == "ok"
+
+
+def test_trabajos_recientes_filtra_por_usuario(app_db):
+    with appdb.session() as s:
+        s.add(Job(tipo="carga_masiva_empleados", status="ok", progress=10, total=10,
+                  created_by="ana", result_path="/x/RES.xlsx", message="listo"))
+        s.add(Job(tipo="prestamos_empleado", status="corriendo", progress=1, total=4, created_by="beto"))
+        s.commit()
+
+    mios = trabajos_recientes(usuario="ana")
+    assert len(mios) == 1
+    assert mios[0]["tipo"] == "carga_masiva_empleados"
+    assert mios[0]["avance"] == "100%"
+    assert mios[0]["archivo"] == "RES.xlsx"
+
+    todos = trabajos_recientes(usuario="ana", ver_todos=True)
+    assert len(todos) == 2
+    assert todos[0]["creado"] >= todos[1]["creado"]  # más reciente primero
 
 
 def test_auditoria_xlsx_sin_filas_no_revienta():

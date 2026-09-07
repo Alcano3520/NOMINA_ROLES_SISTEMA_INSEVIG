@@ -8,6 +8,7 @@ from insevig_web.pages import (  # noqa: F401, I001
     index,
     login,
     cuenta,
+    trabajos,
     reportes,
     prestamos,
     observaciones,
