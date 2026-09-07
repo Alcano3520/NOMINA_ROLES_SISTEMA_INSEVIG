@@ -72,7 +72,12 @@ MODULES: list[ModuleSpec] = [
     ModuleSpec(
         "liquidaciones", "Liquidaciones", "file-check-2",
         [NavItem("Generar finiquitos", "/liquidaciones", "ver"),
-         NavItem("Liquidaciones guardadas", "/liquidaciones/guardadas", "ver")],
+         NavItem("Liquidaciones guardadas", "/liquidaciones/guardadas", "ver"),
+         NavItem("Descuentos pendientes", "/liquidaciones/descuentos-pendientes", "ver")],
+    ),
+    ModuleSpec(
+        "vacaciones", "Vacaciones", "calendar-days",
+        [NavItem("Gozadas y pagadas", "/vacaciones", "ver")],
     ),
     ModuleSpec(
         "admin", "Administración", "settings",

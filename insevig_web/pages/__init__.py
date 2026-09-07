@@ -19,5 +19,6 @@ from insevig_web.pages import (  # noqa: F401, I001
     admin,
     bitacora,
     liquidaciones,
+    vacaciones,
 )
 from insevig_web.pages import placeholders  # noqa: F401

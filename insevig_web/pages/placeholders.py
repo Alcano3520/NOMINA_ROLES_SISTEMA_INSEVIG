@@ -50,6 +50,8 @@ _RUTAS_MIGRADAS = {
     "/bitacora",
     "/liquidaciones",
     "/liquidaciones/guardadas",
+    "/liquidaciones/descuentos-pendientes",
+    "/vacaciones",
 }
 
 for _spec in MODULES:
