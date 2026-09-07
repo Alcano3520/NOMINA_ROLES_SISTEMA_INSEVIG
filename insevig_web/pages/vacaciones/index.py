@@ -140,7 +140,7 @@ def _form_gozada() -> rx.Component:
         _S.mostrar_form_gozada,
         card(
             rx.vstack(
-                rx.heading("Nueva vacación gozada", size="3"),
+                rx.heading(rx.cond(_S.editando_gozada_id > 0, "Editar vacación gozada", "Nueva vacación gozada"), size="3"),
                 rx.grid(*[_campo_gozada(k, lbl, t) for k, lbl, t in _CAMPOS_GOZADA],
                         columns=rx.breakpoints(initial="1", sm="2", lg="3"), spacing="3", width="100%"),
                 rx.hstack(
@@ -168,6 +168,7 @@ def _fila_gozada(v: rx.Var) -> rx.Component:
             rx.hstack(
                 rx.cond(v["firmado"] != "POSITIVO",
                         rx.button("Firmar", size="1", on_click=lambda: _S.firmar_gozada(v["id"]))),
+                rx.button("Editar", size="1", variant="soft", on_click=lambda: _S.editar_gozada(v)),
                 rx.button("Eliminar", size="1", color_scheme="red", variant="soft",
                           on_click=lambda: _S.eliminar_vacacion(v["id"])),
                 spacing="1",
@@ -197,6 +198,83 @@ def _tab_gozadas() -> rx.Component:
 
 # ── Pagadas ──────────────────────────────────────────────────────────────
 
+_CAMPOS_EDITAR_PAGADA = [
+    ("periodo", "Período", "text"), ("total_periodo", "Total período ($)", "number"),
+    ("vacaciones_calc", "Vacaciones calc. ($)", "number"), ("dias_adicionales", "Días adicionales", "number"),
+    ("anticipo", "Anticipo ($)", "number"), ("total_pagar", "TOTAL A PAGAR ($)", "number"),
+    ("banco", "Banco", "text"), ("cta_cte_no", "Cta. Cte. No.", "text"),
+    ("no_cheque", "No. Cheque/Transferencia", "text"), ("fecha_pago", "Fecha pago", "date"),
+    ("observaciones", "Observaciones", "text"),
+]
+
+
+def _form_editar_pagada() -> rx.Component:
+    return rx.cond(
+        _S.mostrar_form_editar_pagada,
+        card(
+            rx.vstack(
+                rx.heading("Editar vacación pagada", size="3"),
+                rx.grid(
+                    rx.vstack(rx.text("Forma de pago", size="1", weight="bold"),
+                             rx.select(FORMAS_PAGO, value=_S.form_editar_pagada["forma_pago"],
+                                      on_change=lambda v: _S.set_campo_editar_pagada("forma_pago", v))),
+                    rx.vstack(rx.text("Estado", size="1", weight="bold"),
+                             rx.select(ESTADOS_DOC, value=_S.form_editar_pagada["estado_doc"],
+                                      on_change=lambda v: _S.set_campo_editar_pagada("estado_doc", v))),
+                    *[
+                        rx.vstack(
+                            rx.text(lbl, size="1", weight="bold"),
+                            rx.input(value=_S.form_editar_pagada[k], type=t,
+                                     on_change=lambda v, k=k: _S.set_campo_editar_pagada(k, v)),
+                            spacing="1", width="100%",
+                        )
+                        for k, lbl, t in _CAMPOS_EDITAR_PAGADA
+                    ],
+                    columns=rx.breakpoints(initial="1", sm="2", lg="3"), spacing="3", width="100%",
+                ),
+                rx.hstack(
+                    primary_button("Guardar", on_click=_S.guardar_edicion_pagada),
+                    rx.button("Cancelar", on_click=_S.cerrar_form_editar_pagada, variant="soft"),
+                    spacing="2",
+                ),
+                spacing="3", width="100%",
+            ),
+            width="100%",
+        ),
+    )
+
+
+def _form_registrar_pago() -> rx.Component:
+    return rx.cond(
+        _S.mostrar_form_registrar_pago,
+        card(
+            rx.vstack(
+                rx.heading("Completar pago (cheque)", size="3"),
+                rx.text("Ingrese el número de cheque/transferencia para pasar esta pagada a 'completado'.",
+                       size="1", color_scheme="gray"),
+                rx.grid(
+                    rx.vstack(rx.text("Banco", size="1", weight="bold"),
+                             rx.input(value=_S.form_registrar_pago["banco"],
+                                      on_change=lambda v: _S.set_campo_registrar_pago("banco", v))),
+                    rx.vstack(rx.text("No. Cheque/Transferencia", size="1", weight="bold"),
+                             rx.input(value=_S.form_registrar_pago["no_cheque"],
+                                      on_change=lambda v: _S.set_campo_registrar_pago("no_cheque", v))),
+                    rx.vstack(rx.text("Fecha de pago", size="1", weight="bold"),
+                             rx.input(value=_S.form_registrar_pago["fecha_pago"], type="date",
+                                      on_change=lambda v: _S.set_campo_registrar_pago("fecha_pago", v))),
+                    columns=rx.breakpoints(initial="1", sm="3"), spacing="3", width="100%",
+                ),
+                rx.hstack(
+                    primary_button("Confirmar pago", on_click=_S.confirmar_registrar_pago),
+                    rx.button("Cancelar", on_click=_S.cerrar_form_registrar_pago, variant="soft"),
+                    spacing="2",
+                ),
+                spacing="3", width="100%",
+            ),
+            width="100%",
+        ),
+    )
+
 
 def _fila_pagada(v: rx.Var) -> rx.Component:
     return rx.table.row(
@@ -206,19 +284,35 @@ def _fila_pagada(v: rx.Var) -> rx.Component:
         rx.table.cell(f"${v['total_pagar']}"),
         rx.table.cell(v["forma_pago"]),
         rx.table.cell(v["estado_doc"]),
+        rx.table.cell(
+            rx.hstack(
+                rx.cond(v["estado_doc"] == "pendiente",
+                        rx.button("Registrar pago", size="1", color_scheme="green",
+                                  on_click=lambda: _S.abrir_registrar_pago(v))),
+                rx.button("Editar", size="1", variant="soft", on_click=lambda: _S.editar_pagada(v)),
+                rx.button("Eliminar", size="1", color_scheme="red", variant="soft",
+                          on_click=lambda: _S.eliminar_vacacion(v["id"])),
+                spacing="1",
+            )
+        ),
     )
 
 
 def _tab_pagadas() -> rx.Component:
-    return scroll_x(
-        rx.table.root(
-            rx.table.header(
-                rx.table.row(*[rx.table.column_header_cell(c) for c in
-                               ("Período", "Fecha pago", "Días", "Total", "Forma", "Estado")])
-            ),
-            rx.table.body(rx.foreach(_S.pagadas, _fila_pagada)),
-            variant="surface", size="1", width="100%",
-        )
+    return rx.vstack(
+        _form_editar_pagada(),
+        _form_registrar_pago(),
+        scroll_x(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(*[rx.table.column_header_cell(c) for c in
+                                   ("Período", "Fecha pago", "Días", "Total", "Forma", "Estado", "")])
+                ),
+                rx.table.body(rx.foreach(_S.pagadas, _fila_pagada)),
+                variant="surface", size="1", width="100%",
+            )
+        ),
+        spacing="3", width="100%",
     )
 
 

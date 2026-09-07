@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+from contextlib import suppress
 
 import reflex as rx
 
@@ -98,9 +99,12 @@ class VacacionesState(rx.State):
     def set_tab(self, v: str):
         self.tab = v
 
-    # ── Nueva gozada ──────────────────────────────────────────────────────
+    # ── Nueva / editar gozada ─────────────────────────────────────────────
     form_gozada: dict[str, str] = dict(_FORM_GOZADA_VACIO)
     mostrar_form_gozada: bool = False
+    editando_gozada_id: int = 0  # 0 = nueva; >0 = editando ese registro. Porta
+    # `app.py::_nueva_gozada`/`_editar_gozada` (mismo diálogo `DlgGozada` para
+    # ambos casos, distinguido por si trae `vacacion` o no).
 
     @rx.event
     def nueva_gozada(self):
@@ -109,6 +113,14 @@ class VacacionesState(rx.State):
             form["periodo"] = self.periodos_emp[0]  # ya es la etiqueta (str), no un dict
         form["fecha_comprobante"] = dt.date.today().strftime("%Y-%m-%d")
         self.form_gozada = form
+        self.editando_gozada_id = 0
+        self.mostrar_form_gozada = True
+        self.msg = ""
+
+    @rx.event
+    def editar_gozada(self, vac: dict):
+        self.form_gozada = {k: ("" if vac.get(k) in (None, False) else str(vac.get(k))) for k in _FORM_GOZADA_VACIO}
+        self.editando_gozada_id = int(vac.get("id") or 0)
         self.mostrar_form_gozada = True
         self.msg = ""
 
@@ -123,13 +135,25 @@ class VacacionesState(rx.State):
     @rx.event
     async def guardar_gozada(self):
         auth = await self.get_state(AuthState)
-        if "vacaciones:crear" not in auth.permisos_flat:
+        accion = "editar" if self.editando_gozada_id else "crear"
+        if f"vacaciones:{accion}" not in auth.permisos_flat:
             self.msg = "Sin permiso."
             return
-        datos = {**self.form_gozada, "cedula": self.empleado.get("cedula", "")}
         try:
-            await asyncio.to_thread(V.crear_gozada, datos, usuario=auth.username, roles=set(auth.roles))
-            self.msg = "Vacación gozada registrada."
+            if self.editando_gozada_id:
+                datos_upd = dict(self.form_gozada)
+                for campo in ("dias_tomados", "dias_adicionales"):
+                    with suppress(ValueError):
+                        datos_upd[campo] = int(datos_upd.get(campo) or 0)
+                await asyncio.to_thread(
+                    V.actualizar, self.editando_gozada_id, datos_upd,
+                    usuario=auth.username, roles=set(auth.roles),
+                )
+                self.msg = "Vacación gozada actualizada."
+            else:
+                datos = {**self.form_gozada, "cedula": self.empleado.get("cedula", "")}
+                await asyncio.to_thread(V.crear_gozada, datos, usuario=auth.username, roles=set(auth.roles))
+                self.msg = "Vacación gozada registrada."
             self.mostrar_form_gozada = False
             await self._cargar_empleado()
         except Exception as e:  # noqa: BLE001
@@ -152,6 +176,109 @@ class VacacionesState(rx.State):
             return
         await asyncio.to_thread(V.eliminar, vac_id, usuario=auth.username, roles=set(auth.roles))
         await self._cargar_empleado()
+
+    # ── Editar pagada existente ───────────────────────────────────────────
+    # Porta `app.py::_editar_pagada` (reabre `DlgPagada` con los valores
+    # actuales). Reusa el shape de `form_pago` + los campos de valores.
+    form_editar_pagada: dict[str, str] = {}
+    editando_pagada_id: int = 0
+    mostrar_form_editar_pagada: bool = False
+
+    _CAMPOS_EDITAR_PAGADA = (
+        "periodo", "total_periodo", "vacaciones_calc", "dias_adicionales",
+        "anticipo", "total_pagar", "forma_pago", "banco", "cta_cte_no",
+        "no_cheque", "fecha_pago", "estado_doc", "observaciones",
+    )
+
+    @rx.event
+    def editar_pagada(self, vac: dict):
+        self.form_editar_pagada = {
+            k: ("" if vac.get(k) in (None, False) else str(vac.get(k))) for k in self._CAMPOS_EDITAR_PAGADA
+        }
+        self.editando_pagada_id = int(vac.get("id") or 0)
+        self.mostrar_form_editar_pagada = True
+        self.msg = ""
+
+    @rx.event
+    def set_campo_editar_pagada(self, campo: str, v: str):
+        self.form_editar_pagada = {**self.form_editar_pagada, campo: v}
+
+    @rx.event
+    def cerrar_form_editar_pagada(self):
+        self.mostrar_form_editar_pagada = False
+
+    @rx.event
+    async def guardar_edicion_pagada(self):
+        auth = await self.get_state(AuthState)
+        if "vacaciones:editar" not in auth.permisos_flat:
+            self.msg = "Sin permiso."
+            return
+        if not self.editando_pagada_id:
+            return
+        datos = dict(self.form_editar_pagada)
+        for campo in ("total_periodo", "vacaciones_calc", "dias_adicionales", "anticipo", "total_pagar"):
+            with suppress(ValueError):
+                datos[campo] = float(datos.get(campo) or 0)
+        try:
+            await asyncio.to_thread(
+                V.actualizar, self.editando_pagada_id, datos, usuario=auth.username, roles=set(auth.roles)
+            )
+            self.msg = "Vacación pagada actualizada."
+            self.mostrar_form_editar_pagada = False
+            await self._cargar_empleado()
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error: {e}"
+
+    # ── Completar pago pendiente (cheque) ─────────────────────────────────
+    # Porta `app.py::DlgRegistrarPago`/`_registrar_pago`: una pagada creada con
+    # forma_pago='CHEQUE' queda `estado_doc='pendiente'` hasta que financiero
+    # ingresa el número de cheque.
+    form_registrar_pago: dict[str, str] = {"banco": "", "no_cheque": "", "fecha_pago": ""}
+    registrando_pago_id: int = 0
+    mostrar_form_registrar_pago: bool = False
+
+    @rx.event
+    def abrir_registrar_pago(self, vac: dict):
+        self.form_registrar_pago = {
+            "banco": str(vac.get("banco") or ""), "no_cheque": str(vac.get("no_cheque") or ""),
+            "fecha_pago": dt.date.today().strftime("%Y-%m-%d"),
+        }
+        self.registrando_pago_id = int(vac.get("id") or 0)
+        self.mostrar_form_registrar_pago = True
+        self.msg = ""
+
+    @rx.event
+    def set_campo_registrar_pago(self, campo: str, v: str):
+        self.form_registrar_pago = {**self.form_registrar_pago, campo: v}
+
+    @rx.event
+    def cerrar_form_registrar_pago(self):
+        self.mostrar_form_registrar_pago = False
+
+    @rx.event
+    async def confirmar_registrar_pago(self):
+        auth = await self.get_state(AuthState)
+        if "vacaciones:editar" not in auth.permisos_flat:
+            self.msg = "Sin permiso."
+            return
+        if not self.registrando_pago_id:
+            return
+        f = self.form_registrar_pago
+        if not f.get("no_cheque", "").strip():
+            self.msg = "Ingrese el número de cheque/transferencia."
+            return
+        try:
+            await asyncio.to_thread(
+                V.registrar_pago, self.registrando_pago_id,
+                banco=f.get("banco", ""), no_cheque=f.get("no_cheque", ""),
+                fecha_pago=f.get("fecha_pago") or None,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+            self.msg = "Pago registrado."
+            self.mostrar_form_registrar_pago = False
+            await self._cargar_empleado()
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error: {e}"
 
     # ── Cálculo de pago (pestaña "Cálculo") ──────────────────────────────
     calc_periodo: str = ""
