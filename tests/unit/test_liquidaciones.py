@@ -172,16 +172,21 @@ def test_total_vacaciones_suma_todos_los_periodos_pendientes(monkeypatch):
     assert alertas == []
 
 
-def test_decimo_anterior_se_incluye_por_defecto_en_el_total():
-    """Corregido: la extracción inicial de este archivo nunca sumaba el
-    décimo ANTERIOR al total (subpagaba la liquidación). Por defecto ahora
-    SÍ se incluye -- se puede excluir explícitamente pasando
-    incluir_dec13_anterior/incluir_dec14_anterior=False."""
+def test_decimo_anterior_excluido_por_defecto_en_el_total():
+    """Verificado contra Generador_Liquidaciones_INSEVIG.pyw
+    (_parsear_entrada_cedulas, _procesar_empleado): el décimo ANTERIOR está
+    excluido del total por defecto en las dos pantallas reales -- en modo
+    lote el campo va hardcodeado en False (no se puede activar, decisión
+    explícita del usuario para no colar un décimo ya pagado en un proceso
+    masivo) y en modo individual la casilla nace desmarcada. Una versión
+    anterior de este archivo tenía el default en True, lo que hacía que
+    procesar_lote() (que no pasa el argumento) incluyera de más el décimo
+    anterior en cada liquidación de lote -- corregido."""
     import inspect
 
     firma = inspect.signature(lq.procesar_empleado)
-    assert firma.parameters["incluir_dec13_anterior"].default is True
-    assert firma.parameters["incluir_dec14_anterior"].default is True
+    assert firma.parameters["incluir_dec13_anterior"].default is False
+    assert firma.parameters["incluir_dec14_anterior"].default is False
 
 
 def test_excel_liquidaciones_valido():

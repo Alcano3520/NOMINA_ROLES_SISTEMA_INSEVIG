@@ -632,17 +632,33 @@ def procesar_empleado(
     cedula: str, fecha_salida: str, motivo: str, fuente: str, cfg: ConfigLiquidacion,
     fecha_ingreso: str = "",
     *,
-    incluir_dec13_anterior: bool = True,
-    incluir_dec14_anterior: bool = True,
+    incluir_dec13_anterior: bool = False,
+    incluir_dec14_anterior: bool = False,
 ) -> Liquidacion:
     """Procesa un empleado y arma su liquidación.
 
-    `incluir_dec13_anterior`/`incluir_dec14_anterior` (default `True`, mismo
-    comportamiento que antes de exponer el parámetro): si el décimo tercero
-    o cuarto del periodo ANTERIOR ya se pagó por otra vía (nómina regular) y
-    no debe volver a sumarse aquí, se pasa `False` -- entonces ese valor
-    queda en `campos["DECIMA_TERCERA_ANTERIOR"]` como referencia informativa
-    (se sigue calculando y mostrando la cifra) pero NO se suma a los totales.
+    `incluir_dec13_anterior`/`incluir_dec14_anterior` (default `False`):
+    controla si el décimo tercero/cuarto del periodo ANTERIOR (ya pagado en
+    su momento) se suma a `total_ingresos` (y por lo tanto al total a
+    recibir) además de mostrarse como referencia en
+    `campos["DECIMA_TERCERA_ANTERIOR"]`/`["DECIMA_CUARTA_ANTERIOR"]`.
+
+    CORRECCIÓN (ver docs/modulos/liquidaciones.md): una versión anterior de
+    este archivo tenía el default en `True`. Se verificó contra
+    `Generador_Liquidaciones_INSEVIG.pyw` (`_procesar_empleado`,
+    `_parsear_entrada_cedulas`) que el comportamiento REAL en las dos
+    pantallas que existen hoy es excluir el anterior por defecto: en modo
+    LOTE el campo está *hardcodeado en False* sin forma de activarlo
+    ("pedido explícito del usuario: incluir el décimo anterior es una
+    decisión puntual, caso por caso... nunca en un proceso masivo"), y en
+    modo individual la casilla equivalente nace *desmarcada*. El default
+    `True` de la propia función `_procesar_empleado` en el `.pyw` nunca se
+    ejercita en la práctica porque ambos llamadores siempre pasan el valor
+    explícito. `procesar_lote()` de este archivo, en cambio, SÍ dependía del
+    default (no pasaba el argumento) -- con `True` estaba incluyendo de más
+    el décimo anterior en cada liquidación de lote generada por el sistema
+    web, cosa que el `.pyw` nunca permite. Corregido aquí para que
+    `procesar_lote` sin overrides coincida con el comportamiento real.
     """
     emp = _empleado(cedula, fuente)
     ced = normalizar_cedula(cedula)
@@ -800,11 +816,13 @@ def procesar_empleado(
         if des > 0:
             ant_l_des = float(int(des / ANTICIPO_DIVISOR))
 
-    # 12. Totales. CORREGIDO: el décimo ANTERIOR (13ro y 14to) se incluye por
-    # defecto en el total -- la extracción inicial de este archivo lo omitía
-    # siempre (subpagaba la liquidación en cualquier caso con décimo anterior
-    # pendiente). Se puede excluir explícitamente con
-    # incluir_dec13_anterior/incluir_dec14_anterior=False (ver docstring).
+    # 12. Totales. El décimo ANTERIOR (13ro y 14to) NO se incluye por
+    # defecto en el total -- coincide con el comportamiento real del .pyw en
+    # sus dos pantallas actuales (lote: hardcodeado en False sin poder
+    # activarlo; individual: casilla desmarcada por defecto). Se puede
+    # incluir explícitamente con incluir_dec13_anterior/incluir_dec14_anterior
+    # =True, opción que en el .pyw solo existe en modo individual (ver
+    # docstring de esta función para el historial de esta corrección).
     dec13_ant_incluido = d13_ant if incluir_dec13_anterior else 0.0
     dec14_ant_incluido = d14_ant if incluir_dec14_anterior else 0.0
     total_ingresos = round(

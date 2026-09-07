@@ -65,14 +65,27 @@ función) -- ninguna es una mejora inventada en esta migración:
 6. **Décima Tercera/Cuarta: sin recorte por reingreso → recortadas a
    [fecha_ingreso, fecha_salida].** Un reingreso a mitad de periodo sumaba
    sueldo de un ingreso anterior ya liquidado por separado.
-7. **Décimo ANTERIOR (13ro y 14to) nunca se sumaba al total → se incluye por
-   defecto.** La extracción inicial calculaba `DECIMA_TERCERA_ANTERIOR`/
-   `DECIMA_CUARTA_ANTERIOR` pero jamás los sumaba a `TOTAL_INGRESOS` --
-   subpagaba la liquidación en cualquier caso con décimo anterior pendiente.
-   Se puede excluir explícitamente con
-   `incluir_dec13_anterior`/`incluir_dec14_anterior=False` (parámetros nuevos
-   de `procesar_empleado`, default `True`) para cuando ese décimo anterior ya
-   se pagó por otra vía y no debe volver a sumarse.
+7. **Décimo ANTERIOR (13ro y 14to): antes nunca se podía sumar al total →
+   ahora es opcional vía `incluir_dec13_anterior`/`incluir_dec14_anterior`.**
+   La extracción inicial calculaba `DECIMA_TERCERA_ANTERIOR`/
+   `DECIMA_CUARTA_ANTERIOR` pero no existía forma de incluirlos en
+   `total_ingresos`. **Corrección sobre esta misma corrección (2026-09-06)**:
+   al agregar el parámetro se le puso default `True`, asumiendo que la
+   omisión total anterior era el bug a corregir. Verificado después contra
+   `Generador_Liquidaciones_INSEVIG.pyw` línea por línea
+   (`_parsear_entrada_cedulas`, `_procesar_empleado`): el comportamiento real
+   en las DOS pantallas que existen hoy es excluirlo por defecto -- en modo
+   LOTE el campo está hardcodeado en `False` sin forma de activarlo ("pedido
+   explícito del usuario: incluir el décimo anterior es una decisión
+   puntual, caso por caso... nunca en un proceso masivo"), y en modo
+   individual la casilla nace desmarcada. El default `True` de la función
+   `_procesar_empleado` del `.pyw` nunca se ejercita en la práctica porque
+   los dos únicos llamadores siempre pasan un valor explícito. Con el
+   default `True` que este archivo tuvo temporalmente, `procesar_lote()`
+   (que no pasa el argumento) estuvo incluyendo de más el décimo anterior en
+   cada liquidación de lote generada por el sistema web -- **esto sí era un
+   bug real que sobrepagaba**, ya corregido: el default es ahora `False` en
+   ambos parámetros, coincidiendo con el `.pyw` real.
 8. **Horas de sobretiempo (HORAS_25/50/100) desconectadas del $ real →
    reconstruidas desde el $ cuando existe.** Antes, si ya había un valor $ de
    sobretiempo real en los movimientos, las "horas" mostradas seguían viniendo
