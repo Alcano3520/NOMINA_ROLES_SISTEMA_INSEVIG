@@ -28,23 +28,35 @@ def _rows(cur, query: str, params: tuple) -> list[dict]:
 
 
 def _buscar_empleado(cur, flt: str, ident: str) -> dict | None:
+    """Resuelve un identificador a un empleado ACT, con el mismo orden y las
+    mismas ramas que `obtener_datos_empleado_rapido` del legado:
+      - código corto (<=6): EMPLEADO exacto → CEDULA exacta → nombre LIKE.
+        NO se hace LIKE sobre la cédula (evita que "4086" case
+        `%4086%` dentro de la cédula de otra persona).
+      - identificador largo: CEDULA exacta → nombre/cédula LIKE.
+    """
     base = (
         f"SELECT {_COLS_EMP} FROM [insevig].[dbo].[RPEMPLEA] "
         f"WHERE {flt} AND [ESTADO]='ACT'"
     )
+    s = str(ident).strip()
+    like = f"%{s}%"
     intentos: list[tuple[str, tuple]] = []
-    if len(str(ident)) <= 6:
-        intentos.append((f"{base} AND [EMPLEADO] = ?", (str(ident),)))
-    if str(ident).strip().isdigit():
-        intentos.append((f"{base} AND [CEDULA] = ?", (a_int(ident),)))
-    like = f"%{ident}%"
-    intentos.append(
-        (
-            f"{base} AND ([NOMBRES] LIKE ? OR [APELLIDOS] LIKE ? "
-            f"OR CAST([CEDULA] AS VARCHAR(20)) LIKE ?)",
-            (like, like, like),
+    if len(s) <= 6:
+        intentos.append((f"{base} AND [EMPLEADO] = ?", (s,)))
+        if s.isdigit():
+            intentos.append((f"{base} AND [CEDULA] = ?", (a_int(s),)))
+        intentos.append((f"{base} AND ([NOMBRES] LIKE ? OR [APELLIDOS] LIKE ?)", (like, like)))
+    else:
+        if s.isdigit():
+            intentos.append((f"{base} AND [CEDULA] = ?", (a_int(s),)))
+        intentos.append(
+            (
+                f"{base} AND ([NOMBRES] LIKE ? OR [APELLIDOS] LIKE ? "
+                f"OR CAST([CEDULA] AS VARCHAR(20)) LIKE ?)",
+                (like, like, like),
+            )
         )
-    )
     for query, params in intentos:
         filas = _rows(cur, query, params)
         if filas:

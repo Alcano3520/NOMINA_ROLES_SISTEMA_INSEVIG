@@ -68,3 +68,25 @@ las reglas intocables en `docs/CONTRATOS.md`.
   forzado con `custom_attrs={"data-appearance": "light"}`.
 - Warnings de dev-mode (`Frontend version 0.9.8 vs 0.9.10`, `dispatch[substate]`):
   ruido, no rompen las páginas.
+
+## Sesión 2026-09-06
+
+### Despliegue
+- App desplegada en el NAS `192.168.2.181` (sesión paralela): servicio Windows
+  `insevig-web` en `:3000`, SQL Server + Supabase + Postgres local conectando OK.
+  `deploy/NAS-192.168.2.181.md`, `deploy/windows/verificar-requisitos.ps1`,
+  `deploy/windows/deploy-nas.ps1`. Caddy + DuckDNS preparado pero en pausa.
+- `supabase` subido a `>=2.31` (la 2.7.4 rechazaba las API keys nuevas).
+
+### Features / correcciones
+- admin: filtros + export de auditoría; `/trabajos` (panel de descargas/jobs).
+- roles: test golden del rol de pago contra `docs/pereira_test.pdf` (coincide).
+- préstamos: filtros completos del historial + export que los respeta;
+  `sqlite_to_appdb` idempotente.
+- observaciones: carga masiva desde Excel (Job).
+- **`core/datos/fuente_sqlserver._buscar_empleado`**: regresión corregida — para
+  un código corto hacía `CAST(CEDULA AS VARCHAR) LIKE '%<ident>%'` y casaba a
+  OTRA persona cuya cédula contenía esos dígitos. El legado solo hace ese LIKE
+  para identificadores largos. Detectado con `scripts/validar_datos`.
+- `scripts/validar_datos.py`: compara `core/` SQL Server vs Supabase por
+  empleado (join por cédula). Para la validación A1, se corre en el NAS.

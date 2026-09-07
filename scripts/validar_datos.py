@@ -19,14 +19,21 @@ import sys
 
 from core.datos.service import datos_empleado
 from core.repos import prestamos
+from core.utils import normalizar_cedula
 
 TOLERANCIA = 0.02  # centavos
 
 
 def _muestra(n: int, fuente: str) -> list[str]:
+    """Cédulas (clave estable entre las dos fuentes) de N empleados."""
     from core.repos.empleados import buscar
 
-    return [str(e["empleado"]).strip() for e in buscar("", fuente, limite=n) if e.get("empleado")]
+    out: list[str] = []
+    for e in buscar("", fuente, limite=n):
+        ced = normalizar_cedula(e.get("cedula"))
+        if ced and ced != "0000000000":
+            out.append(ced)
+    return out
 
 
 def _difs_dict(a: dict, b: dict) -> list[str]:
@@ -49,18 +56,29 @@ def _validar_uno(periodo: str, ident: str) -> list[str]:
     except Exception as e:  # noqa: BLE001
         return [f"error consultando: {e}"]
     if sq is None:
-        problemas.append("no está en SQL Server")
+        problemas.append("no está en SQL Server (¿empleado inactivo / no ACT?)")
     if su is None:
         problemas.append("no está en Supabase")
-    if sq is not None and su is not None:
+    mismo = (
+        sq is not None
+        and su is not None
+        and normalizar_cedula(sq.cedula) == normalizar_cedula(su.cedula)
+    )
+    if sq is not None and su is not None and not mismo:
+        problemas.append(
+            f"el script casó personas distintas: SQL {sq.empleado}/{sq.cedula} "
+            f"vs SUP {su.empleado}/{su.cedula} — no comparado"
+        )
+    elif mismo:
+        assert sq is not None and su is not None  # noqa: S101 - lo garantiza `mismo`
         problemas += _difs_dict(sq.to_dict(), su.to_dict())
-    try:
-        s_sq = prestamos.saldo_total(ident, "sqlserver")
-        s_su = prestamos.saldo_total(ident, "supabase")
-        if abs(s_sq - s_su) > TOLERANCIA:
-            problemas.append(f"saldo préstamos: SQL={s_sq:.2f}  SUP={s_su:.2f}")
-    except Exception as e:  # noqa: BLE001
-        problemas.append(f"error en saldo de préstamos: {e}")
+        try:
+            s_sq = prestamos.saldo_total(sq.empleado, "sqlserver")
+            s_su = prestamos.saldo_total(su.empleado, "supabase")
+            if abs(s_sq - s_su) > TOLERANCIA:
+                problemas.append(f"saldo préstamos: SQL={s_sq:.2f}  SUP={s_su:.2f}")
+        except Exception as e:  # noqa: BLE001
+            problemas.append(f"error en saldo de préstamos: {e}")
     return problemas
 
 
