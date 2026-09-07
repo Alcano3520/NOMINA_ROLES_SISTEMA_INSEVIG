@@ -15,6 +15,7 @@ from contextlib import suppress
 import reflex as rx
 
 from core.repos import vacaciones as V
+from core.utils import a_float
 from insevig_web.states.auth_state import AuthState
 
 ESTADOS_DOC = list(V.ESTADOS_DOC)
@@ -287,6 +288,8 @@ class VacacionesState(rx.State):
     calc_total_periodo: float = 0.0
     calc_resultado: dict = {}
     calc_cargando: bool = False
+    calc_detalles: list[dict] = []  # tabla de 12 meses de `calcular_meses_periodo`,
+    # para persistir en vac_calculo al registrar (ver `crear_pagada(detalles_mensuales=...)`)
     form_pago: dict[str, str] = dict(_FORM_PAGO_VACIO)
 
     @rx.event
@@ -309,15 +312,18 @@ class VacacionesState(rx.State):
             per = await asyncio.to_thread(V.calcular_periodo, fi, anio_base)
             cod = self.empleado.get("cod_empleado", "") or cedula
             movs = await asyncio.to_thread(V.get_movimientos_empleado, cod, per["inicio"], per["fin"])
-            por_mes = await asyncio.to_thread(V.agrupar_movimientos_por_mes, movs, per["inicio"], per["fin"])
-            detalles = list(por_mes.values())[:12]
-            total, _desglose = V.calcular_total_periodo([
-                {
-                    "sueldo": d.get(100, 0), "bonificacion": d.get(102, 0), "maniobras": d.get(110, 0),
-                    "hor25": d.get(113, 0), "hor50": d.get(114, 0), "hor100": d.get(115, 0),
-                }
-                for d in detalles
-            ])
+            detalles_todos = await asyncio.to_thread(
+                V.calcular_meses_periodo, movs, per["inicio"], per["fin"],
+                sueldo_base=a_float(self.empleado.get("sueldo")),
+                hor25=a_float(self.empleado.get("hor25")), hor50=a_float(self.empleado.get("hor50")),
+                hor100=a_float(self.empleado.get("hor100")),
+            )
+            # meses_en_periodo() puede tocar 13 meses calendario (ej. 15-mar a
+            # 14-mar): igual que app.py::_registrar_pagada, el cálculo usa solo
+            # los primeros 12.
+            detalles = detalles_todos[:12]
+            self.calc_detalles = detalles
+            total, _desglose = V.calcular_total_periodo(detalles)
             self.calc_total_periodo = round(total, 2)
             self.calc_dias_gozados = await asyncio.to_thread(V.get_dias_gozados_periodo, cedula, self.calc_periodo)
             dias_adic, _ = V.calcular_dias_adicionales(fi, per["fin"].strftime("%Y-%m-%d"))
@@ -354,11 +360,13 @@ class VacacionesState(rx.State):
                 anticipo=float(pago.get("anticipo") or 0), banco=pago.get("banco", ""),
                 cta_cte_no=pago.get("cta_cte_no", ""), no_cheque=pago.get("no_cheque", ""),
                 fecha_pago=pago.get("fecha_pago") or None, observaciones=pago.get("observaciones", ""),
+                detalles_mensuales=self.calc_detalles,
                 usuario=auth.username, roles=set(auth.roles),
             )
             self.msg = f"Vacación pagada registrada (id={vac_id}, total=${calculo['total_pagar']:.2f})."
             self.form_pago = dict(_FORM_PAGO_VACIO)
             self.calc_resultado = {}
+            self.calc_detalles = []
             await self._cargar_empleado()
         except Exception as e:  # noqa: BLE001
             self.msg = f"Error: {e}"

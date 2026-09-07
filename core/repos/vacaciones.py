@@ -199,6 +199,7 @@ def _emp_row_to_dict(row: dict) -> dict:
         "fecha_salida": str(row.get("fecha_sal") or "")[:10] or None,
         "sueldo": a_float(row.get("sueldo")),
         "estado": str(row.get("estado") or "ACT").strip(),
+        "hor25": a_float(row.get("hor25")), "hor50": a_float(row.get("hor50")), "hor100": a_float(row.get("hor100")),
     }
 
 
@@ -213,7 +214,7 @@ def buscar_empleados(query: str, solo_activos: bool = False) -> list[dict]:
     query_digits = query.replace(".", "").replace(" ", "")
     is_cedula = query_digits.isdigit() and len(query_digits) >= 7
     terminos = query.upper().split()
-    cols = "empleado,apellidos,nombres,cedula,sueldo,cargo,depto,fecha_ing,fecha_sal,estado"
+    cols = "empleado,apellidos,nombres,cedula,sueldo,cargo,depto,fecha_ing,fecha_sal,estado,hor25,hor50,hor100"
 
     def _base():
         q = sb.table("rpemplea").select(cols).eq("codemp", "10").eq("codsuc", "10")
@@ -250,7 +251,7 @@ def get_empleado_by_cedula(cedula: str) -> dict | None:
         cedula_int = int(str(cedula).lstrip("0") or "0")
         rows = (
             sb.table("rpemplea")
-            .select("empleado,apellidos,nombres,cedula,sueldo,cargo,depto,fecha_ing,fecha_sal,estado")
+            .select("empleado,apellidos,nombres,cedula,sueldo,cargo,depto,fecha_ing,fecha_sal,estado,hor25,hor50,hor100")
             .eq("codemp", "10").eq("codsuc", "10").eq("cedula", cedula_int)
             .limit(1).execute().data or []
         )
@@ -489,6 +490,53 @@ def calcular_total_periodo(detalles: list[dict]) -> tuple[float, dict]:
     }
 
 
+def sobretiempo_teorico(sueldo: float, hor25: float, hor50: float, hor100: float) -> tuple[float, float, float]:
+    """Sobretiempo teórico del mes en curso (no cerrado en nómina), a partir de
+    las horas asignadas en rpemplea. Porta `calculos.sobretiempo_teorico`."""
+    if sueldo <= 0:
+        return 0.0, 0.0, 0.0
+    hora = sueldo / 240  # salario hora
+    return (
+        round(hora * 1.25 * (hor25 or 0), 2),
+        round(hora * 1.50 * (hor50 or 0), 2),
+        round(hora * 2.00 * (hor100 or 0), 2),
+    )
+
+
+def calcular_meses_periodo(
+    movimientos: list[dict], inicio, fin, *, sueldo_base: float = 0, hor25: float = 0,
+    hor50: float = 0, hor100: float = 0,
+) -> list[dict]:
+    """Tabla mensual (12 filas) del período a partir de movimientos ya
+    descargados. Porta `sync_sqlserver.calcular_periodo_desde_movimientos` —
+    usado tanto por `calcular_pago` (vía el state) como por `datos_comprobante`
+    cuando `vac_calculo` no tiene datos guardados para ese (cédula, período).
+
+    Para el mes en curso (no cerrado en nómina) calcula sobretiempo teórico
+    desde las horas de `rpemplea` en vez de dejarlo en cero.
+    """
+    por_mes = agrupar_movimientos_por_mes(movimientos, inicio, fin)
+    hoy = date.today()
+    filas = []
+    for anio, mes in meses_en_periodo(inicio, fin):
+        datos_mes = dict(por_mes.get((anio, mes), dict.fromkeys(CODIGOS_BASE_DEFAULT, 0.0)))
+        if anio == hoy.year and mes == hoy.month and sueldo_base > 0:
+            v25, v50, v100 = sobretiempo_teorico(sueldo_base, hor25, hor50, hor100)
+            datos_mes[113], datos_mes[114], datos_mes[115] = v25, v50, v100
+            if not datos_mes.get(100) and sueldo_base:
+                datos_mes[100] = sueldo_base
+        fila = {
+            "mes": mes, "anio": anio, "fecha_mes": _fecha(date(anio, mes, calendar.monthrange(anio, mes)[1])).isoformat(),
+            "sueldo": round(datos_mes.get(100, 0), 2), "bonificacion": round(datos_mes.get(102, 0), 2),
+            "maniobras": round(datos_mes.get(110, 0), 2), "hor25": round(datos_mes.get(113, 0), 2),
+            "hor50": round(datos_mes.get(114, 0), 2), "hor100": round(datos_mes.get(115, 0), 2),
+            "es_manual": 0, "fuente": "supabase",
+        }
+        fila["total_mes"] = round(sum(fila[k] for k in ("sueldo", "bonificacion", "maniobras", "hor25", "hor50", "hor100")), 2)
+        filas.append(fila)
+    return filas
+
+
 # ─── CRUD vac_registros ──────────────────────────────────────────────────────
 
 
@@ -645,7 +693,8 @@ def crear_pagada(
     total_periodo_12m: float, forma_pago: str, anticipo: float = 0.0,
     banco: str = "", cta_cte_no: str = "", no_cheque: str = "",
     fecha_pago: str | None = None, observaciones: str = "",
-    dias_basicos: int = 15, usuario: str, roles: set[str],
+    dias_basicos: int = 15, detalles_mensuales: list[dict] | None = None,
+    usuario: str, roles: set[str],
 ) -> tuple[int, dict]:
     """Registra una vacación PAGO calculada (flujo pestaña "Cálculo").
 
@@ -657,6 +706,13 @@ def crear_pagada(
       exige `dias_a_pagar > 0` y `total_pagar > 0`, igual que el original.
     - `valor_vacaciones` y `total_pagar` guardan el mismo valor neto (post-
       anticipo) — así lo hace `_registrar_pagada`.
+    - Si se pasa `detalles_mensuales` (la tabla de 12 meses que armó
+      `calcular_meses_periodo`/el state), se persiste en `vac_calculo` vía
+      `guardar_calculo_detalle` — igual que `_registrar_pagada` hace al final
+      ("Guardar calculo_detalle... para que el PDF lo encuentre"). Sin esto,
+      `datos_comprobante()` tendría que recalcular desde movimientos cada vez
+      que se genera el PDF, con riesgo de dar un valor distinto si la nómina
+      cambió entre el registro del pago y la generación del comprobante.
 
     Retorna `(vac_id, calculo)` — `calculo` es el dict de `calcular_pago()`
     para que la UI lo muestre/audite.
@@ -694,6 +750,9 @@ def crear_pagada(
     )
     if vac_id:
         actualizar(vac_id, {"cod_acta": f"ACTA-{anio}-{vac_id:05d}"}, usuario=usuario, roles=roles)
+        if detalles_mensuales:
+            with contextlib.suppress(Exception):
+                guardar_calculo_detalle(cedula_n, periodo, detalles_mensuales, vac_id=vac_id)
     return vac_id, calculo
 
 
@@ -850,6 +909,182 @@ def guardar_calculo_detalle(cedula: str, periodo: str, filas: list[dict], vac_id
     except Exception as e:  # noqa: BLE001
         log.error("guardar_calculo_detalle cedula=%s: %s", cedula, e)
         return False
+
+
+# ─── Comprobante (datos para el PDF individual GOCE/PAGO) ───────────────────
+
+
+def _normalizar_periodo_legado(periodo: str) -> str:
+    """'2025' (convenio AÑO FINAL del Excel histórico) -> '2024-2025'. Porta
+    `data_extractor._normalizar_periodo`."""
+    if periodo and "-" not in str(periodo) and str(periodo).isdigit():
+        yr = int(periodo)
+        return f"{yr - 1}-{yr}"
+    return periodo or ""
+
+
+def datos_comprobante(vac_id: int) -> dict:
+    """Todos los datos para generar el PDF individual GOCE/PAGO (y su QR).
+    Porta `VACACIONES_SISTEMA_INSEVIG/src/data_extractor.py::get_vacacion_data`
+    — mismas claves de salida, para que el builder de PDF (`core/pdf/...`) sea
+    un trasplante directo de `src/pdf_generator.py`.
+
+    A diferencia del `.pyw` (que resuelve el empleado con `get_empleado_sqlserver`,
+    sensible a `fuente_nomina`), aquí siempre se lee de Supabase `rpemplea`
+    — esta app todavía no modela ese toggle para vacaciones. Diferencia
+    deliberada, no un bug: repórtese si hace falta el fallback a SQL Server.
+
+    Lanza `ValueError` si la vacación o el empleado no existen (igual que el original).
+    """
+    vac = get_vacacion(vac_id)
+    if not vac:
+        raise ValueError(f"Vacacion id={vac_id} no encontrada")
+    cedula = vac.get("cedula") or ""
+    if not cedula:
+        raise ValueError(f"Vacacion id={vac_id} no tiene cédula asociada")
+    empleado = get_empleado_by_cedula(cedula)
+    if not empleado:
+        raise ValueError(f"Empleado cedula={cedula} no encontrado")
+
+    periodo_completo = _normalizar_periodo_legado(vac.get("periodo") or "")
+    anio_base = int(periodo_completo.split("-")[0]) if periodo_completo else None
+    nombre_completo = (
+        f"{vac.get('emp_apellidos') or empleado.get('apellidos', '')} "
+        f"{vac.get('emp_nombres') or empleado.get('nombres', '')}"
+    ).strip()
+    fecha_ingreso = vac.get("emp_fecha_ingreso") or empleado.get("fecha_ingreso") or ""
+    tipo = vac.get("tipo") or ""
+
+    # ── Fechas del período (para PAGO se recalculan, igual que el Excel) ────
+    fecha_desde = vac.get("desde") or ""
+    fecha_hasta = vac.get("hasta") or ""
+    if tipo == "pagada" and fecha_ingreso and anio_base:
+        try:
+            calcular_periodo(fecha_ingreso, anio_base)  # valida que el período exista
+            fi_real = _fecha(fecha_ingreso)
+            fecha_1_periodo = date(anio_base, 1, 1)
+            desde_date = date(anio_base, fi_real.month, 1) if fi_real <= fecha_1_periodo else fi_real
+            fecha_desde = desde_date.isoformat()
+            m_h = desde_date.month + 11
+            y_h = desde_date.year + (m_h - 1) // 12
+            m_h = ((m_h - 1) % 12) + 1
+            fecha_hasta = f"{y_h}-{m_h:02d}-{calendar.monthrange(y_h, m_h)[1]:02d}"
+        except Exception:  # noqa: BLE001
+            pass
+
+    dias_adicionales = a_int(vac.get("dias_adicionales"))
+    if dias_adicionales == 0 and fecha_ingreso and fecha_hasta:
+        with contextlib.suppress(Exception):
+            dias_adicionales, _ = calcular_dias_adicionales(fecha_ingreso, fecha_hasta)
+
+    # ── Detalle mensual: vac_calculo primero, si no hay recalcula de nómina ──
+    detalles = get_calculo_detalle(cedula, periodo_completo)
+    tiene_valores = any(a_float(d.get("total_mes")) > 0 for d in detalles)
+    if not tiene_valores and empleado.get("cod_empleado") and fecha_ingreso and anio_base:
+        with contextlib.suppress(Exception):
+            per = calcular_periodo(fecha_ingreso, anio_base)
+            movs = get_movimientos_empleado(empleado["cod_empleado"], per["inicio"], per["fin"])
+            filas = calcular_meses_periodo(
+                movs, per["inicio"], per["fin"], sueldo_base=empleado.get("sueldo", 0),
+            )
+            if any(a_float(f.get("total_mes")) > 0 for f in filas) or not detalles:
+                # OJO: `filas` puede traer 13 meses calendario (no se trunca a
+                # [:12] aquí) — igual que `data_extractor.get_vacacion_data`
+                # original, que tampoco lo hace en este fallback (a diferencia
+                # de `_registrar_pagada`, que sí trunca antes de guardar en
+                # vac_calculo). Es una inconsistencia preexistente del .pyw,
+                # solo se activa si esta vacación nunca tuvo vac_calculo
+                # guardado (pagos históricos); portada tal cual, no corregida.
+                detalles = filas
+
+    total_ingresos = sum(a_float(d.get("total_mes")) for d in detalles)
+    meses_detalle = [
+        {"mes": d["mes"], "anio": d["anio"], "valor": round(a_float(d.get("total_mes")), 2)}
+        for d in detalles
+    ][:12]
+
+    if tipo == "pagada" and detalles:
+        ultimo = detalles[-1]
+        fecha_mes = ultimo.get("fecha_mes") or ""
+        if not fecha_mes:
+            with contextlib.suppress(Exception):
+                mes_u, ano_u = a_int(ultimo.get("mes")), a_int(ultimo.get("anio"))
+                if mes_u and ano_u:
+                    fecha_mes = f"{ano_u}-{mes_u:02d}-{calendar.monthrange(ano_u, mes_u)[1]:02d}"
+        if fecha_mes:
+            fecha_hasta = fecha_mes
+
+    valor_15_dias = total_ingresos / 24 if total_ingresos > 0 else 0.0
+    valor_dia = valor_15_dias / 15 if valor_15_dias > 0 else 0.0
+
+    # Fallback para pagadas históricas sin vac_calculo: usar lo guardado en el registro.
+    if total_ingresos == 0 and tipo == "pagada":
+        stored_total = a_float(vac.get("total_periodo"))
+        stored_vc = a_float(vac.get("vacaciones_calc"))
+        stored_val_vac = a_float(vac.get("valor_vacaciones"))
+        if stored_total > 0:
+            total_ingresos, valor_15_dias = stored_total, stored_total / 24
+        elif stored_vc > 0:
+            valor_15_dias, total_ingresos = stored_vc, stored_vc * 24
+        elif stored_val_vac > 0:
+            dias_pag = a_int(vac.get("dias_tomados"))
+            if dias_pag > 0:
+                valor_dia_est = stored_val_vac / dias_pag
+                valor_15_dias, total_ingresos = valor_dia_est * 15, valor_dia_est * 15 * 24
+            else:
+                valor_15_dias, total_ingresos = stored_val_vac, stored_val_vac * 24
+        valor_dia = valor_15_dias / 15 if valor_15_dias > 0 else 0.0
+
+    dias_gozados_periodo = get_dias_gozados_periodo(cedula, periodo_completo) if periodo_completo else 0
+    anticipo = a_float(vac.get("anticipo"))
+    dias_este_registro = a_int(vac.get("dias_tomados"))
+
+    if tipo == "pagada" and dias_este_registro > 0:
+        base_dias = max(0, 15 - dias_gozados_periodo)
+        dias_adicionales_efectivos = max(0, dias_este_registro - base_dias)
+    else:
+        dias_adicionales_efectivos = dias_adicionales
+
+    dias_goce_derecho = 15 + dias_adicionales
+    return {
+        "cedula": cedula, "nombre": nombre_completo, "cargo": empleado.get("cargo") or "",
+        "area": empleado.get("departamento") or "", "fecha_ingreso": fecha_ingreso,
+        "vacacion_id": vac_id, "empleado_id": empleado.get("cod_empleado") or cedula,
+        "tipo": tipo, "periodo": periodo_completo, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+        "meses_detalle": meses_detalle, "subtotal": round(total_ingresos, 2),
+        "valor_15_dias": round(valor_15_dias, 2), "dias_basicos": 15,
+        "dias_adicionales": dias_adicionales_efectivos if tipo == "pagada" else dias_adicionales,
+        "dias_gozados": dias_este_registro if tipo == "gozada" else dias_gozados_periodo,
+        "dias_gozados_periodo": dias_gozados_periodo,
+        "dias_a_pagar": (dias_este_registro if tipo == "pagada" and dias_este_registro > 0
+                         else max(0, 15 + dias_adicionales - dias_gozados_periodo)),
+        "valor_dia": round(valor_dia, 4),
+        "valor_adicionales": round(dias_adicionales_efectivos * valor_dia, 2),
+        "valor_gozados": round(dias_gozados_periodo * valor_dia, 2), "anticipo": round(anticipo, 2),
+        "total_pagar": a_float(vac.get("total_pagar")),
+        "forma_pago": vac.get("forma_pago") or "", "banco": vac.get("banco") or "",
+        "cta_cte_no": vac.get("cta_cte_no") or "", "cheque_no": vac.get("no_cheque") or "",
+        "fecha_pago": vac.get("fecha_pago") or "",
+        "dias_goce": dias_goce_derecho, "dias_este_goce": dias_este_registro,
+        "dias_pendientes": max(0, dias_goce_derecho - dias_gozados_periodo),
+        "observaciones": vac.get("observaciones") or "",
+    }
+
+
+def qr_texto(data: dict) -> str:
+    """Contenido exacto del QR del comprobante (mismo formato que
+    `src/pdf_generator.py::_make_qr`, NO json, NO url — texto plano `|`-separado):
+    `ID:<empleado_id>|CED:<cedula>|<nombre>|PER:<periodo>|VAL:<total formateado, si hay>`.
+    Único punto de verdad de ese formato — no reimplementar en `core/pdf/`."""
+    valor = data.get("total_pagar") or data.get("valor_vacaciones") or data.get("vacaciones_calc") or ""
+    valor_str = f"{float(valor):,.2f}" if valor else ""
+    parts = [
+        f"ID:{data.get('empleado_id', '')}", f"CED:{data.get('cedula', '')}",
+        data.get("nombre", ""), f"PER:{data.get('periodo', '')}",
+    ]
+    if valor_str:
+        parts.append(f"VAL:{valor_str}")
+    return "|".join(parts)
 
 
 # ─── Alertas (períodos pendientes / gozadas sin firmar) ─────────────────────
