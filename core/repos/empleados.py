@@ -135,9 +135,7 @@ class Empleado:
     empleado: str
     campos: dict[str, object]
     token: str  # hash de concurrencia
-    creado_por: str = ""
-    fecha_crea: str = ""
-    mod_por: str = ""
+    mod_por: str = ""   # de la auditoría de la app (RPEMPLEA no tiene columnas propias)
     fecha_mod: str = ""
 
 
@@ -302,9 +300,31 @@ def buscar_avanzado(
     return out
 
 
+def _ultima_auditoria(empleado: str) -> tuple[str, str]:
+    """(usuario, fecha) de la última escritura registrada a este empleado en el
+    audit_log de la app. RPEMPLEA no tiene columnas de auditoría propias."""
+    import sqlmodel
+
+    from core.db import appdb
+    from core.db.models import AuditLog
+
+    try:
+        with appdb.session() as s:
+            fila = s.exec(
+                sqlmodel.select(AuditLog)
+                .where(AuditLog.module == "empleados")
+                .where(AuditLog.target_table == "RPEMPLEA")
+                .where(AuditLog.target_key == str(empleado))
+                .where(AuditLog.status == "ok")
+                .order_by(sqlmodel.col(AuditLog.ts).desc())
+            ).first()
+    except Exception:  # noqa: BLE001 - la auditoría es informativa, no bloquea
+        return "", ""
+    return (fila.username, str(fila.ts)[:19]) if fila else ("", "")
+
+
 def obtener(empleado: str, fuente: str) -> Empleado | None:
     cols = ",".join(f"[{c}]" for c in CAMPOS_EDITABLES)
-    aud = "[creado_por],[fecha_crea],[mod_por],[fecha_mod]"
     if fuente == FUENTE_SUPABASE:
         sb = supabase_client.get_client()
         r = sb.table("rpemplea").select("*").eq("codemp", "10").eq("empleado", str(empleado)).limit(1).execute()
@@ -314,7 +334,7 @@ def obtener(empleado: str, fuente: str) -> Empleado | None:
     else:
         flt = get_settings().sqlserver_filter
         filas = sqlserver.filas(
-            f"SELECT {cols},{aud} FROM [insevig].[dbo].[RPEMPLEA] WHERE {flt} AND [EMPLEADO] = ?",
+            f"SELECT {cols} FROM [insevig].[dbo].[RPEMPLEA] WHERE {flt} AND [EMPLEADO] = ?",
             (str(empleado),),
         )
         if not filas:
@@ -322,14 +342,13 @@ def obtener(empleado: str, fuente: str) -> Empleado | None:
         row = filas[0]
     low = {str(k).lower(): v for k, v in row.items()}  # RPEMPLEA vs supabase: distinta capitalización
     campos = {c: low.get(c.lower()) for c in CAMPOS_EDITABLES}
+    mod_por, fecha_mod = _ultima_auditoria(empleado)
     return Empleado(
         empleado=str(empleado).strip(),
         campos=campos,
         token=_token(campos),
-        creado_por=str(row.get("creado_por") or row.get("CREADO_POR") or ""),
-        fecha_crea=str(row.get("fecha_crea") or row.get("FECHA_CREA") or "")[:19],
-        mod_por=str(row.get("mod_por") or row.get("MOD_POR") or ""),
-        fecha_mod=str(row.get("fecha_mod") or row.get("FECHA_MOD") or "")[:19],
+        mod_por=mod_por,
+        fecha_mod=fecha_mod,
     )
 
 
@@ -376,9 +395,8 @@ def actualizar(empleado: str, campos: dict, token_previo: str, *, usuario: str, 
     ), sqlserver.conexion(write=True) as conn:
         cur = conn.cursor()
         cur.execute(
-            f"UPDATE [insevig].[dbo].[RPEMPLEA] SET {sets}, [mod_por] = ?, [fecha_mod] = GETDATE() "
-            f"WHERE [EMPLEADO] = ? AND {flt}",
-            (*nuevos.values(), usuario, empleado),
+            f"UPDATE [insevig].[dbo].[RPEMPLEA] SET {sets} WHERE [EMPLEADO] = ? AND {flt}",
+            (*nuevos.values(), empleado),
         )
         conn.commit()
 
@@ -401,9 +419,9 @@ def crear(campos: dict, *, usuario: str, roles: set[str]) -> str:
         if str(d.get("EMPLEADO") or "").strip() == empleado:
             raise ValueError(f"Ya existe un empleado con el código {empleado}")
         raise ValueError(f"Ya existe un empleado con la cédula {cedula}")
-    cols = ["EMPLEADO", "CODEMP", "CODSUC", *nuevos.keys(), "creado_por", "fecha_crea"]
-    vals: list = [empleado, "10", "10", *nuevos.values(), usuario]
-    placeholders = ", ".join(["?"] * (len(vals)) + ["GETDATE()"])
+    cols = ["EMPLEADO", "CODEMP", "CODSUC", *nuevos.keys()]
+    vals: list = [empleado, "10", "10", *nuevos.values()]
+    placeholders = ", ".join(["?"] * len(vals))
     with audit_scope(
         "empleados", "crear", usuario=usuario, roles=roles,
         target_table="RPEMPLEA", target_key=empleado, after=nuevos,

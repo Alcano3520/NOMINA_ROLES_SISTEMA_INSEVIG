@@ -21,6 +21,14 @@ GRUPOS = {g: list(cs) for g, cs in repo_emp.GRUPOS.items()}
 _TERMINALES = {"ok", "error", "cancelado"}
 
 
+def _linea_audit(e: repo_emp.Empleado) -> str:
+    if not e.mod_por:
+        return "Sin modificaciones registradas desde la web."
+    return f"Última modificación desde la web: {e.mod_por}" + (
+        f" · {e.fecha_mod}" if e.fecha_mod else ""
+    )
+
+
 def _limpiar_valor(k: str, v: object) -> str:
     """Muestra el valor sin ruido (cédula sin '.0', fechas sin hora)."""
     if v is None:
@@ -403,10 +411,7 @@ class EmpleadosState(rx.State):
         self.edit_token = e.token
         self.modo_edicion = False
         self.edit_dirty = False
-        self.edit_audit = (
-            f"Creado por {e.creado_por or '—'} ({e.fecha_crea or '—'}) · "
-            f"Últ. modif. {e.mod_por or '—'} ({e.fecha_mod or '—'})"
-        )
+        self.edit_audit = _linea_audit(e)
         self.edit_obs_slots = ["", "", "", "", "", "", ""]
         self.edit_obs_existe = False
         self.edit_obs_msg = ""
@@ -634,10 +639,7 @@ class EmpleadosState(rx.State):
             e = await asyncio.to_thread(repo_emp.obtener, self.edit_empleado, "sqlserver")
             if e:
                 self.edit_token = e.token
-                self.edit_audit = (
-                    f"Creado por {e.creado_por or '—'} ({e.fecha_crea or '—'}) · "
-                    f"Últ. modif. {e.mod_por or '—'} ({e.fecha_mod or '—'})"
-                )
+                self.edit_audit = _linea_audit(e)
         except repo_emp.ConflictoConcurrencia as e:
             self.edit_error = str(e)
         except Exception as e:  # noqa: BLE001
