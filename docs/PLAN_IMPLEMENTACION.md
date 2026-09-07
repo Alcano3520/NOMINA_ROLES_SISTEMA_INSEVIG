@@ -39,6 +39,14 @@ huérfanos que ya no existen en SQL Server (el sync solo hace upsert, nunca
 DELETE) — por eso la muestra sale de SQL Server por defecto. SQL Server es la
 única lista de empleados confiable.
 
+**Estado 2026-09-06**: corrido en el NAS con muestra de 25 empleados ACT,
+período 2026-06 → **25/25 OK** (consolidado de nómina campo a campo + saldo de
+préstamos, SQL Server == Supabase). Destapó y se corrigieron 3 bugs de `core/`
+(`_buscar_empleado` casaba cédula ajena; `_NUMEROS_MIGRADOS` no excluía por
+float; el modelo de préstamo por empleado sumaba RPHISTOR como "prestado").
+Falta comparar contra el `.pyw` en sí (no solo SQL vs Supabase) para los
+módulos con lógica propia (roles PDF, comparador).
+
 Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` actual:
 
 | Módulo | Qué validar | Riesgo |
