@@ -1137,6 +1137,26 @@ def get_alertas(cedula: str, fecha_ingreso: str) -> dict:
     return {"pendientes": pendientes, "sin_firmar": sin_firmar}
 
 
+def periodos_anteriores_pendientes(cedula: str, fecha_ingreso: str, periodo_actual: str) -> list[dict]:
+    """Períodos ANTERIORES a `periodo_actual` (por año de inicio) que aún
+    tienen días pendientes. Porta `app.py::_confirmar_periodo_prioritario`
+    (la parte de cálculo — la confirmación bloqueante es responsabilidad de
+    la UI: si esta lista no está vacía, el state debe preguntar antes de
+    guardar, igual que el `messagebox.askyesno` del original)."""
+    def _anio_inicio(per: str) -> int:
+        try:
+            return int(str(per).split("-")[0])
+        except (ValueError, IndexError):
+            return 0
+
+    alertas = get_alertas(cedula, fecha_ingreso)
+    anio_actual = _anio_inicio(periodo_actual)
+    return [
+        p for p in alertas["pendientes"]
+        if p["periodo"] != periodo_actual and _anio_inicio(p["periodo"]) < anio_actual
+    ]
+
+
 # ─── Reportes ────────────────────────────────────────────────────────────────
 
 

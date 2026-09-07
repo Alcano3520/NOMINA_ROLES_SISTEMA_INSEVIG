@@ -307,6 +307,7 @@ def _fila_gozada(v: rx.Var) -> rx.Component:
                 rx.cond(v["firmado"] != "POSITIVO",
                         rx.button("Firmar", size="1", on_click=lambda: _S.firmar_gozada(v["id"]))),
                 rx.button("Editar", size="1", variant="soft", on_click=lambda: _S.editar_gozada(v)),
+                rx.button("PDF", size="1", variant="soft", on_click=lambda: _S.descargar_comprobante(v["id"])),
                 rx.button("Eliminar", size="1", color_scheme="red", variant="soft",
                           on_click=lambda: _S.eliminar_vacacion(v["id"])),
                 spacing="1",
@@ -428,6 +429,7 @@ def _fila_pagada(v: rx.Var) -> rx.Component:
                         rx.button("Registrar pago", size="1", color_scheme="green",
                                   on_click=lambda: _S.abrir_registrar_pago(v))),
                 rx.button("Editar", size="1", variant="soft", on_click=lambda: _S.editar_pagada(v)),
+                rx.button("PDF", size="1", variant="soft", on_click=lambda: _S.descargar_comprobante(v["id"])),
                 rx.button("Eliminar", size="1", color_scheme="red", variant="soft",
                           on_click=lambda: _S.eliminar_vacacion(v["id"])),
                 spacing="1",
@@ -551,6 +553,33 @@ def _tab_reportes() -> rx.Component:
     )
 
 
+def _fila_periodo_anterior(p: rx.Var) -> rx.Component:
+    return rx.text(f"• {p['periodo']}  ({p['dias_pendientes']} días pendientes)", size="2")
+
+
+def _dialog_confirmar_periodo() -> rx.Component:
+    """Porta app.py::_confirmar_periodo_prioritario (bloqueaba con messagebox.askyesno)."""
+    return rx.alert_dialog.root(
+        rx.alert_dialog.content(
+            rx.alert_dialog.title("Períodos anteriores pendientes"),
+            rx.alert_dialog.description(
+                rx.vstack(
+                    rx.text("El empleado tiene período(s) anteriores sin registrar:"),
+                    rx.vstack(rx.foreach(_S.confirmar_periodo_detalle, _fila_periodo_anterior), spacing="1"),
+                    rx.text("¿Desea continuar guardando este período sin registrar los anteriores primero?"),
+                    spacing="3",
+                ),
+            ),
+            rx.hstack(
+                rx.button("No, cancelar", on_click=_S.confirmar_periodo_cancelar, variant="soft"),
+                rx.button("Sí, guardar igual", on_click=_S.confirmar_periodo_continuar, color_scheme="amber"),
+                spacing="3", justify="end", margin_top="1rem",
+            ),
+        ),
+        open=_S.mostrar_confirmar_periodo,
+    )
+
+
 @rx.page(
     route="/vacaciones",
     title="INSEVIG — Vacaciones",
@@ -560,6 +589,7 @@ def index() -> rx.Component:
     return pagina(
         page_heading("Vacaciones", "Registro de vacaciones gozadas y pagadas — Art. 69/71/76 CT Ecuador."),
         rx.cond(_S.msg != "", rx.callout(_S.msg, size="1")),
+        _dialog_confirmar_periodo(),
         rx.tabs.root(
             rx.tabs.list(
                 rx.tabs.trigger("Pendientes de Firma", value="dashboard"),

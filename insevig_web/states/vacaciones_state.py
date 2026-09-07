@@ -128,6 +128,31 @@ class VacacionesState(rx.State):
         await self.abrir_ver_todos_sf()
         await self.cargar_dashboard()
 
+    # ── Confirmación de "período anterior pendiente" ──────────────────────
+    # Porta app.py::_confirmar_periodo_prioritario: al guardar una gozada o
+    # una pagada, si hay períodos MÁS ANTIGUOS que el que se está guardando
+    # con días pendientes, se pregunta antes de continuar (el messagebox
+    # bloqueante del .pyw se vuelve un diálogo modal aquí — mismo criterio de
+    # "sí, guardar igual" / "no, cancelar").
+    mostrar_confirmar_periodo: bool = False
+    confirmar_periodo_detalle: list[dict] = []
+    _accion_pendiente: str = ""  # "gozada" | "pagada"
+
+    @rx.event
+    async def confirmar_periodo_continuar(self):
+        auth = await self.get_state(AuthState)
+        self.mostrar_confirmar_periodo = False
+        accion, self._accion_pendiente = self._accion_pendiente, ""
+        if accion == "gozada":
+            await self._guardar_gozada_ahora(auth)
+        elif accion == "pagada":
+            await self._registrar_pagada_ahora(auth)
+
+    @rx.event
+    def confirmar_periodo_cancelar(self):
+        self.mostrar_confirmar_periodo = False
+        self._accion_pendiente = ""
+
     # ── Búsqueda de empleado ─────────────────────────────────────────────
     query: str = ""
     resultados: list[dict] = []
@@ -234,6 +259,22 @@ class VacacionesState(rx.State):
         if f"vacaciones:{accion}" not in auth.permisos_flat:
             self.msg = "Sin permiso."
             return
+        # Advertir si hay períodos anteriores pendientes — solo al crear, no
+        # al editar (igual que app.py::DlgGozada._guardar).
+        if not self.editando_gozada_id:
+            cedula = self.empleado.get("cedula", "")
+            fi = self.empleado.get("fecha_ingreso", "")
+            periodo = self.form_gozada.get("periodo", "")
+            if cedula and fi and periodo:
+                anteriores = await asyncio.to_thread(V.periodos_anteriores_pendientes, cedula, fi, periodo)
+                if anteriores:
+                    self.confirmar_periodo_detalle = anteriores
+                    self._accion_pendiente = "gozada"
+                    self.mostrar_confirmar_periodo = True
+                    return
+        await self._guardar_gozada_ahora(auth)
+
+    async def _guardar_gozada_ahora(self, auth):
         try:
             if self.editando_gozada_id:
                 datos_upd = dict(self.form_gozada)
@@ -271,6 +312,23 @@ class VacacionesState(rx.State):
             return
         await asyncio.to_thread(V.eliminar, vac_id, usuario=auth.username, roles=set(auth.roles))
         await self._cargar_empleado()
+
+    @rx.event
+    async def descargar_comprobante(self, vac_id: int):
+        """PDF individual GOCE/PAGO con QR. Porta `data_extractor.get_vacacion_data`
+        + `pdf_generator.generar_pago/goce_pdf` (`core/pdf/vacaciones_comprobante.py`)."""
+        def _fn() -> bytes:
+            from core.pdf.vacaciones_comprobante import comprobante_pdf
+
+            d = V.datos_comprobante(vac_id)
+            return comprobante_pdf(d, V.qr_texto(d))
+
+        try:
+            data = await asyncio.to_thread(_fn)
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"No se pudo generar el PDF: {e}"
+            return
+        return rx.download(data=data, filename=f"comprobante_vacaciones_{vac_id}.pdf")
 
     # ── Editar pagada existente ───────────────────────────────────────────
     # Porta `app.py::_editar_pagada` (reabre `DlgPagada` con los valores
@@ -444,6 +502,20 @@ class VacacionesState(rx.State):
         if not cedula or not self.calc_periodo:
             self.msg = "Calcule el período primero."
             return
+        # Advertir si hay períodos anteriores pendientes (igual que
+        # app.py::_registrar_pagada, siempre — no distingue crear/editar acá).
+        fi = self.empleado.get("fecha_ingreso", "")
+        if fi:
+            anteriores = await asyncio.to_thread(V.periodos_anteriores_pendientes, cedula, fi, self.calc_periodo)
+            if anteriores:
+                self.confirmar_periodo_detalle = anteriores
+                self._accion_pendiente = "pagada"
+                self.mostrar_confirmar_periodo = True
+                return
+        await self._registrar_pagada_ahora(auth)
+
+    async def _registrar_pagada_ahora(self, auth):
+        cedula = self.empleado.get("cedula", "")
         try:
             pago = self.form_pago
             vac_id, calculo = await asyncio.to_thread(
