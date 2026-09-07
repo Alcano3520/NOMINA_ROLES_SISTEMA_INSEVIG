@@ -214,6 +214,26 @@ def desahucio(fecha_ing: dt.date, fecha_sal: dt.date, ultimo_sueldo: float,
 
 
 def indemnizacion_despido(fecha_ing: dt.date, fecha_sal: dt.date, sueldo: float, motivo: str) -> float:
+    """Fórmula legal de indemnización por despido intempestivo (Código de
+    Trabajo Ecuador): <3 años de servicio = 3×sueldo; ≥3 años = años×sueldo
+    (tope 25).
+
+    ADVERTENCIA -- NO se llama automáticamente desde `procesar_empleado`
+    (ver el campo `INDEM_DESPIDO` ahí, siempre en 0.0). Verificado contra
+    `Generador_Liquidaciones_INSEVIG.pyw` (el `.pyw` que la empresa usa hoy
+    en producción, no el `Liquidaciones_generador_SUPABASE.py` de donde
+    salió por error esta fórmula en una versión anterior de este archivo):
+    ahí "Indemnización por Despido" es un campo EDITABLE MANUAL en la vista
+    previa (`_fila_editable`, default $0), nunca un cálculo automático
+    disparado por el texto del motivo -- ni siquiera existe una función
+    equivalente en `nucleo_modular` (se verificó su ausencia deliberada).
+    Con auto-cálculo, cualquier liquidación con motivo "DESPIDO"/
+    "INTEMPESTIVO" sumaba de más sin revisión humana -- bug real, corregido
+    (ver docs/modulos/liquidaciones.md). Esta función se deja disponible
+    por si en el futuro se quiere ofrecer como un botón "sugerir monto" en
+    un campo editable equivalente -- no debe volver a invocarse dentro de
+    `procesar_empleado` sin ese contexto.
+    """
     m = (motivo or "").upper()
     if "DESPIDO" not in m and "INTEMPESTIVO" not in m:
         return 0.0
@@ -851,8 +871,16 @@ def procesar_empleado(
     base_iess = val["SUELDO"] + val["SOBRETIEMPO_25"] + val["SOBRETIEMPO_50"] + val["SOBRETIEMPO_100"]
     iess = round(base_iess * cfg.iess_personal_pct, 2)
 
-    # 10. Indemnización por despido
-    indem = indemnizacion_despido(fing, fsal, sueldo, motivo)
+    # 10. Indemnización por despido intempestivo: campo MANUAL, no
+    # auto-calculado. Verificado contra Generador_Liquidaciones_INSEVIG.pyw
+    # (el `.pyw` real de producción): "Indemnización por Despido" es un
+    # campo editable con default $0 en la vista previa, nunca disparado
+    # automáticamente por el texto del motivo -- ver docstring de
+    # `indemnizacion_despido` para el detalle de esta corrección (bug real:
+    # una versión anterior de este archivo lo calculaba solo, sumando de
+    # más sin revisión humana en cualquier liquidación con motivo
+    # DESPIDO/INTEMPESTIVO).
+    indem = 0.0
 
     # 11. Split de anticipos si días < umbral (base: solo lo que SÍ se paga:
     # vacaciones + décimos ACTUALES + desahucio -- el anterior, si se incluye,

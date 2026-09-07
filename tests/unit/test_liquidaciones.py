@@ -93,6 +93,40 @@ def test_indemnizacion_despido():
     assert lq.indemnizacion_despido(dt.date(2020, 1, 1), dt.date(2026, 6, 1), 800.0, "RENUNCIA VOLUNTARIA") == 0.0
 
 
+def test_procesar_empleado_nunca_autocalcula_indem_despido(monkeypatch):
+    """Verificado contra Generador_Liquidaciones_INSEVIG.pyw: "Indemnización
+    por Despido" es un campo MANUAL editable (default $0) en la vista
+    previa, nunca disparado por el texto del motivo -- ni existe una
+    función equivalente en nucleo_modular. Una versión anterior de este
+    archivo llamaba a indemnizacion_despido() automáticamente desde
+    procesar_empleado (copiado por error de Liquidaciones_generador_
+    SUPABASE.py, una variante paralela que el .pyw real no usa), sumando de
+    más sin revisión humana en cualquier liquidación con motivo DESPIDO/
+    INTEMPESTIVO -- bug real, corregido: procesar_empleado ya no llama a
+    indemnizacion_despido() en absoluto, la función queda disponible como
+    utilidad standalone únicamente."""
+    emp = {
+        "EMPLEADO": "999", "APELLIDOS": "PEREZ", "NOMBRES": "JUAN", "CEDULA": "0920116811",
+        "SUELDO": 800.0, "CARGO": "GUARDIA", "DEPTO": "OPERACIONES", "SECCION": "MATRIZ",
+        "FECHA_ING": "2015-01-01", "FECHA_SAL": "2026-06-01",
+        "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
+    }
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+
+    def _raise():
+        raise RuntimeError("sin conexión")
+    monkeypatch.setattr(lq.supabase_client, "get_client", _raise)
+    monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado(
+        "0920116811", "2026-06-01", "DESPIDO INTEMPESTIVO", lq.FUENTE_SUPABASE, cfg,
+    )
+    assert con.error == ""
+    assert con.campos["DESAHUCIO"]  # el desahucio sí se calcula normalmente
+    assert con.campos.get("INDEM_DESPIDO", 0.0) == 0.0
+
+
 def test_sbu_por_anio_fallback():
     cfg = lq.ConfigLiquidacion()
     assert cfg.sbu(2026) == 482.0

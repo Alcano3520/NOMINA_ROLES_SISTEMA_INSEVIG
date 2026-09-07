@@ -24,7 +24,7 @@ liquidación legal de cada empleado y produce un Excel (hoja `FORMATO`).
 | Décima 13ra | periodo 01/12 → 30/11 (últimos 2, recortados a [ingreso, salida] por reingreso); `total_periodo / 12`; anterior + actual |
 | Décima 14ta | últimos 2 periodos (anclados en la fecha de salida, NO desde el ingreso); `(DIAS360(inicio_efectivo, fin_efectivo) + 1) × (SBU_año / 360)`; COSTA 01/03→28/02, SIERRA 01/08→31/07; "pagado" = el periodo ya terminó antes de la salida (no la fecha legal de pago 15/03 o 15/08) |
 | Desahucio | `(sueldo/4) × años_completos` si > 360 días y contrato indefinido; años = `relativedelta + 0.00278` truncado |
-| Indem. despido | motivo con "DESPIDO"/"INTEMPESTIVO": `3×sueldo` (<3 años) o `años×sueldo` (máx 25) |
+| Indem. despido | **NO se auto-calcula** -- campo manual, siempre en `$0` (ver corrección #9 abajo). `indemnizacion_despido()` existe como utilidad standalone, no conectada a `procesar_empleado`. |
 | Fondo de reserva | `8.33% × base del mes de salida` |
 | IESS | `9.45% × (SUELDO + SOBRETIEMPOS)` |
 | Split anticipos (días < 90) | `ANTICIPOS_OTROS_L = int((vac+13act+14act+desahucio)/3.75)`; `ANTICIPO_L_DESAHUCIO = int(desahucio/3.75)` |
@@ -92,6 +92,31 @@ función) -- ninguna es una mejora inventada en esta migración:
    del cupo asignado en RPEMPLEA (sin relación con ese $), pudiendo no
    coincidir entre sí. Ahora, cuando hay $ real, las horas se derivan de él
    (redondeando) y el $ final se recalcula desde esas horas enteras.
+9. **BUG REAL (2026-09-06, no una "corrección": una funcionalidad
+   inexistente que había que QUITAR): indemnización por despido
+   intempestivo se auto-calculaba sola → ahora es manual (siempre $0),
+   igual que el `.pyw` real.** La fórmula (`3×sueldo` si <3 años, `años×
+   sueldo` tope 25) SÍ existe -- pero salió por error de
+   `Liquidaciones_generador_SUPABASE.py` (una variante paralela del
+   proyecto, no la que la empresa usa hoy) y de la documentación
+   desactualizada de `CLAUDE.md` del repo `LIQUIDACIONES_SISTEMA_INSEVIG`,
+   que describe esa variante bajo un aviso de "migración" que en la
+   práctica nunca se completó -- la app real y activamente desarrollada
+   sigue siendo `Generador_Liquidaciones_INSEVIG.pyw`. Se verificó línea
+   por línea que ahí "Indemnización por Despido" es un campo EDITABLE
+   MANUAL con default `$0` en la vista previa (`_fila_editable`), nunca un
+   cálculo automático disparado por el texto del motivo -- y que no existe
+   ninguna función equivalente en `nucleo_modular` (extracción fiel de ese
+   mismo `.pyw`). Con el auto-cálculo, **cualquier liquidación con motivo
+   "DESPIDO"/"INTEMPESTIVO" generada por el sistema web sumaba de más sin
+   ninguna revisión humana** (el campo tampoco estaba expuesto en
+   `insevig_web/`, así que no había forma de corregirlo antes de guardar).
+   Corregido: `procesar_empleado` ya no llama a `indemnizacion_despido()`;
+   la función queda como utilidad standalone (por si se quiere ofrecer como
+   botón "sugerir monto" en un futuro campo editable equivalente al del
+   `.pyw`). Ventana de exposición: commit `a3e11c0` (2026-09-04 13:40) a la
+   corrección de este mismo commit (2026-09-06) -- revisar si se generaron
+   liquidaciones reales con motivo de despido en ese rango.
 
 ## Rebanada
 - `core/repos/liquidaciones.py` (cálculo completo)
