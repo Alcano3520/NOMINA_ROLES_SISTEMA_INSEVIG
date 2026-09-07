@@ -1126,6 +1126,92 @@ def cambiar_estado_liquidacion(
             }).execute()
 
 
+_TIPO_POR_CODIGO: dict[str, str] = {cod: tipo for cod, _n, tipo, _c in _CONCEPTOS_DETALLE}
+_NOMBRE_POR_CODIGO: dict[str, str] = {cod: nom for cod, nom, _t, _c in _CONCEPTOS_DETALLE}
+
+
+def _totales_desde_valores(valores: dict[str, float]) -> dict[str, float]:
+    """Recalcula los totales y columnas derivadas de `liquidaciones` a partir de
+    `{concepto_codigo: valor}`. Mismas fórmulas que `_mapear_registro`."""
+    def _s(*cods: str) -> float:
+        return round(sum(valores.get(x, 0.0) for x in cods), 2)
+
+    total_ing = round(sum(v for k, v in valores.items() if _TIPO_POR_CODIGO.get(k) == "ingreso"), 2)
+    total_dsc = round(sum(v for k, v in valores.items() if _TIPO_POR_CODIGO.get(k) == "descuento"), 2)
+    return {
+        "total_ingresos": total_ing,
+        "total_descuentos": total_dsc,
+        "total_liquido": round(total_ing - total_dsc, 2),
+        "decimo_tercero": _s("DEC_TERCERA_ANT", "DEC_TERCERA_ACT"),
+        "decimo_cuarto": _s("DEC_CUARTA_ANT", "DEC_CUARTA_ACT"),
+        "horas_extras": _s("SOBT_25", "SOBT_50", "SOBT_100"),
+        "vacaciones_pendientes": _s("VACACIONES"),
+        "fondo_reserva": _s("FONDO_RESERVA"),
+        "bonificacion_desahucio": _s("DESAHUCIO"),
+        "otros_ingresos": _s("REEMBOLSOS", "MANIOBRAS", "BONIFICACION", "MOVILIZACION"),
+        "anticipos": _s("ANTICIPO_SUELDO", "ANTICIPOS_OTROS", "ANTICIPO_L_DESAHUCIO"),
+        "prestamos": _s("PREST_QUIROGRAFARIO", "PREST_COMPANIA", "PREST_HIPOTECARIO"),
+        "multas": _s("MULTAS"),
+        "otros_descuentos": _s("PENSION_ALIMENTICIA", "IESS_CONYUGE", "IMPUESTO_RENTA", "IESS"),
+    }
+
+
+def editar_valores_liquidacion(
+    liquidacion_id: str, cambios: dict[str, float], *, usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """Corrige a mano los valores de conceptos de una liquidación guardada
+    (el Editor del `.pyw`). `cambios`: `concepto_codigo -> nuevo valor_total`
+    (0 quita el concepto). Recalcula los totales y las columnas derivadas de
+    `liquidaciones`. No toca una liquidación en estado 'pagada'."""
+    from core.audit.writer import audit_scope
+
+    registro, conceptos = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    if registro.get("estado") == "pagada":
+        return False, "No se puede editar una liquidación ya marcada como pagada."
+
+    cambios_norm = {
+        str(k): round(float(v), 2) for k, v in cambios.items() if str(k) in _TIPO_POR_CODIGO
+    }
+    if not cambios_norm:
+        return False, "No hay cambios válidos."
+
+    valores: dict[str, float] = {str(c["concepto_codigo"]): float(c.get("valor_total") or 0) for c in conceptos}
+    valores.update(cambios_norm)
+    derivados = _totales_desde_valores(valores)
+
+    with audit_scope(
+        "liquidaciones", "editar_valores", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id,
+        antes={"total_liquido": registro.get("total_liquido")},
+        after={"total_liquido": derivados["total_liquido"], "cambios": cambios_norm},
+    ):
+        sb = supabase_client.get_client()
+        for cod, val in cambios_norm.items():
+            if val == 0:
+                sb.table(TABLA_LIQ_DETALLE).delete().eq("liquidacion_id", liquidacion_id).eq(
+                    "concepto_codigo", cod).execute()
+                continue
+            upd = sb.table(TABLA_LIQ_DETALLE).update({"valor_total": val}).eq(
+                "liquidacion_id", liquidacion_id).eq("concepto_codigo", cod).execute()
+            if not (upd.data or []):
+                sb.table(TABLA_LIQ_DETALLE).insert({
+                    "liquidacion_id": liquidacion_id, "concepto_codigo": cod,
+                    "concepto_nombre": _NOMBRE_POR_CODIGO.get(cod, cod),
+                    "concepto_tipo": _TIPO_POR_CODIGO[cod], "valor_total": val,
+                    "orden": len(conceptos),
+                }).execute()
+        sb.table(TABLA_LIQ).update({**derivados, "updated_by": usuario}).eq("id", liquidacion_id).execute()
+        with contextlib.suppress(Exception):
+            sb.table(TABLA_LIQ_HISTORIAL).insert({
+                "liquidacion_id": liquidacion_id, "estado": registro.get("estado"),
+                "usuario": usuario,
+                "observacion": "Edición manual de valores: " + ", ".join(sorted(cambios_norm)),
+            }).execute()
+    return True, ""
+
+
 def eliminar_liquidacion(
     liquidacion_id: str, motivo: str, *, usuario: str, roles: set[str],
 ) -> tuple[bool, str]:

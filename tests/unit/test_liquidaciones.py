@@ -352,6 +352,98 @@ def test_buscar_empleado_preview_sin_identificador_es_none():
     assert lq.buscar_empleado_preview("   ", "cedula", lq.FUENTE_SUPABASE) is None
 
 
+def test_totales_desde_valores_recalcula_ingresos_descuentos_y_derivados():
+    tot = lq._totales_desde_valores({
+        "SUELDO": 500.0, "VACACIONES": 100.0, "DEC_TERCERA_ANT": 40.0, "DEC_TERCERA_ACT": 45.0,
+        "IESS": 60.0, "PREST_COMPANIA": 30.0, "MULTAS": 10.0,
+    })
+    assert tot["total_ingresos"] == 685.0        # 500 + 100 + 40 + 45
+    assert tot["total_descuentos"] == 100.0      # 60 + 30 + 10
+    assert tot["total_liquido"] == 585.0
+    assert tot["decimo_tercero"] == 85.0
+    assert tot["prestamos"] == 30.0 and tot["multas"] == 10.0
+    assert tot["otros_descuentos"] == 60.0       # IESS
+
+
+class _FakeRecTable:
+    def __init__(self, nombre, log, datos):
+        self.n, self.log, self.datos = nombre, log, datos
+        self.op = None
+        self.payload = None
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def order(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def update(self, payload):
+        self.op, self.payload = "update", payload
+        return self
+
+    def insert(self, payload):
+        self.op, self.payload = "insert", payload
+        return self
+
+    def delete(self):
+        self.op = "delete"
+        return self
+
+    def execute(self):
+        if self.op:
+            self.log.append((self.n, self.op, self.payload))
+            return _FakeExec([{"ok": 1}] if self.op == "update" else [])
+        return _FakeExec(self.datos.get(self.n, []))
+
+
+class _FakeRecClient:
+    def __init__(self, datos):
+        self.datos = datos
+        self.log: list = []
+
+    def table(self, nombre):
+        return _FakeRecTable(nombre, self.log, self.datos)
+
+
+def test_editar_valores_liquidacion(monkeypatch, app_db):
+    registro = {"id": "L1", "estado": "generada", "total_liquido": 585.0}
+    conceptos = [
+        {"concepto_codigo": "SUELDO", "concepto_tipo": "ingreso", "valor_total": 500.0},
+        {"concepto_codigo": "VACACIONES", "concepto_tipo": "ingreso", "valor_total": 100.0},
+        {"concepto_codigo": "IESS", "concepto_tipo": "descuento", "valor_total": 60.0},
+        {"concepto_codigo": "MULTAS", "concepto_tipo": "descuento", "valor_total": 10.0},
+    ]
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.editar_valores_liquidacion(
+        "L1", {"MULTAS": 25.0, "VACACIONES": 0.0}, usuario="ana", roles={"editor"}
+    )
+    assert ok and err == ""
+
+    detalle_ops = [(op, pl) for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_DETALLE]
+    assert ("update", {"valor_total": 25.0}) in detalle_ops       # MULTAS 10 -> 25
+    assert any(op == "delete" for op, _ in detalle_ops)           # VACACIONES 100 -> 0 => borrar
+    liq_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ and op == "update")
+    assert liq_upd["total_ingresos"] == 500.0                     # 500 (vac quitada)
+    assert liq_upd["total_descuentos"] == 85.0                    # 60 + 25
+    assert liq_upd["total_liquido"] == 415.0
+    assert liq_upd["updated_by"] == "ana"
+
+
+def test_editar_valores_liquidacion_no_toca_pagada(monkeypatch):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"estado": "pagada"}, []))
+    ok, err = lq.editar_valores_liquidacion("L1", {"MULTAS": 5.0}, usuario="x", roles=set())
+    assert not ok and "pagada" in err
+
+
 def test_guardar_liquidacion_rechaza_estado_invalido():
     ok, msg = lq.guardar_liquidacion(
         _liq_ejemplo(), "estado_invalido", lq.ConfigLiquidacion(), usuario="t", roles=set()

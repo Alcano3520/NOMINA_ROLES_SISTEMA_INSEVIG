@@ -163,9 +163,13 @@ necesarios ya que el modo Individual no depende de un periodo de corte fijo.
   `/liquidaciones/guardadas` es una versión MVP del Editor + Gestión del
   legado (~5700 líneas de Tkinter entre ambas pantallas) — cubre buscar, ver,
   cambiar estado y eliminar, pero NO todavía:
-  - **Edición manual de campos** de una liquidación ya guardada (el Editor
-    del legado permite corregir a mano cualquier valor antes de re-guardar;
-    aquí solo se puede cambiar el estado).
+  - ~~**Edición manual de campos**~~ ✅ **hecho** (2026-09-06):
+    `core.repos.liquidaciones.editar_valores_liquidacion` — en el detalle de
+    `/liquidaciones/guardadas`, botón "Editar valores" (gated `liquidaciones:
+    editar`) hace editable cada valor de concepto; al guardar recalcula todos
+    los totales y columnas derivadas de `liquidaciones`, con auditoría e
+    historial. No toca una liquidación en estado 'pagada'. Un valor a 0 quita
+    el concepto.
   - **Verificación de pago contra cartas bancarias** (`pagos_cartas.py` en
     `nucleo_modular`, carpeta `PAGOS_CARTAS/`) — columna "¿Pagado?" de
     Gestión de Liquidaciones.

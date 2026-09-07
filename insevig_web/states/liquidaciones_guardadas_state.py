@@ -68,6 +68,71 @@ class LiquidacionesGuardadasState(rx.State):
         self.detalle_id = ""
         self.detalle = {}
         self.detalle_conceptos = []
+        self.editando = False
+        self.edit_valores = {}
+
+    # ── Edición manual de valores (Editor del legado) ────────────────
+    editando: bool = False
+    edit_valores: dict[str, str] = {}   # concepto_codigo -> valor (texto)
+    edit_msg: str = ""
+
+    @rx.var
+    def conceptos_editables(self) -> list[dict]:
+        """`detalle_conceptos` + el valor en edición de cada concepto (texto)."""
+        out = []
+        for c in self.detalle_conceptos:
+            cod = str(c["concepto_codigo"])
+            out.append({**c, "edit_valor": self.edit_valores.get(cod, str(c["valor_total"]))})
+        return out
+
+    @rx.event
+    def abrir_edicion(self):
+        self.edit_valores = {
+            str(c["concepto_codigo"]): str(c["valor_total"]) for c in self.detalle_conceptos
+        }
+        self.editando = True
+        self.edit_msg = ""
+
+    @rx.event
+    def cancelar_edicion(self):
+        self.editando = False
+        self.edit_valores = {}
+        self.edit_msg = ""
+
+    @rx.event
+    def set_edit_valor(self, codigo: str, v: str):
+        self.edit_valores = {**self.edit_valores, codigo: v}
+
+    @rx.event
+    async def guardar_edicion(self):
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:editar" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso para editar liquidaciones.")
+        originales = {str(c["concepto_codigo"]): round(float(c["valor_total"]), 2) for c in self.detalle_conceptos}
+        cambios: dict[str, float] = {}
+        for cod, txt in self.edit_valores.items():
+            try:
+                nuevo = round(float(str(txt).replace(",", ".").strip() or 0), 2)
+            except ValueError:
+                self.edit_msg = f"Valor inválido en {cod}: «{txt}»."
+                return
+            if nuevo != originales.get(cod):
+                cambios[cod] = nuevo
+        if not cambios:
+            self.edit_msg = "No cambiaste ningún valor."
+            return
+        ok, error = await asyncio.to_thread(
+            repo.editar_valores_liquidacion, self.detalle_id, cambios,
+            usuario=auth.username, roles=set(auth.roles),
+        )
+        if not ok:
+            self.edit_msg = error
+            return
+        self.editando = False
+        self.edit_valores = {}
+        self.msg = f"Liquidación corregida ({len(cambios)} concepto(s))."
+        await self.ver_detalle(self.detalle_id)
+        await self.buscar()
 
     @rx.event
     async def cambiar_estado(self, liquidacion_id: str, estado: str):

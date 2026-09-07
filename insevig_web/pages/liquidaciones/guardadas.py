@@ -80,6 +80,26 @@ def _detalle() -> rx.Component:
                             spacing="2", width="100%",
                         ),
                         rx.divider(),
+                        rx.hstack(
+                            rx.cond(
+                                AuthState.permisos_flat.contains("liquidaciones:editar")
+                                & (_S.detalle["estado"].to_string() != "pagada"),
+                                rx.cond(
+                                    _S.editando,
+                                    rx.hstack(
+                                        rx.button("Guardar cambios", on_click=_S.guardar_edicion, size="1"),
+                                        rx.button("Cancelar", on_click=_S.cancelar_edicion,
+                                                  size="1", variant="soft"),
+                                        spacing="2",
+                                    ),
+                                    rx.button("Editar valores", on_click=_S.abrir_edicion,
+                                              size="1", variant="soft"),
+                                ),
+                            ),
+                            rx.spacer(),
+                            width="100%",
+                        ),
+                        rx.cond(_S.edit_msg != "", rx.callout(_S.edit_msg, color_scheme="amber", size="1")),
                         scroll_x(
                             rx.table.root(
                                 rx.table.header(rx.table.row(*[
@@ -88,11 +108,22 @@ def _detalle() -> rx.Component:
                                 ])),
                                 rx.table.body(
                                     rx.foreach(
-                                        _S.detalle_conceptos,
+                                        _S.conceptos_editables,
                                         lambda c: rx.table.row(
                                             rx.table.cell(c["concepto_nombre"]),
                                             rx.table.cell(c["concepto_tipo"]),
-                                            rx.table.cell("$" + c["valor_total"].to_string()),
+                                            rx.table.cell(
+                                                rx.cond(
+                                                    _S.editando,
+                                                    rx.input(
+                                                        value=c["edit_valor"],
+                                                        on_change=lambda v: _S.set_edit_valor(
+                                                            c["concepto_codigo"], v),
+                                                        size="1", width="110px",
+                                                    ),
+                                                    "$" + c["valor_total"].to_string(),
+                                                )
+                                            ),
                                         ),
                                     )
                                 ),
