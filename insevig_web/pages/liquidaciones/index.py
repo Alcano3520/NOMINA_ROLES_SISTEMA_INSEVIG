@@ -181,6 +181,12 @@ def _panel_individual() -> rx.Component:
                     spacing="1", align_items="start",
                 ),
                 rx.vstack(
+                    rx.text("Indemnización por despido:", size="2", weight="bold"),
+                    rx.input(value=_S.ind_indemnizacion, on_change=_S.set_ind_indemnizacion,
+                             placeholder="manual — 0 si no aplica", width="180px"),
+                    spacing="1", align_items="start",
+                ),
+                rx.vstack(
                     rx.text("Motivo de salida:", size="2", weight="bold"),
                     rx.hstack(
                         rx.input(value=_S.ind_motivo, on_change=_S.set_ind_motivo,

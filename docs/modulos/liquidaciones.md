@@ -24,7 +24,7 @@ liquidación legal de cada empleado y produce un Excel (hoja `FORMATO`).
 | Décima 13ra | periodo 01/12 → 30/11 (últimos 2, recortados a [ingreso, salida] por reingreso); `total_periodo / 12`; anterior + actual |
 | Décima 14ta | últimos 2 periodos (anclados en la fecha de salida, NO desde el ingreso); `(DIAS360(inicio_efectivo, fin_efectivo) + 1) × (SBU_año / 360)`; COSTA 01/03→28/02, SIERRA 01/08→31/07; "pagado" = el periodo ya terminó antes de la salida (no la fecha legal de pago 15/03 o 15/08) |
 | Desahucio | `(sueldo/4) × años_completos` si > 360 días y contrato indefinido; años = `relativedelta + 0.00278` truncado |
-| Indem. despido | **NO se auto-calcula** -- campo manual, siempre en `$0` (ver corrección #9 abajo). `indemnizacion_despido()` existe como utilidad standalone, no conectada a `procesar_empleado`. |
+| Indem. despido | **NO se auto-calcula** -- campo manual (`indemnizacion_manual` en `procesar_empleado`, cableado al modo Individual). Default `$0`. |
 | Fondo de reserva | `8.33% × base del mes de salida` |
 | IESS | `9.45% × (SUELDO + SOBRETIEMPOS)` |
 | Split anticipos (días < 90) | `ANTICIPOS_OTROS_L = int((vac+13act+14act+desahucio)/3.75)`; `ANTICIPO_L_DESAHUCIO = int(desahucio/3.75)` |

@@ -117,6 +117,12 @@ class LiquidacionesState(rx.State):
     def set_ind_desahucio_ingresos_reales(self, v: bool):
         self.ind_desahucio_ingresos_reales = v
 
+    ind_indemnizacion: str = ""   # indemnización por despido — manual, default 0
+
+    @rx.event
+    def set_ind_indemnizacion(self, v: str):
+        self.ind_indemnizacion = v
+
     @rx.event
     async def cargar_pantalla(self):
         """on_load: fecha de hoy por defecto + resumen de guardadas."""
@@ -180,10 +186,16 @@ class LiquidacionesState(rx.State):
         fecha_ing = self.ind_fecha_ingreso.strip()
         incl_sueldo = self.ind_incluir_sueldo
         des_reales = self.ind_desahucio_ingresos_reales
+        try:
+            indem = round(float(self.ind_indemnizacion.replace(",", ".").strip() or 0), 2)
+        except ValueError:
+            self.ind_msg = f"Indemnización «{self.ind_indemnizacion}» no es un número."
+            return
 
         def _run():
             return repo.procesar_empleado(
                 cedula, fecha, motivo, fuente, cfg, fecha_ing,
+                indemnizacion_manual=indem,
                 incluir_dec13_anterior=dec13, incluir_dec14_anterior=dec14,
                 incluir_sueldo=incl_sueldo, usar_ingresos_reales_desahucio=des_reales,
             )
