@@ -147,11 +147,21 @@ le faltaba casi toda la estructura real. Añadido, en la misma pantalla:
   que el modo Masivo).
 - Modo Masivo: sin cambios funcionales, solo reordenado bajo el nuevo selector.
 
-**Pendiente de esa misma pantalla** (3 de las 6 casillas del legado, no
-conectadas -- el motor de cálculo no expone el parámetro todavía):
-"calcular desahucio sobre ingresos reales", "usar valores YA cargados en
-RPINGDES para el mes en curso" e "incluir/excluir el sueldo del mes de
-salida". "3. Periodo para Calcular Horas", "4. Valores por Defecto" (multas/
+**Pendiente de esa misma pantalla** (2026-09-06): de las 6 casillas del
+legado, el motor (`procesar_empleado`) ya expone 2 nuevas -- falta cablearlas
+a la UI de `/liquidaciones`:
+- `incluir_sueldo` (default `True`): "incluir/excluir el sueldo del mes de
+  salida" -- ✅ motor listo.
+- `usar_ingresos_reales_desahucio` (default `False`): "calcular desahucio
+  sobre ingresos reales" -- ✅ motor listo.
+- `usar_valores_reales_mes_actual` ("usar valores YA cargados en RPINGDES
+  para el mes en curso"): ⛔ el motor **todavía no tiene** la alternativa que
+  este flag debería togglear -- el cálculo de sobretiempos del mes en curso
+  vía cupo de sección (DBTABLAS SEC) simplemente no está portado (ver más
+  abajo), así que exponer el parámetro ahora sería un no-op. Portar esa
+  fórmula primero.
+
+"3. Periodo para Calcular Horas", "4. Valores por Defecto" (multas/
 anticipos si el rubro es 0) y "5. Carpeta de Salida" (N/A en web, se
 descarga directo) del legado no se portaron — evaluar si siguen siendo
 necesarios ya que el modo Individual no depende de un periodo de corte fijo.

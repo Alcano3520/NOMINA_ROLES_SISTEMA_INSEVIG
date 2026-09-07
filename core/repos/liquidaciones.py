@@ -634,8 +634,25 @@ def procesar_empleado(
     *,
     incluir_dec13_anterior: bool = False,
     incluir_dec14_anterior: bool = False,
+    incluir_sueldo: bool = True,
+    usar_ingresos_reales_desahucio: bool = False,
 ) -> Liquidacion:
     """Procesa un empleado y arma su liquidación.
+
+    `incluir_sueldo` (default `True`): si `False`, excluye TODO el rol
+    regular del mes de salida -- sueldo, sobretiempos y los descuentos de
+    ese mismo mes -- por si ya se pagó/descontó por otra vía y no debe
+    liquidarse de nuevo aquí. No afecta `sueldo_base` (el básico registrado
+    de RPEMPLEA, que se sigue mostrando igual). Porta la casilla "Incluir el
+    Sueldo del mes de salida..." del modo individual y el 4º campo
+    SIPAGO/NOPAGO de una línea en modo lote del `.pyw` (no portado aún del
+    lado de `procesar_lote`/`_parse_linea` -- ver docs/modulos/liquidaciones.md).
+
+    `usar_ingresos_reales_desahucio` (default `False`): si `True`, la base
+    mensual del desahucio deja de ser el sueldo básico de RPEMPLEA y pasa a
+    ser el promedio real del último periodo de vacaciones (incluye
+    sobretiempos), dividido por los meses que ese periodo realmente abarca.
+    Porta la casilla equivalente del modo individual.
 
     `incluir_dec13_anterior`/`incluir_dec14_anterior` (default `False`):
     controla si el décimo tercero/cuarto del periodo ANTERIOR (ya pagado en
@@ -750,6 +767,23 @@ def procesar_empleado(
             h100 = a_int(emp.get("HOR100"))
             val["SOBRETIEMPO_100"] = round(valor_hora * 2.0 * h100, 2)
 
+    # 3b. incluir_sueldo=False: excluye TODO el rol regular del mes de salida
+    # (no solo Sueldo) -- si ese rol ya se pagó/descontó por otra vía, las
+    # horas extras y los descuentos de ese mismo mes tampoco deben
+    # liquidarse de nuevo aquí. `sueldo` (básico registrado, columna
+    # "Sueldo"/REMUNERACION) NO se ve afectado -- viene de RPEMPLEA, no de
+    # `val`. Lista exacta verificada contra Generador_Liquidaciones_INSEVIG.pyw
+    # (`_procesar_empleado`, constante `CAMPOS_ROL_MES`).
+    if not incluir_sueldo:
+        for _campo in (
+            "SUELDO", "SOBRETIEMPO_25", "SOBRETIEMPO_50", "SOBRETIEMPO_100",
+            "ANTICIPOS_SURTIDOS", "PRESTAMOS_COMPANIA", "ANTICIPOS_OTROS",
+            "ANTICIPO_SUELDO", "MULTAS", "PRESTAMOS_QUIROGRAFARIOS",
+            "APORT_IESS_CONYUGE", "PENSION_ALIMENTICIA", "PRESTAMO_HIPOTECARIO",
+            "IMPUESTO_RENTA",
+        ):
+            val[_campo] = 0.0
+
     # 4. Vacaciones: TODOS los periodos pendientes (no caducan), descartando
     # los ya pagados/gozados según `vac_registros` (ver total_vacaciones_a_pagar).
     pv = periodos_vacaciones(fing, fsal)
@@ -788,8 +822,23 @@ def procesar_empleado(
         else:
             d14_act += dec
 
-    # 7. Desahucio
-    des = desahucio(fing, fsal, sueldo)
+    # 7. Desahucio. Por defecto usa el sueldo básico de RPEMPLEA (mensual
+    # completo). Con usar_ingresos_reales_desahucio=True se usa en cambio el
+    # promedio mensual real del último periodo de vacaciones (incluye
+    # sobretiempos) -- divisor: la cantidad de MESES que ese último periodo
+    # realmente abarca (no siempre 12: el periodo "actual" puede llevar
+    # acumulados solo unos pocos meses). Verificado contra
+    # Generador_Liquidaciones_INSEVIG.pyw (comentario "CÁLCULO DE DESAHUCIO"):
+    # dividir siempre entre 12 fijo daba un promedio muy por debajo del real
+    # para alguien a mitad de su periodo de vacaciones.
+    base_desahucio = sueldo
+    if usar_ingresos_reales_desahucio and vac_ult > 0:
+        i_ult, f_ult = pv[-1]
+        meses_ultimo_periodo = (f_ult.year - i_ult.year) * 12 + (f_ult.month - i_ult.month) + 1
+        if meses_ultimo_periodo <= 0:
+            meses_ultimo_periodo = 12
+        base_desahucio = round(vac_ult / meses_ultimo_periodo, 2)
+    des = desahucio(fing, fsal, base_desahucio)
 
     # 8. Fondo de reserva = 8.33% de la base del mes de salida
     fondo_reserva = round((val["SUELDO"] + val["SOBRETIEMPO_25"] + val["SOBRETIEMPO_50"]

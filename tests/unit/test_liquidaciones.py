@@ -189,6 +189,83 @@ def test_decimo_anterior_excluido_por_defecto_en_el_total():
     assert firma.parameters["incluir_dec14_anterior"].default is False
 
 
+def _emp_ejemplo():
+    return {
+        "EMPLEADO": "999", "APELLIDOS": "PEREZ", "NOMBRES": "JUAN", "CEDULA": "0920116811",
+        "SUELDO": 500.0, "CARGO": "GUARDIA", "DEPTO": "OPERACIONES", "SECCION": "MATRIZ",
+        "FECHA_ING": "2020-01-15", "FECHA_SAL": "2026-06-15",
+        "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
+    }
+
+
+def _sin_supabase(monkeypatch):
+    def _raise():
+        raise RuntimeError("sin conexión")
+    monkeypatch.setattr(lq.supabase_client, "get_client", _raise)
+
+
+def test_incluir_sueldo_false_excluye_rol_del_mes_de_salida_no_el_sueldo_base(monkeypatch):
+    """Verificado contra Generador_Liquidaciones_INSEVIG.pyw (constante
+    CAMPOS_ROL_MES): con incluir_sueldo=False se excluyen Sueldo,
+    sobretiempos y los descuentos del MES DE SALIDA -- pero sueldo_base
+    (RPEMPLEA, columna "Sueldo"/REMUNERACION) no se ve afectado."""
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    _sin_supabase(monkeypatch)
+
+    def _movs(cod, anio, mes, fuente):
+        if (anio, mes) == (2026, 6):
+            return ([
+                {"clase": 100, "valor": 500.0, "dias": 30, "codigo": ""},
+                {"clase": 203, "valor": 20.0, "dias": None, "codigo": ""},
+            ], "RPINGDES")
+        return ([], "RPINGDES")
+
+    monkeypatch.setattr(lq, "movimientos_mes", _movs)
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado(
+        "0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+        incluir_sueldo=False,
+    )
+    assert con.error == ""
+    assert con.campos["SUELDO"] == 0.0
+    assert con.campos["MULTAS"] == 0.0
+    assert con.sueldo_base == 500.0  # sin afectar
+
+
+def test_usar_ingresos_reales_desahucio_usa_promedio_del_ultimo_periodo(monkeypatch):
+    """Verificado contra Generador_Liquidaciones_INSEVIG.pyw (comentario
+    "CÁLCULO DE DESAHUCIO"): con usar_ingresos_reales_desahucio=True, la base
+    mensual del desahucio deja de ser el sueldo básico y pasa a ser el total
+    del último periodo de vacaciones dividido por los MESES que ese periodo
+    realmente abarca (no siempre 12)."""
+    emp = _emp_ejemplo()
+    emp["FECHA_ING"] = "2015-01-15"  # varios periodos completos de antigüedad
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    _sin_supabase(monkeypatch)
+    monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
+    # El último periodo de vacaciones (anclado en el ingreso, 15/01) para una
+    # salida el 15/06/2026 es 15/01/2026 -> 15/06/2026: 6 meses exactos.
+    monkeypatch.setattr(lq, "_suma_base", lambda cod, i, f, fuente: 1200.0)
+    cfg = lq.ConfigLiquidacion()
+
+    con_default = lq.procesar_empleado(
+        "0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+    )
+    con_reales = lq.procesar_empleado(
+        "0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+        usar_ingresos_reales_desahucio=True,
+    )
+    assert con_default.error == "" and con_reales.error == ""
+    # Default: base = sueldo básico (500.0)
+    assert con_default.campos["DESAHUCIO"] == lq.desahucio(
+        dt.date(2015, 1, 15), dt.date(2026, 6, 15), 500.0)
+    # usar_ingresos_reales_desahucio: base = 1200.0 / 6 meses = 200.0
+    assert con_reales.campos["DESAHUCIO"] == lq.desahucio(
+        dt.date(2015, 1, 15), dt.date(2026, 6, 15), 200.0)
+    assert con_reales.campos["DESAHUCIO"] != con_default.campos["DESAHUCIO"]
+
+
 def test_excel_liquidaciones_valido():
     import io
 
