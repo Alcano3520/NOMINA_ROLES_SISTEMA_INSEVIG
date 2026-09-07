@@ -29,6 +29,144 @@ _CAMPOS_GOZADA = [
 ]
 
 
+# ── Dashboard "Pendientes de Firma" ───────────────────────────────────────
+# Porta app.py::_build_tab_dashboard (no depende de empleado seleccionado).
+
+_DASH_CARDS = [
+    ("Empleados activos", "dash_n_activos", "blue"),
+    ("Gozadas sin firmar", "dash_n_sin_firmar", "red"),
+    ("Pagadas sin confirmar", "dash_n_pagadas_sin_firmar", "orange"),
+    ("Gozadas registradas (año)", "dash_n_gozadas_anio", "green"),
+    ("Pagadas registradas (año)", "dash_n_pagadas_anio", "purple"),
+]
+
+
+def _dash_card(titulo: str, campo: str, color: str) -> rx.Component:
+    return card(
+        rx.vstack(
+            rx.text(titulo, size="1", color_scheme="gray"),
+            rx.heading(getattr(_S, campo).to_string(), size="7", color_scheme=color),
+            spacing="1",
+        ),
+        width="100%",
+    )
+
+
+def _fila_top5(r: rx.Var) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(rx.cond(r["tipo"] == "gozada", rx.badge("GOCE"), rx.badge("PAGO", color_scheme="green"))),
+        rx.table.cell(r["nombre"]), rx.table.cell(r["periodo"]),
+        rx.table.cell(r["desde"]), rx.table.cell(r["hasta"]), rx.table.cell(r["dias"]),
+    )
+
+
+def _fila_periodo_pendiente(p: rx.Var) -> rx.Component:
+    return rx.hstack(
+        rx.text(p["periodo"], weight="bold", color_scheme="orange", width="6em"),
+        rx.text(f"{p['n_empleados']} empleados"),
+        rx.text(f"{p['total_dias']} días pendientes", color_scheme="red", weight="bold"),
+        spacing="3", width="100%",
+    )
+
+
+def _fila_todos_sf(r: rx.Var) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(
+            rx.checkbox(checked=_S.dash_seleccionados.contains(r["vac_id"]),
+                       on_change=lambda _v: _S.toggle_seleccion_dash(r["vac_id"]))
+        ),
+        rx.table.cell(rx.cond(r["tipo"] == "gozada", rx.badge("GOCE"), rx.badge("PAGO", color_scheme="green"))),
+        rx.table.cell(r["cedula"]), rx.table.cell(f"{r['apellidos']} {r['nombres']}"),
+        rx.table.cell(r["departamento"]), rx.table.cell(r["periodo"]),
+        rx.table.cell(r["desde"]), rx.table.cell(r["hasta"]), rx.table.cell(r["dias_tomados"]),
+    )
+
+
+def _panel_ver_todos() -> rx.Component:
+    return rx.cond(
+        _S.dash_mostrar_todos,
+        card(
+            rx.vstack(
+                rx.hstack(
+                    rx.heading("Sin firmar / sin confirmar — personal activo", size="3"),
+                    rx.spacer(),
+                    rx.text(f"{_S.dash_todos_sf.length()} registros", size="1", color_scheme="gray"),
+                    width="100%",
+                ),
+                rx.hstack(
+                    rx.button("Marcar seleccionados como Firmado", color_scheme="green",
+                             on_click=_S.marcar_seleccionados_firmado),
+                    rx.button("Cerrar", on_click=_S.cerrar_ver_todos_sf, variant="soft"),
+                    spacing="2",
+                ),
+                scroll_x(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(*[rx.table.column_header_cell(c) for c in
+                                           ("", "Tipo", "Cédula", "Empleado", "Depto.", "Período", "Desde", "Hasta", "Días")])
+                        ),
+                        rx.table.body(rx.foreach(_S.dash_todos_sf, _fila_todos_sf)),
+                        variant="surface", size="1", width="100%",
+                    )
+                ),
+                spacing="3", width="100%",
+            ),
+            width="100%",
+        ),
+    )
+
+
+def _tab_dashboard() -> rx.Component:
+    return rx.vstack(
+        rx.hstack(
+            rx.spacer(),
+            rx.cond(_S.dash_actualizado != "",
+                   rx.text(f"Actualizado: {_S.dash_actualizado}", size="1", color_scheme="gray")),
+            rx.button("Actualizar", on_click=_S.cargar_dashboard, loading=_S.dash_cargando, size="2"),
+            width="100%", align="center",
+        ),
+        rx.cond(_S.dash_error != "", rx.callout(_S.dash_error, size="1", color_scheme="red")),
+        rx.grid(*[_dash_card(t, c, col) for t, c, col in _DASH_CARDS],
+               columns=rx.breakpoints(initial="1", sm="2", lg="5"), spacing="3", width="100%"),
+        rx.grid(
+            card(
+                rx.vstack(
+                    rx.heading("Sin firmar / sin confirmar (top 5)", size="3"),
+                    scroll_x(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(*[rx.table.column_header_cell(c) for c in
+                                               ("Tipo", "Empleado", "Período", "Desde", "Hasta", "Días")])
+                            ),
+                            rx.table.body(rx.foreach(_S.dash_top5, _fila_top5)),
+                            variant="surface", size="1", width="100%",
+                        )
+                    ),
+                    rx.button("Ver todos los sin firmar...", on_click=_S.abrir_ver_todos_sf,
+                             color_scheme="red", variant="soft", width="100%"),
+                    spacing="2", width="100%",
+                ),
+                width="100%",
+            ),
+            card(
+                rx.vstack(
+                    rx.heading("Vacaciones pendientes — últimos 3 períodos", size="3"),
+                    rx.cond(
+                        _S.dash_pendientes_periodos.length() > 0,
+                        rx.vstack(rx.foreach(_S.dash_pendientes_periodos, _fila_periodo_pendiente), spacing="3", width="100%"),
+                        rx.text("Sin pendientes registrados.", size="1", color_scheme="gray"),
+                    ),
+                    spacing="2", width="100%",
+                ),
+                width="100%",
+            ),
+            columns=rx.breakpoints(initial="1", lg="2"), spacing="3", width="100%",
+        ),
+        _panel_ver_todos(),
+        spacing="3", width="100%",
+    )
+
+
 # ── Buscar ───────────────────────────────────────────────────────────────
 
 
@@ -416,7 +554,7 @@ def _tab_reportes() -> rx.Component:
 @rx.page(
     route="/vacaciones",
     title="INSEVIG — Vacaciones",
-    on_load=AuthState.cargar_sesion,
+    on_load=[AuthState.cargar_sesion, VacacionesState.cargar_dashboard],
 )
 def index() -> rx.Component:
     return pagina(
@@ -424,6 +562,7 @@ def index() -> rx.Component:
         rx.cond(_S.msg != "", rx.callout(_S.msg, size="1")),
         rx.tabs.root(
             rx.tabs.list(
+                rx.tabs.trigger("Pendientes de Firma", value="dashboard"),
                 rx.tabs.trigger("Buscar", value="buscar"),
                 rx.tabs.trigger("Resumen", value="resumen"),
                 rx.tabs.trigger("Gozadas", value="gozadas"),
@@ -431,13 +570,14 @@ def index() -> rx.Component:
                 rx.tabs.trigger("Cálculo", value="calculo"),
                 rx.tabs.trigger("Reportes", value="reportes"),
             ),
+            rx.tabs.content(_tab_dashboard(), value="dashboard"),
             rx.tabs.content(_tab_buscar(), value="buscar"),
             rx.tabs.content(_tab_resumen(), value="resumen"),
             rx.tabs.content(_tab_gozadas(), value="gozadas"),
             rx.tabs.content(_tab_pagadas(), value="pagadas"),
             rx.tabs.content(_tab_calculo(), value="calculo"),
             rx.tabs.content(_tab_reportes(), value="reportes"),
-            value=_S.tab, on_change=_S.set_tab, default_value="buscar", width="100%",
+            value=_S.tab, on_change=_S.set_tab, default_value="dashboard", width="100%",
         ),
         requiere=("vacaciones", "ver"),
     )

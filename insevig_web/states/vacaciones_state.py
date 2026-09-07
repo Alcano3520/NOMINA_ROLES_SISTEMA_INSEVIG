@@ -35,7 +35,98 @@ _FORM_PAGO_VACIO = {
 
 
 class VacacionesState(rx.State):
-    tab: str = "buscar"
+    tab: str = "dashboard"
+
+    # ── Dashboard "Pendientes de Firma" ────────────────────────────────────
+    # Porta app.py::_build_tab_dashboard/_cargar_dashboard/_poblar_dashboard.
+    # No es por-empleado — se carga solo, sin buscar/seleccionar antes.
+    dash_n_activos: int = 0
+    dash_n_sin_firmar: int = 0
+    dash_n_pagadas_sin_firmar: int = 0
+    dash_n_gozadas_anio: int = 0
+    dash_n_pagadas_anio: int = 0
+    dash_top5: list[dict] = []
+    dash_pendientes_periodos: list[dict] = []
+    dash_cargando: bool = False
+    dash_actualizado: str = ""
+    dash_error: str = ""
+
+    # "Ver todos los sin firmar..." (ventana aparte en el .pyw, acá un panel)
+    dash_mostrar_todos: bool = False
+    dash_todos_sf: list[dict] = []
+    dash_todos_cargando: bool = False
+    dash_seleccionados: list[int] = []
+
+    @rx.event
+    async def cargar_dashboard(self):
+        self.dash_cargando = True
+        self.dash_error = ""
+        yield
+        try:
+            s = await asyncio.to_thread(V.dashboard_stats)
+            self.dash_n_activos = s["n_activos"]
+            self.dash_n_sin_firmar = s["n_sin_firmar"]
+            self.dash_n_pagadas_sin_firmar = s["n_pagadas_sin_firmar"]
+            self.dash_n_gozadas_anio = s["n_gozadas_anio"]
+            self.dash_n_pagadas_anio = s["n_pagadas_anio"]
+            self.dash_top5 = s["top5_sin_firmar"]
+            self.dash_pendientes_periodos = s["pendientes_periodos"]
+            self.dash_actualizado = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+        except Exception as e:  # noqa: BLE001
+            self.dash_error = f"No se pudo cargar (¿hay conexión?): {e}"
+        self.dash_cargando = False
+
+    @rx.event
+    async def abrir_ver_todos_sf(self):
+        self.dash_mostrar_todos = True
+        self.dash_seleccionados = []
+        self.dash_todos_cargando = True
+        yield
+        try:
+            self.dash_todos_sf = await asyncio.to_thread(V.sin_firmar_activos)
+        except Exception as e:  # noqa: BLE001
+            self.dash_error = f"No se pudo cargar: {e}"
+        self.dash_todos_cargando = False
+
+    @rx.event
+    def cerrar_ver_todos_sf(self):
+        self.dash_mostrar_todos = False
+
+    @rx.event
+    def toggle_seleccion_dash(self, vac_id: int):
+        if vac_id in self.dash_seleccionados:
+            self.dash_seleccionados = [v for v in self.dash_seleccionados if v != vac_id]
+        else:
+            self.dash_seleccionados = [*self.dash_seleccionados, vac_id]
+
+    @rx.event
+    async def marcar_seleccionados_firmado(self):
+        auth = await self.get_state(AuthState)
+        if "vacaciones:editar" not in auth.permisos_flat:
+            self.msg = "Sin permiso."
+            return
+        if not self.dash_seleccionados:
+            self.msg = "Seleccione registros."
+            return
+        ids, usuario, roles = list(self.dash_seleccionados), auth.username, set(auth.roles)
+
+        def _marcar_todos():
+            errores = []
+            for vid in ids:
+                try:
+                    V.marcar_firmada(vid, usuario=usuario, roles=roles)
+                except Exception as e:  # noqa: BLE001
+                    errores.append(str(e))
+            return errores
+
+        errores = await asyncio.to_thread(_marcar_todos)
+        self.msg = (
+            f"{len(ids) - len(errores)} registro(s) marcado(s) como firmado."
+            if not errores else f"Algunos registros no pudieron marcarse: {errores[0]}"
+        )
+        self.dash_seleccionados = []
+        await self.abrir_ver_todos_sf()
+        await self.cargar_dashboard()
 
     # ── Búsqueda de empleado ─────────────────────────────────────────────
     query: str = ""
@@ -99,6 +190,9 @@ class VacacionesState(rx.State):
     @rx.event
     def set_tab(self, v: str):
         self.tab = v
+        if v == "dashboard":
+            return VacacionesState.cargar_dashboard
+        return None
 
     # ── Nueva / editar gozada ─────────────────────────────────────────────
     form_gozada: dict[str, str] = dict(_FORM_GOZADA_VACIO)
