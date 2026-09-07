@@ -164,21 +164,46 @@ def test_numeros_migrados_se_excluyen_de_rphistor():
 def test_agrupar_por_numero():
     M = prestamos.MovimientoPrestamo
     movs = [
-        M("2025-01-05", 1000.0, "PRESTAMO", "500", "RPHISTOR"),
-        M("2025-02-05", -100.0, "CUOTA", "500", "RPHISTOR"),
-        M("2025-03-05", -100.0, "CUOTA", "500", "RPHISTOR"),
-        M("2025-04-05", 300.0, "PRESTAMO", "700", "RPINGDES"),
+        M("2025-02-05", 100.0, "CUOTA", "500", "RPHISTOR", tipo="pago"),
+        M("2025-03-05", 100.0, "CUOTA", "500", "RPHISTOR", tipo="pago"),
+        M("2025-06-30", 800.0, "SALDO", "500", "RPINGDES", tipo="pendiente"),
+        M("2025-04-05", 300.0, "SALDO", "700", "RPINGDES", tipo="pendiente"),
     ]
     g = {r.numero: r for r in prestamos.agrupar_por_numero(movs)}
-    assert g["500"].prestado == 1000.0
-    assert g["500"].abonado == 200.0
-    assert g["500"].saldo == 800.0
+    assert g["500"].abonado == 200.0          # pagos de RPHISTOR
+    assert g["500"].saldo == 800.0            # pendiente de RPINGDES
+    assert g["500"].prestado == 1000.0        # sintético: 200 + 800
     assert g["500"].cuotas == 2
     assert g["500"].cuota_promedio == 100.0
     assert g["500"].cancelado is False
     assert g["500"].meses_brecha == 0  # feb -> mar consecutivos
     assert "para cancelar" in g["500"].estado
-    assert g["700"].saldo == 300.0
+    assert g["700"].saldo == 300.0 and g["700"].abonado == 0.0
+
+
+def test_agrupar_prestado_usa_desembolso_real_si_existe():
+    M = prestamos.MovimientoPrestamo
+    movs = [
+        M("2020-01-01", 1500.0, "PRESTAMO", "MIG_1", "MIGRADO", tipo="desembolso"),
+        M("2020-02-01", 300.0, "CUOTA", "MIG_1", "MIGRADO", tipo="pago"),
+        M("2020-03-01", 300.0, "CUOTA", "MIG_1", "MIGRADO", tipo="pago"),
+    ]
+    r = prestamos.agrupar_por_numero(movs)[0]
+    assert r.prestado == 1500.0   # el desembolso real, no 300+300
+    assert r.abonado == 600.0
+    assert r.saldo == 0.0         # no hay RPINGDES pendiente
+    assert r.cancelado is True
+
+
+def test_saldo_total_solo_suma_pendiente(monkeypatch):
+    M = prestamos.MovimientoPrestamo
+    fake = [
+        M("2025-02-05", 100.0, "CUOTA", "9", "RPHISTOR", tipo="pago"),
+        M("2025-03-05", 100.0, "CUOTA", "9", "RPHISTOR", tipo="pago"),
+        M("2025-06-30", 250.0, "SALDO", "9", "RPINGDES", tipo="pendiente"),
+    ]
+    monkeypatch.setattr(prestamos, "historial_empleado", lambda c, f: fake)
+    assert prestamos.saldo_total("9", "sqlserver") == 250.0  # no 450
 
 
 def test_num_norm_normaliza_float_y_string():
@@ -197,16 +222,16 @@ def test_num_norm_normaliza_float_y_string():
 def test_agrupar_detecta_brecha_y_cancelado():
     M = prestamos.MovimientoPrestamo
     movs = [
-        M("2025-01-05", 400.0, "P", "9", "RPHISTOR"),
-        M("2025-01-31", -200.0, "C", "9", "RPHISTOR"),
-        M("2025-04-30", -200.0, "C", "9", "RPHISTOR"),  # brecha feb y mar
+        M("2025-01-31", 200.0, "C", "9", "RPHISTOR", tipo="pago"),
+        M("2025-04-30", 200.0, "C", "9", "RPHISTOR", tipo="pago"),  # brecha feb y mar
     ]
     r = prestamos.agrupar_por_numero(movs)[0]
-    assert r.saldo == 0.0 and r.cancelado is True
+    assert r.saldo == 0.0 and r.cancelado is True  # sin RPINGDES pendiente
+    assert r.abonado == 400.0
     assert r.meses_brecha == 2
     assert "Cancelado" in r.estado
     det = prestamos.movimientos_de_numero(movs, "9")
-    assert len(det) == 3 and det[0].fecha == "2025-01-05"
+    assert len(det) == 2 and det[0].fecha == "2025-01-31"
 
 
 def test_filtrar_movimientos():
@@ -214,20 +239,21 @@ def test_filtrar_movimientos():
 
     M = prestamos.MovimientoPrestamo
     movs = [
-        asdict(M("2025-01-05", 500.0, "PRESTAMO INICIAL", "9", "RPHISTOR")),
-        asdict(M("2025-02-28", -100.0, "CUOTA", "9", "RPINGDES")),
-        asdict(M("2025-03-31", -250.0, "CUOTA EXTRA", "12", "RPINGDES")),
-        asdict(M("2025-04-30", -50.0, "CUADRE", "9", "MIGRADO", es_cuadre=True)),
+        asdict(M("2025-02-28", 100.0, "CUOTA", "9", "RPHISTOR", tipo="pago")),
+        asdict(M("2025-03-31", 250.0, "CUOTA EXTRA", "12", "RPHISTOR", tipo="pago")),
+        asdict(M("2025-06-30", 500.0, "SALDO", "9", "RPINGDES", tipo="pendiente")),
+        asdict(M("2025-04-30", 50.0, "CUADRE", "9", "MIGRADO", tipo="pago", es_cuadre=True)),
     ]
     f = prestamos.filtrar_movimientos
-    assert len(f(movs, tipo="ingreso")) == 1
-    assert len(f(movs, tipo="egreso")) == 3
+    assert len(f(movs, tipo="pago")) == 3
+    assert len(f(movs, tipo="pendiente")) == 1
+    assert len(f(movs, tipo="egreso")) == 3   # alias viejo
+    assert len(f(movs, tipo="ingreso")) == 1  # alias viejo
     assert [m["numero"] for m in f(movs, numero="12")] == ["12"]
-    assert len(f(movs, origen="RPINGDES")) == 2
+    assert len(f(movs, origen="RPHISTOR")) == 2
     assert len(f(movs, texto="extra")) == 1
-    assert len(f(movs, desde="2025-03-01")) == 2
-    assert len(f(movs, hasta="2025-02-28")) == 2
-    assert len(f(movs, monto_min=200)) == 2  # 500 y 250 (valor absoluto)
+    assert len(f(movs, desde="2025-04-01")) == 2
+    assert len(f(movs, monto_min=200)) == 2  # 250 y 500
     assert len(f(movs, monto_max=100)) == 2  # 100 y 50
     assert f(movs) == movs  # sin filtros, todo
 
@@ -240,13 +266,17 @@ def test_historial_xlsx_tiene_hoja_resumen():
     from core.excel.prestamos_builders import historial_xlsx
 
     M = prestamos.MovimientoPrestamo
-    data = historial_xlsx("1012", "PEREIRA", [M("2025-01-05", 500.0, "P", "9", "RPHISTOR")])
+    data = historial_xlsx("1012", "PEREIRA", [
+        M("2025-01-05", 100.0, "CUOTA", "9", "RPHISTOR", tipo="pago"),
+        M("2025-06-30", 400.0, "SALDO", "9", "RPINGDES", tipo="pendiente"),
+    ])
     wb = openpyxl.load_workbook(io.BytesIO(data))
     assert {"Historial", "Resumen por préstamo"} <= set(wb.sheetnames)
     ws = wb["Historial"]
     assert "HISTORIAL DE PRÉSTAMOS" in str(ws["A1"].value)
     valores = [c.value for row in ws.iter_rows() for c in row]
-    assert "TOTAL" in valores
+    assert "SALDO PENDIENTE" in valores
+    assert 400.0 in valores  # el saldo pendiente, no la suma de todo
 
 
 def test_migracion_sqlite_a_appdb(app_db, tmp_path):
@@ -272,7 +302,8 @@ def test_migracion_sqlite_a_appdb(app_db, tmp_path):
     movs = prestamos._historial_migrado("1012")
     assert len(movs) == 2
     assert any(m.es_cuadre for m in movs)
-    assert any(m.valor == -50.0 for m in movs)  # egreso -> negativo
+    assert any(m.valor == 50.0 and m.tipo == "pago" for m in movs)     # egreso migrado
+    assert any(m.valor == 100.0 and m.tipo == "desembolso" for m in movs)  # ingreso migrado
 
     # idempotente: correr de nuevo no duplica
     assert migrar(str(ruta)) == 0

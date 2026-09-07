@@ -52,10 +52,12 @@ class SaldoPrestamo:
 @dataclass
 class MovimientoPrestamo:
     fecha: str
-    valor: float
+    valor: float                 # valor crudo de la tabla (normalmente > 0)
     concepto: str
     numero: str
-    origen: str  # RPINGDES | RPHISTOR | MIGRADO
+    origen: str                  # RPINGDES | RPHISTOR | MIGRADO
+    tipo: str = "pago"           # pendiente (RPINGDES) | pago (RPHISTOR/egreso migrado)
+    #                              | desembolso (ingreso migrado)
     es_cuadre: bool = False
 
 
@@ -144,14 +146,15 @@ def _historial_migrado(codigo: str) -> list[MovimientoPrestamo]:
         ).all()
     out = []
     for f in filas:
-        valor = f.ingreso if f.ingreso else -f.egreso
+        es_desembolso = bool(f.ingreso) and not f.egreso
         out.append(
             MovimientoPrestamo(
                 fecha=f.fecha,
-                valor=round(valor, 2),
+                valor=round(abs(f.ingreso or f.egreso), 2),
                 concepto=f.concepto or "",
                 numero=f"MIG_{f.numero_fila}",
                 origen="MIGRADO",
+                tipo="desembolso" if es_desembolso else "pago",
                 es_cuadre=f.tipo in ("CUADRE", "CRUZE"),
             )
         )
@@ -181,6 +184,7 @@ def _historial_sqlserver(codigo: str) -> list[MovimientoPrestamo]:
                     concepto=(r.get("CONCEPTO") or r.get("OBSERV") or "").strip(),
                     numero=num,
                     origen=origen,
+                    tipo="pendiente" if origen == "RPINGDES" else "pago",
                 )
             )
     return out
@@ -209,13 +213,19 @@ def _historial_supabase(codigo: str) -> list[MovimientoPrestamo]:
                     concepto=(row.get("concepto") or row.get("observ") or "").strip(),
                     numero=num,
                     origen=origen,
+                    tipo="pendiente" if origen == "RPINGDES" else "pago",
                 )
             )
     return out
 
 
 def saldo_total(codigo: str, fuente: str) -> float:
-    return round(sum(m.valor for m in historial_empleado(codigo, fuente)), 2)
+    """Saldo pendiente de préstamos del empleado = suma de lo que sigue en
+    RPINGDES (`tipo == "pendiente"`), igual que `obtener_datos_rpingdes_combinados`
+    del `.pyw`. Los movimientos de RPHISTOR son pagos ya hechos, NO suman al saldo."""
+    return round(
+        sum(m.valor for m in historial_empleado(codigo, fuente) if m.tipo == "pendiente"), 2
+    )
 
 
 @dataclass
@@ -223,9 +233,10 @@ class ResumenPrestamo:
     numero: str
     desde: str
     hasta: str
-    prestado: float       # suma de ingresos (VALOR > 0)
-    abonado: float        # suma de |egresos| (VALOR < 0)
-    saldo: float
+    prestado: float       # monto desembolsado (real si viene del histórico migrado;
+    #                       si no, sintético = abonado + saldo, como el `.pyw`)
+    abonado: float        # suma de pagos (movimientos de RPHISTOR / egresos migrados)
+    saldo: float          # pendiente = suma de RPINGDES de ese número
     cuotas: int
     cuota_promedio: float = 0.0
     meses_brecha: int = 0          # meses sin descuento entre la primera y última cuota
@@ -247,9 +258,10 @@ def _meses_brecha(claves: list[tuple[int, int]]) -> int:
 
 
 def agrupar_por_numero(movs: list[MovimientoPrestamo]) -> list[ResumenPrestamo]:
-    """Agrupa los movimientos por NUMERO de préstamo (como `agrupar_prestamos_por_numero`
-    + el resumen detallado de `_preparar_contexto_ia` del legado): total prestado,
-    abonado, saldo, nº de cuotas, cuota promedio, brechas y estimación para cancelar.
+    """Agrupa los movimientos por NUMERO de préstamo con el modelo del `.pyw`:
+    `saldo` = suma de RPINGDES (`tipo == "pendiente"`); `abonado` = suma de pagos
+    (RPHISTOR / egresos migrados); `prestado` = desembolso real si lo hay, si no
+    el sintético `abonado + saldo`.
     """
     import math
 
@@ -258,14 +270,15 @@ def agrupar_por_numero(movs: list[MovimientoPrestamo]) -> list[ResumenPrestamo]:
         grupos.setdefault(m.numero or "(sin nº)", []).append(m)
     out: list[ResumenPrestamo] = []
     for num, ms in grupos.items():
-        fechas = sorted(x.fecha for x in ms if x.fecha)
-        prestado = round(sum(x.valor for x in ms if x.valor > 0), 2)
-        abonado = round(sum(-x.valor for x in ms if x.valor < 0), 2)
-        saldo = round(prestado - abonado, 2)
-        egresos = [x for x in ms if x.valor < 0]
-        n_cuotas = len(egresos)
+        pagos = [x for x in ms if x.tipo == "pago"]
+        fechas = sorted(x.fecha for x in pagos if x.fecha) or sorted(x.fecha for x in ms if x.fecha)
+        abonado = round(sum(x.valor for x in pagos), 2)
+        saldo = round(sum(x.valor for x in ms if x.tipo == "pendiente"), 2)
+        desembolso = round(sum(x.valor for x in ms if x.tipo == "desembolso"), 2)
+        prestado = desembolso if desembolso else round(abonado + saldo, 2)
+        n_cuotas = len(pagos)
         cuota_prom = round(abonado / n_cuotas, 2) if n_cuotas else 0.0
-        claves = sorted({(int(x.fecha[:4]), int(x.fecha[5:7])) for x in egresos if len(x.fecha) >= 7})
+        claves = sorted({(int(x.fecha[:4]), int(x.fecha[5:7])) for x in pagos if len(x.fecha) >= 7})
         brecha = _meses_brecha(claves)
         cancelado = saldo <= 0.01
         meses_rest = math.ceil(saldo / cuota_prom) if (cuota_prom > 0 and not cancelado) else 0
@@ -299,7 +312,7 @@ def movimientos_de_numero(movs: list[MovimientoPrestamo], numero: str) -> list[M
 def filtrar_movimientos(
     movs: list[dict],
     *,
-    tipo: str = "",       # "" | "ingreso" | "egreso"
+    tipo: str = "",       # "" | "pago" | "pendiente" | "desembolso"
     origen: str = "",     # "" | RPINGDES | RPHISTOR | MIGRADO
     numero: str = "",     # substring del N°
     texto: str = "",      # substring del concepto/observación
@@ -313,12 +326,12 @@ def filtrar_movimientos(
     num = numero.strip()
     txt = texto.strip().lower()
     orig = origen.strip().upper()
+    # compatibilidad: "ingreso"/"egreso" del filtro viejo
+    tp = {"ingreso": "pendiente", "egreso": "pago"}.get(tipo.strip(), tipo.strip())
 
     def _ok(m: dict) -> bool:
         v = a_float(m.get("valor"))
-        if tipo == "ingreso" and v <= 0:
-            return False
-        if tipo == "egreso" and v >= 0:
+        if tp and str(m.get("tipo", "pago")) != tp:
             return False
         if orig and str(m.get("origen", "")).upper() != orig:
             return False

@@ -17,7 +17,7 @@ def _tabla_movimientos() -> rx.Component:
                 rx.table.row(
                     *[
                         rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
-                        for c in ("Fecha", "Concepto", "Valor", "Origen", "N°", "Cuadre")
+                        for c in ("Fecha", "Concepto", "Valor", "Tipo", "Origen", "N°", "Cuadre")
                     ]
                 )
             ),
@@ -28,6 +28,14 @@ def _tabla_movimientos() -> rx.Component:
                         rx.table.cell(m["fecha"]),
                         rx.table.cell(m["concepto"]),
                         rx.table.cell(m["valor"].to_string()),
+                        rx.table.cell(
+                            rx.match(
+                                m["tipo"],
+                                ("pendiente", "Pendiente"),
+                                ("desembolso", "Desembolso"),
+                                "Pago",
+                            )
+                        ),
                         rx.table.cell(m["origen"]),
                         rx.table.cell(m["numero"]),
                         rx.table.cell(rx.cond(m["es_cuadre"], "SÍ", "")),
@@ -48,7 +56,7 @@ def _tabla_resumen() -> rx.Component:
                 rx.table.row(
                     *[
                         rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
-                        for c in ("N°", "Desde", "Hasta", "Prestado", "Abonado", "Saldo", "Cuotas", "Estado", "")
+                        for c in ("N°", "Desde", "Hasta", "Prestado", "Pagado", "Saldo", "Cuotas", "Estado", "")
                     ]
                 )
             ),
@@ -98,8 +106,8 @@ def _filtros() -> rx.Component:
     return rx.hstack(
         rx.el.select(
             rx.el.option("Todo tipo", value=""),
-            rx.el.option("Solo ingresos", value="ingreso"),
-            rx.el.option("Solo egresos", value="egreso"),
+            rx.el.option("Solo pagos", value="pago"),
+            rx.el.option("Solo pendiente (RPINGDES)", value="pendiente"),
             value=S.filtro_tipo, on_change=lambda v: S.set_filtro("tipo", v), style=_SEL_STYLE,
         ),
         rx.el.select(
@@ -144,7 +152,7 @@ def _detalle_prestamo() -> rx.Component:
                             rx.table.row(
                                 *[
                                     rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
-                                    for c in ("Fecha", "Concepto", "Valor", "Origen", "Cuadre")
+                                    for c in ("Fecha", "Concepto", "Valor", "Tipo", "Origen", "Cuadre")
                                 ]
                             )
                         ),
@@ -155,6 +163,14 @@ def _detalle_prestamo() -> rx.Component:
                                     rx.table.cell(m["fecha"]),
                                     rx.table.cell(m["concepto"]),
                                     rx.table.cell(m["valor"].to_string()),
+                                    rx.table.cell(
+                                        rx.match(
+                                            m["tipo"],
+                                            ("pendiente", "Pendiente"),
+                                            ("desembolso", "Desembolso"),
+                                            "Pago",
+                                        )
+                                    ),
                                     rx.table.cell(m["origen"]),
                                     rx.table.cell(rx.cond(m["es_cuadre"], "SÍ", "")),
                                 ),
@@ -198,7 +214,7 @@ def historial() -> rx.Component:
                                 f"{PrestamosState.empleado_sel} — {PrestamosState.nombre_sel}", size="4"
                             ),
                             rx.badge(
-                                "Saldo: " + PrestamosState.saldo_empleado.to_string(),
+                                "Saldo pendiente: " + PrestamosState.saldo_empleado.to_string(),
                                 color_scheme="blue",
                                 size="2",
                             ),
@@ -209,7 +225,7 @@ def historial() -> rx.Component:
                         _filtros(),
                         rx.hstack(
                             rx.badge("Mostrando " + PrestamosState.conteo_filtrado),
-                            rx.badge("Total: " + PrestamosState.total_filtrado.to_string(), color_scheme="blue"),
+                            rx.badge("Pagos visibles: " + PrestamosState.pagado_filtrado.to_string()),
                             rx.button("Exportar a Excel", on_click=PrestamosState.exportar_empleado, variant="soft", size="1"),
                             rx.cond(
                                 PrestamosState.exportar_path != "",

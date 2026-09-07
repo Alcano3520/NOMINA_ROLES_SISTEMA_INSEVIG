@@ -84,7 +84,12 @@ class PrestamosState(rx.State):
 
     @rx.var
     def total_filtrado(self) -> float:
+        """Suma de los movimientos visibles (informativa)."""
         return round(sum(m["valor"] for m in self.movimientos_filtrados), 2)
+
+    @rx.var
+    def pagado_filtrado(self) -> float:
+        return round(sum(m["valor"] for m in self.movimientos_filtrados if m["tipo"] == "pago"), 2)
 
     @rx.var
     def conteo_filtrado(self) -> str:
@@ -132,7 +137,9 @@ class PrestamosState(rx.State):
         movs = await asyncio.to_thread(prestamos.historial_empleado, empleado, fuente)
         self.movimientos = [asdict(m) for m in movs]
         self.resumen = [asdict(g) for g in prestamos.agrupar_por_numero(movs)]
-        self.saldo_empleado = round(sum(m["valor"] for m in self.movimientos), 2)
+        self.saldo_empleado = round(
+            sum(m["valor"] for m in self.movimientos if m["tipo"] == "pendiente"), 2
+        )
         self.cargando_hist = False
 
     # detalle de un préstamo (doble clic en la fila del resumen)

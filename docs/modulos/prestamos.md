@@ -53,38 +53,34 @@ otra vez no duplica (salta las filas ya presentes por
 empleado+fecha+numero_fila+ingreso+egreso); una fila nueva en el SQLite sí entra.
 `--reemplazar` borra lo migrado antes de cargar.
 
-## ⚠️ Divergencia de modelo con el legado (hallada 2026-09-06, sin resolver)
+## Modelo de préstamo (alineado con el `.pyw`, 2026-09-06)
 
-La validación en el NAS (`scripts/validar_datos`, 10/25 empleados con saldo de
-préstamos distinto entre SQL Server y Supabase, **siempre SQL > Supabase**)
-destapó dos cosas:
+`MovimientoPrestamo.tipo` ∈:
+- `pendiente` — filas de **RPINGDES** (`rpingdesres`): lo que queda por descontar.
+- `pago` — filas de **RPHISTOR** (`rphistor_temp`) CLASE 205 y egresos del
+  histórico migrado: cuotas ya descontadas.
+- `desembolso` — ingresos del histórico migrado: monto realmente prestado.
 
-1. **[corregido, commit siguiente]** `_NUMEROS_MIGRADOS` no se excluía en la
-   ruta SQL Server: `NUMERO` es float en las tablas → `str()` daba `'35923.0'`
-   → nunca casaba el frozenset (que tiene `'35923'`). El legado lo hace en SQL
-   (`NUMERO NOT IN (...)`, conversión implícita). Fix: `_num_norm()`.
+Cálculos (`agrupar_por_numero` / `saldo_total`):
+- **saldo de un préstamo = Σ `pendiente`** (RPINGDES), igual que
+  `obtener_datos_rpingdes_combinados` del legado. Los pagos de RPHISTOR **no**
+  suman al saldo.
+- `abonado` = Σ `pago`. `prestado` = `desembolso` real si existe, si no el
+  sintético `abonado + saldo`. `cancelado` = `saldo <= 0.01`.
+- `saldo_total(empleado)` = Σ saldos = Σ RPINGDES del empleado — coincide con
+  `prestamos.saldos()` (el Excel masivo).
 
-2. **[SIN resolver — necesita rework deliberado]** el modelo de préstamo de
-   `core/repos/prestamos` NO coincide con el `.pyw`:
-   - Legado: los movimientos de **RPHISTOR** CLASE 205 son **egresos (pagos)**;
-     el **saldo de un préstamo = suma de `RPINGDES.VALOR` de ese `NUMERO`**
-     (`obtener_datos_rpingdes_combinados` → `saldos_por_numero`). El "ingreso"
-     (monto prestado) es **sintético**: `total_pagado (RPHISTOR) + saldo_pendiente
-     (RPINGDES)`.
-   - `core/`: `historial_empleado` mete RPINGDES + RPHISTOR como movimientos con
-     `valor` positivo, y `agrupar_por_numero` los cuenta todos como "prestado".
-     `saldo_total` suma todo → número sin sentido.
-   - `prestamos.saldos()` (masivo, `SUM(RPINGDES.VALOR)`) **sí** coincide con el
-     legado; el problema es la vista por empleado (`historial_empleado`,
-     `agrupar_por_numero`, `saldo_total`, `_historial_supabase`, y la página
-     `/prestamos/historial`).
-   - Rehacer `core/repos/prestamos` para el modelo del legado: RPHISTOR/SQLite =
-     egresos; RPINGDES = saldo pendiente por número; ingreso sintético. Tocar
-     también `core/excel/prestamos_builders.historial_xlsx` y el state/página.
+Historia de cómo se llegó aquí: la validación en el NAS (`scripts/validar_datos`)
+mostró 10/25 empleados con saldo distinto SQL vs Supabase, siempre SQL > SUP.
+Dos causas: (1) `_NUMEROS_MIGRADOS` no se excluía en SQL Server (`NUMERO` es
+float → `str()` daba `'35923.0'`; fix `_num_norm()`); (2) el modelo sumaba
+RPHISTOR como "prestado" — rehecho aquí.
 
 ## Pendiente
-- **Rework del modelo de préstamo (punto 2 de arriba).**
-- Dedupe RPINGDES vs RPHISTOR cuando el mismo `NUMERO` aparece en ambas (visto
-  en el empleado 9091: NUMERO 46141 en RPINGDES 24/06 y RPHISTOR 30/06).
+- Dedupe RPINGDES vs RPHISTOR si el mismo `NUMERO` aparece en ambas con el mismo
+  pago (visto en el empleado 9091: NUMERO 46141 en RPINGDES 24/06 y RPHISTOR
+  30/06 — ahí son fechas distintas, parecen movimientos distintos; confirmar).
+- Ingreso sintético con su `_mejor_observacion_prestamo` y la distinción
+  HISTORICO/SISTEMA del `.pyw` (hoy `prestado` es el sintético simple).
 - Ejecutar la migración del histórico en el NAS con el `.db` real.
-- Validar contra el `.pyw` para una muestra tras el rework.
+- Re-validar contra el `.pyw` para una muestra.

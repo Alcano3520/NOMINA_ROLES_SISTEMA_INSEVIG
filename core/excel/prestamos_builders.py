@@ -50,22 +50,25 @@ def historial_xlsx(empleado: str, nombre: str, movimientos: list) -> bytes:
     ws.set_column(1, 1, 34)
     ws.set_column(2, 2, 13)
     ws.set_column(3, 5, 11)
-    ws.merge_range(0, 0, 0, 5, "INSEVIG — HISTORIAL DE PRÉSTAMOS", banner)
-    ws.merge_range(1, 0, 1, 5, f"{empleado} — {nombre}   ·   Generado: {generado}", sub)
+    ws.merge_range(0, 0, 0, 6, "INSEVIG — HISTORIAL DE PRÉSTAMOS", banner)
+    ws.merge_range(1, 0, 1, 6, f"{empleado} — {nombre}   ·   Generado: {generado}", sub)
     ws.set_row(0, 24)
-    ws.write_row(3, 0, ["FECHA", "CONCEPTO", "VALOR", "ORIGEN", "NUMERO", "CUADRE"], hdr)
+    ws.set_column(6, 6, 11)
+    ws.write_row(3, 0, ["FECHA", "CONCEPTO", "VALOR", "TIPO", "ORIGEN", "NUMERO", "CUADRE"], hdr)
     fila = 4
+    _tipo_txt = {"pendiente": "Pendiente", "pago": "Pago", "desembolso": "Desembolso"}
     for m in movimientos:
         ws.write(fila, 0, m.fecha, cell)
         ws.write(fila, 1, m.concepto, cell)
         ws.write_number(fila, 2, m.valor, money)
-        ws.write(fila, 3, m.origen, cell)
-        ws.write(fila, 4, m.numero, cell)
-        ws.write(fila, 5, "SÍ" if m.es_cuadre else "", cell)
+        ws.write(fila, 3, _tipo_txt.get(getattr(m, "tipo", "pago"), m.tipo), cell)
+        ws.write(fila, 4, m.origen, cell)
+        ws.write(fila, 5, m.numero, cell)
+        ws.write(fila, 6, "SÍ" if m.es_cuadre else "", cell)
         fila += 1
-    total = round(sum(m.valor for m in movimientos), 2)
-    ws.write(fila, 1, "TOTAL", total_lbl)
-    ws.write_number(fila, 2, total, total_num)
+    saldo = round(sum(m.valor for m in movimientos if getattr(m, "tipo", "") == "pendiente"), 2)
+    ws.write(fila, 1, "SALDO PENDIENTE", total_lbl)
+    ws.write_number(fila, 2, saldo, total_num)
     ws.freeze_panes(4, 0)
 
     from core.repos.prestamos import agrupar_por_numero
