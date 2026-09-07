@@ -241,6 +241,67 @@ def _firmas(data: dict, usable_w: float) -> Table:
     return t
 
 
+def _tabla_anticipo(data: dict, usable_w: float) -> Table:
+    filas = [
+        [_p("Empleado:", bold=True), _p(data.get("nombre"))],
+        [_p("Cédula:", bold=True), _p(data.get("cedula"))],
+        [_p("Cargo:", bold=True), _p(data.get("cargo"))],
+        [_p("Período:", bold=True), _p(data.get("periodo"))],
+        [_p("Concepto:", bold=True), _p("ANTICIPO A CUENTA DE VACACIONES")],
+        [_p("Valor:", bold=True), _p(f"${float(data.get('valor', 0)):,.2f}")],
+        [_p("En letras:", bold=True), _p(data.get("en_letras"))],
+    ]
+    t = Table(filas, colWidths=[usable_w * 0.22, usable_w * 0.78])
+    t.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.8, _BLACK),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.HexColor("#cccccc")),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.whitesmoke, colors.white]),
+        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return t
+
+
+def _firmas_anticipo(usable_w: float) -> Table:
+    def celda(titulo: str) -> list:
+        return [_p("_______________________________", align=TA_CENTER), _p(f"<b>{titulo}</b>", align=TA_CENTER)]
+
+    filas = [[
+        Table([[x] for x in celda("RECIBÍ CONFORME")], colWidths=[usable_w * 0.4]),
+        Table([[x] for x in celda("AUTORIZADO POR")], colWidths=[usable_w * 0.4]),
+    ]]
+    t = Table(filas, colWidths=[usable_w * 0.4, usable_w * 0.4])
+    t.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("TOPPADDING", (0, 0), (-1, -1), 14)]))
+    return t
+
+
+def anticipo_pdf(data: dict) -> bytes:
+    """Comprobante simple de anticipo de vacaciones. Porta
+    `app.py::_generar_pdf_anticipo`/`_dialogo_anticipo` — sin QR ni desglose
+    mensual, es un recibo puntual, no un registro persistido.
+
+    `data`: `nombre`, `cedula`, `cargo`, `periodo`, `valor`, `en_letras`
+    (`core.repos.vacaciones.valor_en_letras(valor)`), `fecha`, `referencia`.
+    """
+    margin = 2 * 10 * mm
+    usable_w = A4[0] - margin
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=margin / 2, rightMargin=margin / 2,
+                            topMargin=margin / 2, bottomMargin=margin / 2)
+    story: list = [
+        _p("INSEVIG S.A.", 14, bold=True, align=TA_CENTER),
+        _p("COMPROBANTE DE ANTICIPO DE VACACIONES", 14, bold=True, align=TA_CENTER),
+        Spacer(1, 4 * mm),
+        _p(f"Referencia: {data.get('referencia', '')}   |   Fecha: {data.get('fecha', '')}", 10, align=TA_CENTER),
+        Spacer(1, 6 * mm),
+        _tabla_anticipo(data, usable_w),
+        Spacer(1, 15 * mm),
+        _firmas_anticipo(usable_w),
+    ]
+    doc.build(story)
+    return buf.getvalue()
+
+
 def comprobante_pdf(data: dict, qr: str) -> bytes:
     """`data` de `vacaciones.datos_comprobante`, `qr` de `vacaciones.qr_texto`."""
     es_pago = str(data.get("tipo") or "").lower().startswith("pag")

@@ -34,6 +34,14 @@ _FORM_PAGO_VACIO = {
 }
 
 
+def _fecha_es(iso: str) -> str:
+    """'2026-09-06' -> '06/09/2026' (formato del comprobante de anticipo). Vacío si no parsea."""
+    try:
+        return dt.datetime.strptime(iso[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        return iso or ""
+
+
 class VacacionesState(rx.State):
     tab: str = "dashboard"
 
@@ -432,6 +440,61 @@ class VacacionesState(rx.State):
             await self._cargar_empleado()
         except Exception as e:  # noqa: BLE001
             self.msg = f"Error: {e}"
+
+    # ── Comprobante de anticipo ────────────────────────────────────────────
+    # Porta app.py::_dialogo_anticipo/_generar_pdf_anticipo — recibo puntual
+    # (no persiste nada en vac_registros), para cuando el cálculo trae un
+    # anticipo > 0 y financiero necesita el comprobante antes de registrar el
+    # pago. "Previsualizar" y "Generar" del .pyw arman el mismo PDF; acá se
+    # colapsan en un solo botón de descarga.
+    mostrar_dialogo_anticipo: bool = False
+    anticipo_fecha: str = ""
+
+    @rx.event
+    def abrir_dialogo_anticipo(self):
+        anticipo = float(self.form_pago.get("anticipo") or 0)
+        if anticipo <= 0:
+            self.msg = "No hay anticipo registrado para generar el comprobante."
+            return
+        self.anticipo_fecha = dt.date.today().strftime("%Y-%m-%d")
+        self.mostrar_dialogo_anticipo = True
+
+    @rx.event
+    def set_anticipo_fecha(self, v: str):
+        self.anticipo_fecha = v
+
+    @rx.event
+    def cerrar_dialogo_anticipo(self):
+        self.mostrar_dialogo_anticipo = False
+
+    @rx.event
+    async def descargar_comprobante_anticipo(self):
+        anticipo = float(self.form_pago.get("anticipo") or 0)
+        if anticipo <= 0:
+            self.msg = "No hay anticipo registrado para generar el comprobante."
+            return
+        emp = self.empleado
+        periodo = self.calc_periodo
+        fecha = self.anticipo_fecha
+
+        def _fn() -> bytes:
+            from core.pdf.vacaciones_comprobante import anticipo_pdf
+
+            data = {
+                "nombre": f"{emp.get('apellidos', '')} {emp.get('nombres', '')}".strip(),
+                "cedula": emp.get("cedula", ""), "cargo": emp.get("cargo", ""),
+                "periodo": periodo, "valor": anticipo, "en_letras": V.valor_en_letras(anticipo),
+                "fecha": _fecha_es(fecha), "referencia": "PREV",
+            }
+            return anticipo_pdf(data)
+
+        try:
+            data = await asyncio.to_thread(_fn)
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"No se pudo generar el comprobante: {e}"
+            return
+        self.mostrar_dialogo_anticipo = False
+        return rx.download(data=data, filename=f"comprobante_anticipo_{emp.get('cedula','')}.pdf")
 
     # ── Cálculo de pago (pestaña "Cálculo") ──────────────────────────────
     calc_periodo: str = ""

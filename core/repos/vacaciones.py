@@ -82,6 +82,64 @@ _PERMITIDOS_UPDATE = {
 }
 
 
+# ─── Número a letras (comprobante de anticipo) ───────────────────────────────
+# Porta app.py::_numero_a_letras. Conversor propio para no depender de
+# 'num2words' (no instalado ni empaquetado en el .exe — dependerlo dejaba el
+# comprobante de anticipo sin generarse en toda máquina de producción, bug
+# real corregido 2026-07-21 en el .pyw).
+
+_UNIDADES = ("", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE")
+_ESPECIALES_10_19 = ("DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISEIS",
+                     "DIECISIETE", "DIECIOCHO", "DIECINUEVE")
+_DECENAS = ("", "", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA",
+            "SETENTA", "OCHENTA", "NOVENTA")
+_CENTENAS = ("", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS", "QUINIENTOS",
+             "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS")
+
+
+def numero_a_letras(n: int) -> str:
+    """Entero (0-999999) a letras en español. Porta `app.py::_numero_a_letras`."""
+    n = int(n)
+    if n == 0:
+        return "CERO"
+    if n < 0:
+        return f"MENOS {numero_a_letras(-n)}"
+
+    def _menor_1000(x: int) -> str:
+        if x == 0:
+            return ""
+        if x == 100:
+            return "CIEN"
+        partes = []
+        if x >= 100:
+            partes.append(_CENTENAS[x // 100])
+            x %= 100
+        if x >= 20:
+            partes.append(_DECENAS[x // 10])
+            if x % 10:
+                partes.append("Y " + _UNIDADES[x % 10])
+        elif x >= 10:
+            partes.append(_ESPECIALES_10_19[x - 10])
+        elif x > 0:
+            partes.append(_UNIDADES[x])
+        return " ".join(p for p in partes if p)
+
+    if n < 1000:
+        return _menor_1000(n)
+
+    miles, resto = divmod(n, 1000)
+    txt_miles = "MIL" if miles == 1 else f"{_menor_1000(miles)} MIL"
+    return f"{txt_miles} {_menor_1000(resto)}".strip()
+
+
+def valor_en_letras(valor: float) -> str:
+    """'123.45' -> 'CIENTO VEINTITRÉS CON 45/100 DÓLARES'. Porta el bloque
+    homónimo de `_generar_pdf_anticipo`/`_dialogo_anticipo`."""
+    entero = int(valor)
+    centavos = round((valor - entero) * 100)
+    return f"{numero_a_letras(entero).upper()} CON {centavos:02d}/100 DÓLARES"
+
+
 # ─── Períodos (Art. 69/71/76 CT) — porta calculos.py tal cual ───────────────
 
 

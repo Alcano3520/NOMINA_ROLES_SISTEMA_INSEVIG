@@ -459,6 +459,32 @@ def _tab_pagadas() -> rx.Component:
 # ── Cálculo ──────────────────────────────────────────────────────────────
 
 
+def _dialog_anticipo() -> rx.Component:
+    """Porta app.py::_dialogo_anticipo (recibo puntual, no persiste nada)."""
+    return rx.alert_dialog.root(
+        rx.alert_dialog.content(
+            rx.alert_dialog.title("Comprobante de Anticipo"),
+            rx.alert_dialog.description(
+                rx.vstack(
+                    rx.text(f"${_S.form_pago['anticipo']}", size="6", weight="bold", color_scheme="green"),
+                    rx.vstack(
+                        rx.text("Fecha del comprobante", size="1", weight="bold"),
+                        rx.input(value=_S.anticipo_fecha, type="date", on_change=_S.set_anticipo_fecha),
+                        spacing="1", width="100%",
+                    ),
+                    spacing="3", width="100%",
+                ),
+            ),
+            rx.hstack(
+                rx.button("Cancelar", on_click=_S.cerrar_dialogo_anticipo, variant="soft"),
+                rx.button("Generar comprobante", on_click=_S.descargar_comprobante_anticipo, color_scheme="green"),
+                spacing="3", justify="end", margin_top="1rem",
+            ),
+        ),
+        open=_S.mostrar_dialogo_anticipo,
+    )
+
+
 def _tab_calculo() -> rx.Component:
     return rx.vstack(
         rx.hstack(
@@ -507,11 +533,19 @@ def _tab_calculo() -> rx.Component:
                                       on_change=lambda v: _S.set_campo_pago("observaciones", v))),
                     columns=rx.breakpoints(initial="1", sm="2", lg="3"), spacing="3", width="100%",
                 ),
-                primary_button("Crear vacación pagada", on_click=_S.registrar_pagada),
+                rx.hstack(
+                    primary_button("Crear vacación pagada", on_click=_S.registrar_pagada),
+                    rx.cond(
+                        _S.form_pago["anticipo"].to(float) > 0,
+                        rx.button("Comprobante de anticipo", on_click=_S.abrir_dialogo_anticipo, variant="soft"),
+                    ),
+                    spacing="2",
+                ),
                 spacing="3", width="100%",
             ),
             width="100%",
         ),
+        _dialog_anticipo(),
         spacing="3", width="100%",
     )
 
