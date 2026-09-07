@@ -16,7 +16,11 @@ Sale con código ≠ 0 si alguna CLASE con dinero se pierde del total. No escrib
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
+
+with contextlib.suppress(Exception):  # consola de Windows (cp1252) no imprime Σ/→
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 from core.concepts import (
     CAMPOS_EGRESO,

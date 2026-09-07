@@ -20,7 +20,11 @@ Sale con código ≠ 0 solo si hay DIF o ERROR reales. No escribe nada.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
+
+with contextlib.suppress(Exception):  # consola de Windows (cp1252) no imprime · → huérfanos
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 from core.datos.service import datos_empleado
 from core.repos import prestamos
