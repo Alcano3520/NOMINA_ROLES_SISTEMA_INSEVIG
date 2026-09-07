@@ -52,12 +52,13 @@ class LiquidacionesState(rx.State):
     ind_buscando: bool = False
     ind_msg: str = ""
     # Casillas del `.pyw` ya conectadas al motor de cálculo (las otras 3 —
-    # desahucio sobre ingresos reales, valores reales del mes en curso,
-    # incluir/excluir sueldo del mes de salida — quedan pendientes, ver
-    # docs/modulos/liquidaciones.md).
+    # "usar valores reales del mes en curso" sigue pendiente: el motor no porta
+    # esa fórmula alternativa todavía — ver docs/modulos/liquidaciones.md).
     ind_incluir_dec13_ant: bool = False
     ind_incluir_dec14_ant: bool = False
     ind_mostrar_insumos: bool = False
+    ind_incluir_sueldo: bool = True
+    ind_desahucio_ingresos_reales: bool = False
     ind_conceptos: list[dict] = []  # vista previa: concepto/tipo/valor
     ind_totales: dict[str, float] = {}
     _ind_liq: repo.Liquidacion | None = None
@@ -107,6 +108,14 @@ class LiquidacionesState(rx.State):
     @rx.event
     def set_ind_mostrar_insumos(self, v: bool):
         self.ind_mostrar_insumos = v
+
+    @rx.event
+    def set_ind_incluir_sueldo(self, v: bool):
+        self.ind_incluir_sueldo = v
+
+    @rx.event
+    def set_ind_desahucio_ingresos_reales(self, v: bool):
+        self.ind_desahucio_ingresos_reales = v
 
     @rx.event
     async def cargar_pantalla(self):
@@ -169,11 +178,14 @@ class LiquidacionesState(rx.State):
         cedula, fecha, motivo = self.ind_emp["cedula"], self.ind_fecha, self.ind_motivo
         dec13, dec14 = self.ind_incluir_dec13_ant, self.ind_incluir_dec14_ant
         fecha_ing = self.ind_fecha_ingreso.strip()
+        incl_sueldo = self.ind_incluir_sueldo
+        des_reales = self.ind_desahucio_ingresos_reales
 
         def _run():
             return repo.procesar_empleado(
                 cedula, fecha, motivo, fuente, cfg, fecha_ing,
                 incluir_dec13_anterior=dec13, incluir_dec14_anterior=dec14,
+                incluir_sueldo=incl_sueldo, usar_ingresos_reales_desahucio=des_reales,
             )
 
         liq = await asyncio.to_thread(_run)

@@ -228,6 +228,16 @@ def _panel_individual() -> rx.Component:
                 "Mostrar insumos del cálculo (períodos y sumatorias intermedias)",
                 _S.ind_mostrar_insumos, _S.set_ind_mostrar_insumos,
             ),
+            _checkbox_ind(
+                "Incluir el sueldo del mes de salida (rol regular) — desmarcar si ya se pagó "
+                "aparte en nómina",
+                _S.ind_incluir_sueldo, _S.set_ind_incluir_sueldo,
+            ),
+            _checkbox_ind(
+                "Calcular el desahucio sobre los ingresos reales del período (no sobre el "
+                "sueldo básico)",
+                _S.ind_desahucio_ingresos_reales, _S.set_ind_desahucio_ingresos_reales,
+            ),
             rx.hstack(
                 primary_button("Calcular / Generar Liquidación", on_click=_S.calcular_individual),
                 rx.button(rx.icon("file-text", size=14), "PDF", on_click=_S.generar_pdf_individual,

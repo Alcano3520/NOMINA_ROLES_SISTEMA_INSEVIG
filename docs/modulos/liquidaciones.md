@@ -147,13 +147,14 @@ le faltaba casi toda la estructura real. Añadido, en la misma pantalla:
   que el modo Masivo).
 - Modo Masivo: sin cambios funcionales, solo reordenado bajo el nuevo selector.
 
-**Pendiente de esa misma pantalla** (2026-09-06): de las 6 casillas del
-legado, el motor (`procesar_empleado`) ya expone 2 nuevas -- falta cablearlas
-a la UI de `/liquidaciones`:
-- `incluir_sueldo` (default `True`): "incluir/excluir el sueldo del mes de
-  salida" -- ✅ motor listo.
-- `usar_ingresos_reales_desahucio` (default `False`): "calcular desahucio
-  sobre ingresos reales" -- ✅ motor listo.
+**Casillas del modo Individual** (2026-09-06): 5 de 6 conectadas.
+- `incluir_dec13_anterior` / `incluir_dec14_anterior` — ✅ (ocultan la fila si
+  se desmarcan, paridad exacta con el legado).
+- `mostrar_insumos` — ✅.
+- `incluir_sueldo` (default `True`, "incluir/excluir el sueldo del mes de
+  salida") — ✅ cableada.
+- `usar_ingresos_reales_desahucio` (default `False`, "desahucio sobre
+  ingresos reales") — ✅ cableada.
 - `usar_valores_reales_mes_actual` ("usar valores YA cargados en RPINGDES
   para el mes en curso"): ⛔ el motor **todavía no tiene** la alternativa que
   este flag debería togglear -- el cálculo de sobretiempos del mes en curso
