@@ -104,3 +104,23 @@ def test_marcar_aplicados_lista_vacia_no_llama(monkeypatch):
     monkeypatch.setattr(dp.supabase_client, "get_client", lambda: cli)
     dp.marcar_aplicados([], usuario="u")
     assert cli.log == []
+
+
+def test_state_helper_marca_los_ids_de_la_liquidacion(monkeypatch):
+    from core.repos.liquidaciones import Liquidacion
+    from insevig_web.states import liquidaciones_state as st
+
+    llamado: list = []
+    monkeypatch.setattr(
+        "core.repos.descuentos_pendientes.marcar_aplicados",
+        lambda ids, *, usuario: llamado.append((list(ids), usuario)),
+    )
+    liq = Liquidacion("1", "X", "0912345678", "", "", "", 0.0, "", "", "", 0)
+    liq.descuentos_aplicados = ["d1", "d2"]
+    st._marcar_descuentos_aplicados(liq, "ana")
+    assert llamado == [(["d1", "d2"], "ana")]
+
+    # sin descuentos -> no llama
+    llamado.clear()
+    st._marcar_descuentos_aplicados(Liquidacion("1", "X", "c", "", "", "", 0.0, "", "", "", 0), "ana")
+    assert llamado == []

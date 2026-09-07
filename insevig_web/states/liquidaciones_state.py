@@ -16,6 +16,18 @@ from insevig_web.states.datasource_state import DataSourceState
 
 _TERMINALES = {"ok", "error", "cancelado"}
 
+
+def _marcar_descuentos_aplicados(liq: repo.Liquidacion, usuario: str) -> None:
+    """Tras GUARDAR una liquidación, marca 'aplicado' los descuentos pendientes
+    que su cálculo consumió (`liq.descuentos_aplicados`). Nunca en preview."""
+    ids = list(getattr(liq, "descuentos_aplicados", []) or [])
+    if not ids:
+        return
+    with contextlib.suppress(Exception):
+        from core.repos.descuentos_pendientes import marcar_aplicados
+
+        marcar_aplicados(ids, usuario=usuario)
+
 # Paridad con `MOTIVOS_SALIDA` del `.pyw` (combo del modo Individual, editable).
 MOTIVOS_SALIDA = [
     "RENUNCIA VOLUNTARIA", "DESPIDO INTEMPESTIVO", "VISTO BUENO",
@@ -257,6 +269,7 @@ class LiquidacionesState(rx.State):
         ok, resultado = await asyncio.to_thread(_guardar)
         self.ind_msg = "Guardada en el sistema." if ok else f"Error al guardar: {resultado}"
         if ok:
+            await asyncio.to_thread(_marcar_descuentos_aplicados, liq, usuario)
 
             def _run():
                 return repo.resumen_liquidaciones()
@@ -331,6 +344,8 @@ class LiquidacionesState(rx.State):
             )
 
         ok, resultado = await asyncio.to_thread(_guardar)
+        if ok:
+            await asyncio.to_thread(_marcar_descuentos_aplicados, liq, usuario)
         self.fila_msg = {
             **self.fila_msg,
             str(idx): "Guardada en el sistema." if ok else f"Error al guardar: {resultado}",
