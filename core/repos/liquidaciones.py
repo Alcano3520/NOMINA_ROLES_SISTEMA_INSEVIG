@@ -656,6 +656,7 @@ def procesar_empleado(
     incluir_dec14_anterior: bool = False,
     incluir_sueldo: bool = True,
     usar_ingresos_reales_desahucio: bool = False,
+    indemnizacion_manual: float = 0.0,
 ) -> Liquidacion:
     """Procesa un empleado y arma su liquidación.
 
@@ -667,6 +668,12 @@ def procesar_empleado(
     Sueldo del mes de salida..." del modo individual y el 4º campo
     SIPAGO/NOPAGO de una línea en modo lote del `.pyw` (no portado aún del
     lado de `procesar_lote`/`_parse_linea` -- ver docs/modulos/liquidaciones.md).
+
+    `indemnizacion_manual` (default `0.0`): monto de indemnización por
+    despido intempestivo que la persona ingresó a mano -- pasa tal cual a
+    `campos["INDEM_DESPIDO"]` y se suma al total en el mismo lugar donde
+    antes iba el auto-cálculo (ver corrección de más arriba: nunca se
+    calcula solo, es puramente lo que el llamador decida pasar).
 
     `usar_ingresos_reales_desahucio` (default `False`): si `True`, la base
     mensual del desahucio deja de ser el sueldo básico de RPEMPLEA y pasa a
@@ -879,8 +886,10 @@ def procesar_empleado(
     # `indemnizacion_despido` para el detalle de esta corrección (bug real:
     # una versión anterior de este archivo lo calculaba solo, sumando de
     # más sin revisión humana en cualquier liquidación con motivo
-    # DESPIDO/INTEMPESTIVO).
-    indem = 0.0
+    # DESPIDO/INTEMPESTIVO). `indemnizacion_manual` deja que el llamador
+    # (UI del modo Individual) pase el valor que la persona ingresó a mano,
+    # igual que el campo editable del `.pyw`.
+    indem = round(indemnizacion_manual, 2)
 
     # 11. Split de anticipos si días < umbral (base: solo lo que SÍ se paga:
     # vacaciones + décimos ACTUALES + desahucio -- el anterior, si se incluye,

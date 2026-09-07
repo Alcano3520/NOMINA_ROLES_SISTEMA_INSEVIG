@@ -127,6 +127,38 @@ def test_procesar_empleado_nunca_autocalcula_indem_despido(monkeypatch):
     assert con.campos.get("INDEM_DESPIDO", 0.0) == 0.0
 
 
+def test_indemnizacion_manual_se_suma_al_total(monkeypatch):
+    """indemnizacion_manual: lo que la persona ingresa a mano (paridad con
+    el campo editable "Indemnización por Despido" del .pyw) pasa tal cual a
+    campos["INDEM_DESPIDO"] y se refleja en TOTAL_A_RECIBIR -- pedido por
+    el otro chat para poder ingresarlo en el modo Individual de la web
+    antes de guardar."""
+    emp = {
+        "EMPLEADO": "999", "APELLIDOS": "PEREZ", "NOMBRES": "JUAN", "CEDULA": "0920116811",
+        "SUELDO": 800.0, "CARGO": "GUARDIA", "DEPTO": "OPERACIONES", "SECCION": "MATRIZ",
+        "FECHA_ING": "2015-01-01", "FECHA_SAL": "2026-06-01",
+        "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
+    }
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+
+    def _raise():
+        raise RuntimeError("sin conexión")
+    monkeypatch.setattr(lq.supabase_client, "get_client", _raise)
+    monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
+    cfg = lq.ConfigLiquidacion()
+
+    con_sin = lq.procesar_empleado(
+        "0920116811", "2026-06-01", "DESPIDO INTEMPESTIVO", lq.FUENTE_SUPABASE, cfg,
+    )
+    con_con = lq.procesar_empleado(
+        "0920116811", "2026-06-01", "DESPIDO INTEMPESTIVO", lq.FUENTE_SUPABASE, cfg,
+        indemnizacion_manual=500.0,
+    )
+    assert con_sin.campos["INDEM_DESPIDO"] == 0.0
+    assert con_con.campos["INDEM_DESPIDO"] == 500.0
+    assert con_con.campos["TOTAL_A_RECIBIR"] == round(con_sin.campos["TOTAL_A_RECIBIR"] + 500.0, 2)
+
+
 def test_sbu_por_anio_fallback():
     cfg = lq.ConfigLiquidacion()
     assert cfg.sbu(2026) == 482.0
