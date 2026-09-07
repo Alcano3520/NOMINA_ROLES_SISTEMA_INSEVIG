@@ -90,3 +90,18 @@ las reglas intocables en `docs/CONTRATOS.md`.
   para identificadores largos. Detectado con `scripts/validar_datos`.
 - `scripts/validar_datos.py`: compara `core/` SQL Server vs Supabase por
   empleado (join por cédula). Para la validación A1, se corre en el NAS.
+
+### Validación contra datos reales (NAS, sesión paralela) — cerrada
+- `scripts/validar_datos`: consolidado de nómina + saldo de préstamos SQL Server
+  vs Supabase, 25/25 empleados OK tras corregir 3 bugs de `core/`
+  (`_buscar_empleado` cédula-substring; `_NUMEROS_MIGRADOS` no excluía por float;
+  modelo de préstamo por empleado).
+- `scripts/validar_conceptos`: mapa CLASE→concepto completo para 2026-06,
+  2025-12, 2025-06 (nada de dinero fuera de los totales).
+- `scripts/humo_repos`: 18/18 lecturas de `core/repos/*` OK contra SQL Server
+  real (empleado 9091). Cero "Invalid column name".
+- Bug de producción aparte: `empleados.obtener/actualizar/crear` referenciaban
+  columnas `creado_por/fecha_crea/mod_por/fecha_mod` inexistentes en RPEMPLEA
+  (commit fbc1674).
+- Hallazgo de datos: el espejo de Supabase de `rpemplea` tiene empleados
+  huérfanos (sync upsert-only). SQL Server es la única lista confiable.
