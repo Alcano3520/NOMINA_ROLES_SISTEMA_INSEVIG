@@ -175,6 +175,12 @@ def _panel_individual() -> rx.Component:
                     spacing="1", align_items="start",
                 ),
                 rx.vstack(
+                    rx.text("Fecha de ingreso:", size="2", weight="bold"),
+                    rx.input(value=_S.ind_fecha_ingreso, on_change=_S.set_ind_fecha_ingreso,
+                             placeholder="opcional — si difiere del sistema", width="220px"),
+                    spacing="1", align_items="start",
+                ),
+                rx.vstack(
                     rx.text("Motivo de salida:", size="2", weight="bold"),
                     rx.hstack(
                         rx.input(value=_S.ind_motivo, on_change=_S.set_ind_motivo,

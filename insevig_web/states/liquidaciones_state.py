@@ -82,6 +82,12 @@ class LiquidacionesState(rx.State):
     def set_ind_identificador(self, v: str):
         self.ind_identificador = v
 
+    ind_fecha_ingreso: str = ""   # override opcional (si difiere de RPEMPLEA)
+
+    @rx.event
+    def set_ind_fecha_ingreso(self, v: str):
+        self.ind_fecha_ingreso = v
+
     @rx.event
     def set_ind_fecha(self, v: str):
         self.ind_fecha = v
@@ -162,10 +168,11 @@ class LiquidacionesState(rx.State):
         cfg = config_liquidacion(self.region)
         cedula, fecha, motivo = self.ind_emp["cedula"], self.ind_fecha, self.ind_motivo
         dec13, dec14 = self.ind_incluir_dec13_ant, self.ind_incluir_dec14_ant
+        fecha_ing = self.ind_fecha_ingreso.strip()
 
         def _run():
             return repo.procesar_empleado(
-                cedula, fecha, motivo, fuente, cfg,
+                cedula, fecha, motivo, fuente, cfg, fecha_ing,
                 incluir_dec13_anterior=dec13, incluir_dec14_anterior=dec14,
             )
 
