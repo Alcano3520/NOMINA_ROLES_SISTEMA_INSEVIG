@@ -281,6 +281,51 @@ def _tab_secciones(tab: str) -> rx.Component:
     )
 
 
+def _vc_campo(nombre: str) -> rx.Component:
+    return rx.hstack(
+        rx.text(_label(nombre) + ":", size="1", weight="bold", width="12em", flex_shrink="0"),
+        rx.text(_S.edit_campos[nombre].to_string(), size="1"),
+        spacing="2", align="start", width="100%",
+    )
+
+
+def _vista_completa() -> rx.Component:
+    """Ventana read-only con TODOS los campos (menú Acciones → 'Vista Completa' del .pyw)."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Vista completa — " + _S.nombre_editor),
+            rx.scroll_area(
+                rx.vstack(
+                    *[
+                        rx.box(
+                            rx.text(tab.upper(), size="1", weight="bold", color_scheme="blue"),
+                            rx.divider(margin_y="4px"),
+                            *[
+                                rx.fragment(
+                                    rx.text(tit, size="1", weight="bold", color_scheme="gray",
+                                            margin_top="6px"),
+                                    *[_vc_campo(c) for c in campos],
+                                )
+                                for tit, campos in SECCIONES[tab]
+                            ],
+                            width="100%", margin_bottom="10px",
+                        )
+                        for tab in SECCIONES
+                    ],
+                    spacing="1", width="100%",
+                ),
+                type="auto", scrollbars="vertical", style={"maxHeight": "70vh"},
+            ),
+            rx.hstack(
+                rx.dialog.close(rx.button("Cerrar", variant="soft", on_click=_S.cerrar_vista_completa)),
+                justify="end", width="100%", margin_top="1rem",
+            ),
+            max_width="720px",
+        ),
+        open=_S.vista_completa, on_open_change=_S.cerrar_vista_completa,
+    )
+
+
 def _observaciones() -> rx.Component:
     slots = [
         rx.vstack(
@@ -373,10 +418,16 @@ def editor_panel() -> rx.Component:
                             ),
                         ),
                     ),
+                    rx.cond(
+                        ~_S.es_nuevo,
+                        rx.button("Vista completa", on_click=_S.abrir_vista_completa,
+                                  variant="soft", size="2"),
+                    ),
                     rx.button("Cerrar", on_click=_S.cerrar_editor, variant="soft", size="2"),
                     width="100%",
                     align="center",
                 ),
+                _vista_completa(),
                 rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
                 rx.badge(
                     rx.icon(

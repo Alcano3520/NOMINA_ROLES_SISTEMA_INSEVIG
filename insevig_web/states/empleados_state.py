@@ -364,6 +364,17 @@ class EmpleadosState(rx.State):
         self.edit_dirty = False
         self.edit_ok = self.edit_error = ""
 
+    # ── Vista Completa (read-only, todos los campos de un vistazo) ──────
+    vista_completa: bool = False
+
+    @rx.event
+    def abrir_vista_completa(self):
+        self.vista_completa = True
+
+    @rx.event
+    def cerrar_vista_completa(self):
+        self.vista_completa = False
+
 
     async def _cargar_catalogos_editor(self):
         if any(self.edit_catalogos.values()):
