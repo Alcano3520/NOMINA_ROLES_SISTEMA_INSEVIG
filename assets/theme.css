@@ -1,56 +1,77 @@
-/* Tema INSEVIG. Claro por defecto (el sistema anterior era claro); el usuario
-   puede pasar a oscuro con el botón del encabezado (clase .dark en <html>). */
+/* Tema INSEVIG — claro y oscuro.
 
-/* LightningCSS convierte light-dark() de Radix en este toggle. */
-:root,
-:root.light {
-  --lightningcss-light: ;
-  --lightningcss-dark: initial;
-  color-scheme: light;
-}
-:root.dark {
-  --lightningcss-light: initial;
-  --lightningcss-dark: ;
-  color-scheme: dark;
-}
+   next-themes pone la clase .light / .dark en <html>; abajo se define el
+   fondo de la app y las superficies (tarjetas, campos, diálogos, menús) para
+   los dos modos, sin depender de que se resuelvan los tokens internos de
+   Radix. `color-scheme` le avisa al navegador para que su modo oscuro
+   automático no vuelva a oscurecer la página.
 
-/* ── Modo claro (por defecto) ───────────────────────────────────────────
-   Con !important para que se vea bien aunque el navegador tenga forzado
-   el modo oscuro. */
+   NOTA: una extensión del navegador tipo "Dark Reader" fuerza su propio
+   oscuro encima de TODO sitio y rompe estos colores — si el modo claro se
+   ve oscuro, es esa extensión: desactivarla o excluir el sitio. */
+
+:root, :root.light { color-scheme: light; }
+:root.dark { color-scheme: dark; }
+
+/* ── Fondo de la app ─────────────────────────────────────────────────── */
 :root:not(.dark) body,
 :root:not(.dark) .radix-themes {
-  background-color: #f5f7fa !important;
-  color: #1f2937 !important;
+  background-color: #f5f7fa;
+  color: #1f2937;
 }
+:root.dark body,
+:root.dark .radix-themes {
+  background-color: #0d1117;
+  color: #e6edf3;
+}
+
+/* ── Superficies claras ──────────────────────────────────────────────── */
 :root:not(.dark) .rt-Card,
-:root:not(.dark) .rt-Card::before,
 :root:not(.dark) .rt-BaseCard,
 :root:not(.dark) .rt-PopperContent,
 :root:not(.dark) .rt-DialogContent,
 :root:not(.dark) .rt-AlertDialogContent,
 :root:not(.dark) .rt-PopoverContent,
 :root:not(.dark) .rt-SelectContent,
-:root:not(.dark) .rt-HoverCardContent {
-  background-color: #ffffff !important;
+:root:not(.dark) .rt-HoverCardContent,
+:root:not(.dark) .rt-DropdownMenuContent,
+:root:not(.dark) .rt-TableRootTable {
+  background-color: #ffffff;
 }
-:root:not(.dark) .rt-TextFieldInput,
 :root:not(.dark) .rt-TextFieldRoot,
-:root:not(.dark) .rt-TextAreaInput,
+:root:not(.dark) .rt-TextAreaRoot,
+:root:not(.dark) .rt-TextField,
 :root:not(.dark) .rt-TextArea,
 :root:not(.dark) input,
 :root:not(.dark) textarea,
 :root:not(.dark) select {
-  background-color: #ffffff !important;
-  color: #1f2937 !important;
+  background-color: #ffffff;
+  color: #1f2937;
 }
 
-/* ── Modo oscuro (al pulsar el botón) ───────────────────────────────────── */
-:root.dark body,
-:root.dark .radix-themes {
-  background-color: #0d1117 !important;
-  color: #e6edf3 !important;
+/* ── Superficies oscuras ─────────────────────────────────────────────── */
+:root.dark .rt-Card,
+:root.dark .rt-BaseCard,
+:root.dark .rt-PopperContent,
+:root.dark .rt-DialogContent,
+:root.dark .rt-AlertDialogContent,
+:root.dark .rt-PopoverContent,
+:root.dark .rt-SelectContent,
+:root.dark .rt-HoverCardContent,
+:root.dark .rt-DropdownMenuContent,
+:root.dark .rt-TableRootTable {
+  background-color: #161b22;
+}
+:root.dark .rt-TextFieldRoot,
+:root.dark .rt-TextAreaRoot,
+:root.dark .rt-TextField,
+:root.dark .rt-TextArea,
+:root.dark input,
+:root.dark textarea,
+:root.dark select {
+  background-color: #0d1117;
+  color: #e6edf3;
 }
 
-.rt-Button.rt-variant-solid {
-  color: #ffffff !important;
-}
+/* Botones sólidos: texto siempre blanco (el acento azul corporativo es oscuro). */
+.rt-Button.rt-variant-solid { color: #fff; }
