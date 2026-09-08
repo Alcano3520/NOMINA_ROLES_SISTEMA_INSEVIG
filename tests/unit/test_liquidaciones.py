@@ -724,8 +724,8 @@ class _FakeRecTable:
     def execute(self):
         if self.op:
             self.log.append((self.n, self.op, self.payload))
-            if self.op == "insert" and self.n == "liquidaciones":
-                return _FakeExec([{"id": "NEW1"}])
+            if self.op == "insert" and self.n in ("liquidaciones", "liquidaciones_ajustes_concepto"):
+                return _FakeExec([{"id": "NEW1", **(self.payload or {})}])
             return _FakeExec([{"ok": 1}] if self.op == "update" else [])
         return _FakeExec(self.datos.get(self.n, []))
 
@@ -948,9 +948,39 @@ def test_ajustar_concepto_a_cero_borra_el_concepto(monkeypatch, app_db):
     assert any(t == lq.TABLA_LIQ_DETALLE and op == "delete" for (t, op, _pl) in cliente.log)
 
 
-def test_ajustar_concepto_exige_motivo():
-    ok, err = lq.ajustar_concepto("L1", "MULTAS", 5.0, motivo="  ", usuario="ana", roles=set())
-    assert not ok and "motivo" in err
+def test_ajustar_concepto_motivo_es_opcional(monkeypatch, app_db):
+    # Verificado contra el .pyw: el diálogo "+" individual del Editor pide
+    # el motivo como "Motivo (opcional)" -- a diferencia de la cuadrícula/
+    # cuadre masivo, que sí lo exigen a nivel de esas pantallas.
+    registro = {"id": "L1", "estado": "generada"}
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.ajustar_concepto("L1", "MULTAS", 5.0, usuario="ana", roles=set())
+    assert ok and err == ""
+    ajuste = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_AJUSTES and op == "insert")
+    assert ajuste["motivo"] is None
+
+
+def test_ajustar_concepto_rechaza_delta_cero():
+    ok, err = lq.ajustar_concepto("L1", "MULTAS", 0, usuario="ana", roles=set())
+    assert not ok and "0" in err
+
+
+def test_ajustar_concepto_no_suma_si_falla_el_registro_del_ajuste(monkeypatch, app_db):
+    """El .pyw inserta el ajuste PRIMERO y solo suma el valor si
+    resp.data confirma que quedó guardado -- si el insert 'funciona' sin
+    excepción pero no trae fila (RLS), el monto NO debe sumarse."""
+    registro = {"id": "L1", "estado": "generada"}
+    conceptos = [{"concepto_codigo": "MULTAS", "concepto_tipo": "descuento", "valor_total": 10.0}]
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    # _FakeClientPorTabla no tiene 'liquidaciones_ajustes_concepto' en sus
+    # datos -> el insert "funciona" pero .data viene vacío.
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClientPorTabla({}))
+
+    ok, err = lq.ajustar_concepto("L1", "MULTAS", 5.0, motivo="x", usuario="ana", roles=set())
+    assert not ok and "NO se sumó" in err
 
 
 def test_ajustar_concepto_concepto_desconocido():
@@ -996,6 +1026,48 @@ def test_cuadre_masivo_reporta_cedula_no_encontrada(monkeypatch):
     assert aplicadas == 0 and "no se encontró" in errores[0]
 
 
+def test_recalcular_liquidacion_usa_datos_guardados_por_defecto(monkeypatch):
+    registro = {"empleado_cedula": "0920116811", "fecha_salida": "2026-06-15", "motivo": "RENUNCIA VOLUNTARIA"}
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
+    llamada = {}
+
+    def _fake_procesar(cedula, fecha_salida, motivo, fuente, cfg, **kw):
+        llamada.update(cedula=cedula, fecha_salida=fecha_salida, motivo=motivo, fuente=fuente, kw=kw)
+        return lq.Liquidacion(cedula, "", cedula, "", "", "", 0.0, "", fecha_salida, motivo, 0)
+
+    monkeypatch.setattr(lq, "procesar_empleado", _fake_procesar)
+    cfg = lq.ConfigLiquidacion()
+
+    resultado = lq.recalcular_liquidacion("L1", lq.FUENTE_SUPABASE, cfg)
+    assert llamada["cedula"] == "0920116811"
+    assert llamada["fecha_salida"] == "2026-06-15"
+    assert llamada["motivo"] == "RENUNCIA VOLUNTARIA"
+    # Mismos defaults fijos que el botón del .pyw -- sin control propio en el Editor.
+    assert llamada["kw"] == {"incluir_dec13_anterior": False, "incluir_dec14_anterior": False}
+    assert resultado.cedula == "0920116811"
+
+
+def test_recalcular_liquidacion_acepta_overrides_del_formulario(monkeypatch):
+    registro = {"empleado_cedula": "0920116811", "fecha_salida": "2026-06-15", "motivo": "RENUNCIA VOLUNTARIA"}
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
+    llamada = {}
+    monkeypatch.setattr(
+        lq, "procesar_empleado",
+        lambda cedula, fecha_salida, motivo, fuente, cfg, **kw: (
+            llamada.update(fecha_salida=fecha_salida) or lq.Liquidacion(
+                cedula, "", cedula, "", "", "", 0.0, "", fecha_salida, motivo, 0)
+        ),
+    )
+    lq.recalcular_liquidacion("L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), fecha_salida="2026-07-01")
+    assert llamada["fecha_salida"] == "2026-07-01"  # el override pisa lo guardado, no al revés
+
+
+def test_recalcular_liquidacion_reporta_liquidacion_inexistente(monkeypatch):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (None, []))
+    resultado = lq.recalcular_liquidacion("L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion())
+    assert resultado.error != ""
+
+
 class _FakeQueryPorTabla:
     def __init__(self, datos_por_tabla, tabla):
         self._d, self._t = datos_por_tabla, tabla
@@ -1010,6 +1082,9 @@ class _FakeQueryPorTabla:
         return self
 
     def limit(self, *a, **k):
+        return self
+
+    def insert(self, *a, **k):
         return self
 
     def execute(self):

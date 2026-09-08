@@ -1843,22 +1843,40 @@ def eliminar_liquidacion(
 
 
 def ajustar_concepto(
-    liquidacion_id: str, concepto_codigo: str, delta: float, *, motivo: str, usuario: str, roles: set[str],
+    liquidacion_id: str, concepto_codigo: str, delta: float, *,
+    motivo: str = "", usuario: str, roles: set[str],
 ) -> tuple[bool, str]:
     """SUMA `delta` (admite negativo) al valor actual de un concepto de una
     liquidación ya guardada -- a diferencia de `editar_valores_liquidacion`
     (que REEMPLAZA el valor), esto es incremental: paridad con el "+" del
-    Editor de Liquidaciones y con Editar en cuadrícula/Cuadre masivo (ver
-    docs/modulos/liquidaciones_cuadricula_UI.md). Deja un registro en
-    `liquidaciones_ajustes_concepto` (motivo, usuario, fecha -- tabla
-    confirmada existente en producción) además de actualizar
-    `liquidaciones_detalle`/los totales."""
+    Editor de Liquidaciones (`_abrir_dialogo_ajuste_concepto`) y con Editar
+    en cuadrícula/Cuadre masivo (ver docs/modulos/liquidaciones_cuadricula_UI.md).
+
+    `motivo` es OPCIONAL -- verificado contra el `.pyw`: el diálogo "+"
+    individual del Editor lo pide como "Motivo (opcional)" (a diferencia
+    de Editar en cuadrícula/Cuadre masivo, donde SÍ es obligatorio a nivel
+    de esas pantallas -- eso lo exige la UI que llama, no esta función).
+
+    CORREGIDO (2026-09): el orden de escritura importa. El `.pyw` inserta
+    PRIMERO el registro en `liquidaciones_ajustes_concepto` y verifica
+    `resp.data` (memoria de este proyecto:
+    "un insert puede no lanzar excepción y aun así no guardar nada por
+    RLS") -- si eso falla, NO toca el valor mostrado ni el total. La
+    primera versión de esta función hacía lo opuesto (actualizaba el valor
+    primero, insertaba el ajuste con las excepciones suprimidas después) --
+    si el insert del ajuste fallaba en silencio, el monto quedaba sumado
+    igual pero sin ningún rastro de motivo/quién/cuándo. Se invirtió el
+    orden."""
     concepto_codigo = str(concepto_codigo)
     if concepto_codigo not in _TIPO_POR_CODIGO:
         return False, f"Concepto desconocido: {concepto_codigo}"
+    try:
+        delta = round(float(delta), 2)
+    except (TypeError, ValueError):
+        return False, "Ingrese un monto numérico."
+    if delta == 0:
+        return False, "El monto a agregar no puede ser 0."
     motivo = (motivo or "").strip()
-    if not motivo:
-        return False, "Ingrese el motivo del ajuste."
     registro, conceptos = obtener_liquidacion(liquidacion_id)
     if registro is None:
         return False, "No existe esa liquidación."
@@ -1867,7 +1885,7 @@ def ajustar_concepto(
 
     valores: dict[str, float] = {str(c["concepto_codigo"]): float(c.get("valor_total") or 0) for c in conceptos}
     valor_anterior = valores.get(concepto_codigo, 0.0)
-    valor_nuevo = round(valor_anterior + float(delta), 2)
+    valor_nuevo = round(valor_anterior + delta, 2)
     valores[concepto_codigo] = valor_nuevo
     derivados = _totales_desde_valores(valores)
 
@@ -1880,6 +1898,20 @@ def ajustar_concepto(
         after={concepto_codigo: valor_nuevo, "delta": delta, "motivo": motivo},
     ):
         sb = supabase_client.get_client()
+        try:
+            resp = sb.table(TABLA_LIQ_AJUSTES).insert({
+                "liquidacion_id": liquidacion_id, "concepto_codigo": concepto_codigo,
+                "concepto_nombre": _NOMBRE_POR_CODIGO.get(concepto_codigo, concepto_codigo),
+                "monto": delta, "motivo": motivo or None, "usuario": usuario,
+            }).execute()
+        except Exception as e:  # noqa: BLE001
+            return False, f"No se pudo registrar el ajuste: {e}"
+        if not (resp.data or []):
+            return False, (
+                "No se pudo registrar el ajuste: el sistema no confirmó el guardado. "
+                "El monto NO se sumó -- intente de nuevo."
+            )
+
         if valor_nuevo == 0:
             sb.table(TABLA_LIQ_DETALLE).delete().eq("liquidacion_id", liquidacion_id).eq(
                 "concepto_codigo", concepto_codigo).execute()
@@ -1894,12 +1926,6 @@ def ajustar_concepto(
                     "orden": len(conceptos),
                 }).execute()
         sb.table(TABLA_LIQ).update({**derivados, "updated_by": usuario}).eq("id", liquidacion_id).execute()
-        with contextlib.suppress(Exception):
-            sb.table(TABLA_LIQ_AJUSTES).insert({
-                "liquidacion_id": liquidacion_id, "concepto_codigo": concepto_codigo,
-                "concepto_nombre": _NOMBRE_POR_CODIGO.get(concepto_codigo, concepto_codigo),
-                "monto": round(float(delta), 2), "motivo": motivo, "usuario": usuario,
-            }).execute()
     return True, ""
 
 
@@ -2004,4 +2030,45 @@ def reconstruir_liquidacion(registro: dict, conceptos: list[dict]) -> Liquidacio
         motivo_salida=str(registro.get("motivo") or ""),
         dias_trabajados=int(registro.get("dias_trabajados") or 0),
         campos=campos, apellidos=apellidos, nombres=nombres,
+    )
+
+
+def recalcular_liquidacion(
+    liquidacion_id: str, fuente: str, cfg: ConfigLiquidacion, *,
+    cedula: str = "", fecha_salida: str = "", motivo: str = "",
+) -> Liquidacion:
+    """Vuelve a correr TODO el cálculo desde cero contra los datos actuales
+    de nómina -- paridad con "🔄 Recalcular Liquidación" del Editor de
+    Liquidaciones. A diferencia de `reconstruir_liquidacion` (arma una
+    `Liquidacion` aproximada a partir de lo ya guardado, sin tocar
+    RPEMPLEA/movimientos), esto es un `procesar_empleado` fresco -- mismo
+    caso real que motivó el botón en el `.pyw`: un valor calculado se ve
+    mal (ej. vacaciones infladas por un período con goce parcial mal
+    sumado) y hace falta recalcular en vez de corregir a mano campo por
+    campo.
+
+    NO guarda nada -- devuelve la `Liquidacion` recién calculada para que
+    el llamador la muestre y decida si guardarla (`guardar_liquidacion(...,
+    liquidacion_id_existente=liquidacion_id)`) después de revisarla.
+
+    `cedula`/`fecha_salida`/`motivo`: si se omiten, se toman del registro
+    YA GUARDADO. El `.pyw` real recalcula contra lo que esté escrito en el
+    FORMULARIO en ese momento (que puede diferir de lo guardado si el
+    usuario editó la fecha de salida antes de recalcular) -- pasar estos
+    overrides explícitos para reproducir ese caso.
+
+    Mismos defaults fijos que usa el botón del `.pyw` (no hay control
+    propio para esto en el Editor): `incluir_dec13_anterior=False`,
+    `incluir_dec14_anterior=False`.
+    """
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return Liquidacion(
+            "", "", "", "", "", "", 0.0, "", "", "", 0, error="No existe esa liquidación.")
+    ced = cedula or str(registro.get("empleado_cedula") or "")
+    fsal = fecha_salida or str(registro.get("fecha_salida") or "")
+    mot = motivo or str(registro.get("motivo") or "")
+    return procesar_empleado(
+        ced, fsal, mot, fuente, cfg,
+        incluir_dec13_anterior=False, incluir_dec14_anterior=False,
     )
