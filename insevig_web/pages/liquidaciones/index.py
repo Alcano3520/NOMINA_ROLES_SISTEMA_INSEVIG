@@ -6,6 +6,7 @@ from insevig_web import theme
 from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x, stat_card
+from insevig_web.pages.liquidaciones._nav import subnav
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.liquidaciones_state import MOTIVOS_SALIDA, LiquidacionesState
 
@@ -317,6 +318,7 @@ def _panel_preview_individual() -> rx.Component:
 )
 def index() -> rx.Component:
     return pagina(
+        subnav("/liquidaciones"),
         page_heading(
             "Generador de liquidaciones (finiquitos)",
             "Cálculo legal: vacaciones (TODOS los periodos pendientes), décimo 13/14, desahucio, "

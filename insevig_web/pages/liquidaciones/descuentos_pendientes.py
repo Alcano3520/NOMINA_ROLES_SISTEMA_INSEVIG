@@ -5,6 +5,7 @@ import reflex as rx
 from insevig_web import theme
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
+from insevig_web.pages.liquidaciones._nav import subnav
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.descuentos_pendientes_state import DescuentosPendientesState
 
@@ -61,6 +62,7 @@ def _form() -> rx.Component:
 )
 def descuentos_pendientes() -> rx.Component:
     return pagina(
+        subnav("/liquidaciones/descuentos-pendientes"),
         page_heading(
             "Descuentos pendientes",
             "Montos a descontar en la próxima liquidación del empleado. Se aplican solos al "

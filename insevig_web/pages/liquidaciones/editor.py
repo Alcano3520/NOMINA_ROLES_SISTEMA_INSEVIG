@@ -8,6 +8,7 @@ import reflex as rx
 from insevig_web import theme
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, scroll_x
+from insevig_web.pages.liquidaciones._nav import subnav
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.liquidaciones_editor_state import (
     ESTADOS,
@@ -218,6 +219,7 @@ def _formulario() -> rx.Component:
 )
 def editor() -> rx.Component:
     return pagina(
+        subnav("/liquidaciones/editor"),
         page_heading("Editor de liquidaciones",
                      "Corregir una liquidación guardada campo por campo, con ajustes y recálculo."),
         rx.hstack(

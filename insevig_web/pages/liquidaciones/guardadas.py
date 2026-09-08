@@ -11,6 +11,7 @@ import reflex as rx
 from insevig_web import theme
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, scroll_x
+from insevig_web.pages.liquidaciones._nav import subnav
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.liquidaciones_guardadas_state import (
     COLORES_ETIQUETA,
@@ -472,6 +473,7 @@ def _chip(label: str, valor: str) -> rx.Component:
 )
 def guardadas() -> rx.Component:
     return pagina(
+        subnav("/liquidaciones/guardadas"),
         page_heading("Gestión de liquidaciones", _S.conteo),
         rx.hstack(
             rx.link(rx.button(rx.icon("arrow-left", size=14), "Generar", variant="soft", size="2"),
