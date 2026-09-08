@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 
 import reflex as rx
 
@@ -14,6 +15,18 @@ from insevig_web.states.auth_state import AuthState
 
 ESTADOS = list(repo.ESTADOS_LIQUIDACION)
 
+
+@dataclasses.dataclass
+class _Celda:
+    clave: str
+    valor: str
+
+
+@dataclasses.dataclass
+class _FilaGrid:
+    label: str
+    celdas: list[_Celda]
+
 # Colores de etiqueta (marcador libre por liquidación, como COLORES_ETIQUETA del .pyw).
 COLORES_ETIQUETA = [
     ("Rojo", "#e74c3c"), ("Naranja", "#e67e22"), ("Amarillo", "#f1c40f"),
@@ -21,6 +34,29 @@ COLORES_ETIQUETA = [
 ]
 FORMAS_PAGO = ["Transferencia", "Cheque", "Efectivo", "Otro"]
 LUGARES_FIRMA = ["Consignación", "Oficina"]
+
+# Conceptos editables en la cuadrícula de edición masiva (concepto_codigo -> label),
+# ver docs/modulos/liquidaciones_cuadricula_UI.md.
+CONCEPTOS_GRID = [
+    ("SUELDO", "Sueldo"), ("BONIFICACION", "Bonificación"), ("MANIOBRAS", "Maniobras"),
+    ("MOVILIZACION", "Movilización"), ("REEMBOLSOS", "Reembolsos"),
+    ("SOBT_25", "Horas 25%"), ("SOBT_50", "Horas 50%"), ("SOBT_100", "Horas 100%"),
+    ("FONDO_RESERVA", "Fondo de reserva"),
+    ("DEC_TERCERA_ANT", "Déc. 13 anterior"), ("DEC_TERCERA_ACT", "Déc. 13 actual"),
+    ("DEC_CUARTA_ANT", "Déc. 14 anterior"), ("DEC_CUARTA_ACT", "Déc. 14 actual"),
+    ("VACACIONES", "Vacaciones"), ("DESAHUCIO", "Desahucio"),
+    ("INDEM_DESPIDO", "Indem. despido"), ("OTRAS_INDEM", "Otras indemnizaciones"),
+    ("VALOR_NO_CONSIDERADO", "Valor no considerado"),
+    ("IESS", "Aporte IESS"), ("IESS_CONYUGE", "IESS cónyuge"),
+    ("PREST_QUIROGRAFARIO", "Préstamo quirografario"), ("PREST_COMPANIA", "Préstamo compañía"),
+    ("PREST_HIPOTECARIO", "Préstamo hipotecario"),
+    ("ANTICIPO_SUELDO", "Anticipo sueldo"), ("ANTICIPOS_OTROS", "Anticipos otros"),
+    ("ANTICIPOS_SURTIDOS", "Anticipos surtidos"), ("ANTICIPOS_OTROS_L", "Anticipo otros (liq.)"),
+    ("ANTICIPO_L_DESAHUCIO", "Anticipo desahucio (liq.)"),
+    ("MULTAS", "Multas"), ("PENSION_ALIMENTICIA", "Pensión alimenticia"),
+    ("IMPUESTO_RENTA", "Impuesto a la renta"),
+    ("DESCUENTO_REGISTRADO", "Descuentos registrados"), ("AJUSTE_CUADRE", "Ajuste cuadre MRL"),
+]
 
 # Acción disponible según el estado de la fila (label, tipo de diálogo, estado destino
 # para el diálogo genérico "avance"). Ver docs/modulos/liquidaciones_gestion_UI.md.
@@ -103,6 +139,139 @@ class LiquidacionesGuardadasState(rx.State):
 
         data = await asyncio.to_thread(listado_liquidaciones_xlsx, list(self.filas))
         return rx.download(data=data, filename="liquidaciones_listado.xlsx")
+
+    # ── Editar en cuadrícula (edición masiva de conceptos) ──────────
+    grid_abierta: bool = False
+    grid_liqs: list[dict] = []        # [{id, nombre}]
+    grid_valores: dict[str, str] = {}  # "{id}|{codigo}" -> valor (texto)
+    grid_orig: dict[str, str] = {}
+    grid_motivo: str = ""
+    grid_msg: str = ""
+
+    @rx.event
+    async def abrir_grid(self):
+        ids = list(self.seleccion)
+        if not ids:
+            self.msg = "Marcá una o más liquidaciones para editar en cuadrícula."
+            return
+        self.grid_abierta = True
+        self.grid_msg = ""
+        self.grid_motivo = ""
+        liqs, valores = [], {}
+        for lid in ids:
+            registro, conceptos = await asyncio.to_thread(repo.obtener_liquidacion, lid)
+            if registro is None:
+                continue
+            liqs.append({
+                "id": lid,
+                "nombre": f"{registro.get('empleado_apellidos', '')} "
+                          f"{registro.get('empleado_nombres', '')}".strip(),
+            })
+            por_cod = {str(c["concepto_codigo"]): round(float(c.get("valor_total") or 0), 2)
+                       for c in conceptos}
+            for cod, _lbl in CONCEPTOS_GRID:
+                valores[f"{lid}|{cod}"] = str(por_cod.get(cod, 0.0))
+        self.grid_liqs = liqs
+        self.grid_valores = valores
+        self.grid_orig = dict(valores)
+
+    @rx.event
+    def cerrar_grid(self):
+        self.grid_abierta = False
+        self.grid_liqs = []
+        self.grid_valores = {}
+        self.grid_orig = {}
+
+    @rx.event
+    def set_grid_valor(self, clave: str, v: str):
+        self.grid_valores = {**self.grid_valores, clave: v}
+
+    @rx.var
+    def grid_matriz(self) -> list[_FilaGrid]:
+        """Filas de la cuadrícula: una por concepto, con una celda por liquidación."""
+        out: list[_FilaGrid] = []
+        for cod, lbl in CONCEPTOS_GRID:
+            celdas = [
+                _Celda(clave=f"{lq['id']}|{cod}",
+                       valor=self.grid_valores.get(f"{lq['id']}|{cod}", "0"))
+                for lq in self.grid_liqs
+            ]
+            out.append(_FilaGrid(label=lbl, celdas=celdas))
+        return out
+
+    @rx.event
+    def set_grid_motivo(self, v: str):
+        self.grid_motivo = v
+
+    @rx.event
+    async def guardar_grid(self):
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:editar" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        motivo = self.grid_motivo.strip() or "Edición en cuadrícula"
+        n_ok = n_err = 0
+        errs: list[str] = []
+        for clave, txt in self.grid_valores.items():
+            try:
+                nuevo = round(float(str(txt).replace(",", ".").strip() or 0), 2)
+                viejo = round(float(self.grid_orig.get(clave, "0")), 2)
+            except ValueError:
+                n_err += 1
+                errs.append(f"{clave}: valor inválido")
+                continue
+            if abs(nuevo - viejo) < 0.005:
+                continue
+            lid, cod = clave.split("|", 1)
+            ok, error = await asyncio.to_thread(
+                repo.ajustar_concepto, lid, cod, round(nuevo - viejo, 2),
+                motivo=motivo, usuario=auth.username, roles=set(auth.roles),
+            )
+            if ok:
+                n_ok += 1
+            else:
+                n_err += 1
+                errs.append(error)
+        self.grid_msg = f"{n_ok} ajuste(s) aplicado(s)." + (
+            f"  {n_err} error(es): {' · '.join(errs[:5])}" if n_err else ""
+        )
+        if n_ok:
+            self.grid_orig = dict(self.grid_valores)
+            await self.buscar()
+
+    # ── Cuadre masivo (MRL) ─────────────────────────────────────────
+    cuadre_abierto: bool = False
+    cuadre_texto: str = ""
+    cuadre_msg: str = ""
+
+    @rx.event
+    def abrir_cuadre(self):
+        self.cuadre_abierto = True
+        self.cuadre_texto = self.cuadre_msg = ""
+
+    @rx.event
+    def cerrar_cuadre(self):
+        self.cuadre_abierto = False
+
+    @rx.event
+    def set_cuadre_texto(self, v: str):
+        self.cuadre_texto = v
+
+    @rx.event
+    async def aplicar_cuadre(self):
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:editar" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        if not self.cuadre_texto.strip():
+            self.cuadre_msg = "Pegá al menos una línea (cédula, fecha de salida, monto)."
+            return
+        n, errores = await asyncio.to_thread(
+            repo.cuadre_masivo, self.cuadre_texto, usuario=auth.username, roles=set(auth.roles),
+        )
+        self.cuadre_msg = f"{n} liquidación(es) ajustada(s)." + (
+            f"  {len(errores)} error(es): {' · '.join(errores[:5])}" if errores else ""
+        )
+        if n:
+            await self.buscar()
 
     # ── Detalle ──────────────────────────────────────────────────────
     detalle_id: str = ""

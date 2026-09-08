@@ -390,6 +390,71 @@ def _dialogos_accion() -> rx.Component:
     )
 
 
+def _dialogo_grid() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Editar en cuadrícula"),
+            rx.text("Los cambios se guardan como ajustes (suma/resta) sobre el valor actual, "
+                    "con el motivo indicado. No revierte el trámite, solo corrige montos.",
+                    size="1", color_scheme="gray"),
+            rx.hstack(
+                rx.input(placeholder="Motivo del ajuste", value=_S.grid_motivo,
+                         on_change=_S.set_grid_motivo, width="100%", size="2"),
+                rx.button("Guardar todos los cambios", on_click=_S.guardar_grid, size="2"),
+                spacing="2", width="100%", margin_y="0.5rem",
+            ),
+            rx.cond(_S.grid_msg != "", rx.callout(_S.grid_msg, size="1")),
+            rx.scroll_area(
+                rx.table.root(
+                    rx.table.header(rx.table.row(
+                        rx.table.column_header_cell("Concepto"),
+                        rx.foreach(_S.grid_liqs, lambda lq: rx.table.column_header_cell(lq["nombre"])),
+                    )),
+                    rx.table.body(rx.foreach(_S.grid_matriz, lambda fila: rx.table.row(
+                        rx.table.cell(fila.label, style={"whiteSpace": "nowrap"}),
+                        rx.foreach(fila.celdas, lambda celda: rx.table.cell(rx.input(
+                            value=celda.valor,
+                            on_change=lambda v: _S.set_grid_valor(celda.clave, v),
+                            size="1", width="90px",
+                        ))),
+                    ))),
+                    variant="surface", size="1",
+                ),
+                type="auto", scrollbars="both", style={"maxHeight": "60vh"},
+            ),
+            rx.hstack(
+                rx.dialog.close(rx.button("Cerrar", variant="soft", on_click=_S.cerrar_grid)),
+                justify="end", width="100%", margin_top="1rem",
+            ),
+            max_width="900px",
+        ),
+        open=_S.grid_abierta, on_open_change=_S.cerrar_grid,
+    )
+
+
+def _dialogo_cuadre() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Cuadre masivo (MRL)"),
+            rx.text("Una línea por liquidación: cédula, fecha de salida (dd/mm/aaaa), monto. "
+                    "El monto se SUMA al ajuste de cuadre existente (admite negativo).",
+                    size="1", color_scheme="gray"),
+            rx.text_area(
+                value=_S.cuadre_texto, on_change=_S.set_cuadre_texto, rows="8", width="100%",
+                placeholder="0704090805, 31/07/2026, 0.01\n0921509527, 15/08/2026, -0.02",
+            ),
+            rx.cond(_S.cuadre_msg != "", rx.callout(_S.cuadre_msg, size="1")),
+            rx.hstack(
+                rx.dialog.close(rx.button("Cerrar", variant="soft", on_click=_S.cerrar_cuadre)),
+                rx.button("Aplicar cuadre", on_click=_S.aplicar_cuadre),
+                justify="end", width="100%", margin_top="1rem", spacing="2",
+            ),
+            max_width="560px",
+        ),
+        open=_S.cuadre_abierto, on_open_change=_S.cerrar_cuadre,
+    )
+
+
 # ── Página ───────────────────────────────────────────────────────────────────
 
 def _chip(label: str, valor: str) -> rx.Component:
@@ -453,6 +518,12 @@ def guardadas() -> rx.Component:
                                   "Bot MRL (" + _S.seleccion.length().to_string() + ")",
                                   on_click=_S.generar_bot_mrl, size="1", variant="soft",
                                   disabled=_S.seleccion.length() == 0),
+                        rx.button(rx.icon("grid-3x3", size=14),
+                                  "Editar en cuadrícula (" + _S.seleccion.length().to_string() + ")",
+                                  on_click=_S.abrir_grid, size="1", variant="soft",
+                                  disabled=_S.seleccion.length() == 0),
+                        rx.button(rx.icon("calculator", size=14), "Cuadre masivo",
+                                  on_click=_S.abrir_cuadre, size="1", variant="soft"),
                         spacing="2", wrap="wrap",
                     ),
                     spacing="2", width="100%",
@@ -462,6 +533,8 @@ def guardadas() -> rx.Component:
             rx.cond(_S.msg != "", rx.callout(_S.msg, size="1")),
             _detalle(),
             _dialogos_accion(),
+            _dialogo_grid(),
+            _dialogo_cuadre(),
             rx.cond(
                 _S.cargando,
                 rx.center(rx.spinner(), padding="1rem"),
