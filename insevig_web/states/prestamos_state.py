@@ -125,6 +125,47 @@ class PrestamosState(rx.State):
 
         self.resultados = observaciones.buscar_empleados(self.texto_busqueda, fuente)
 
+    # ── Panel "Empleados con saldo" (como el del .pyw, siempre visible) ──────
+    panel_saldos: list[dict] = []
+    panel_filtro: str = ""
+    panel_cargando: bool = False
+
+    @rx.event
+    async def cargar_panel_saldos(self):
+        if self.panel_saldos or self.panel_cargando:
+            return
+        self.panel_cargando = True
+        yield
+        fuente = await self._fuente()
+        filas = await asyncio.to_thread(prestamos.saldos, fuente)
+        self.panel_saldos = [
+            {"empleado": s.empleado, "nombre": s.apellidos_nombres, "saldo": round(s.saldo, 2)}
+            for s in filas
+            if s.saldo > 0.01
+        ]
+        self.panel_cargando = False
+
+    @rx.event
+    def set_panel_filtro(self, v: str):
+        self.panel_filtro = v
+
+    @rx.var
+    def panel_saldos_filtrado(self) -> list[dict]:
+        q = self.panel_filtro.strip().lower()
+        filas = self.panel_saldos
+        if q:
+            filas = [
+                f for f in filas
+                if q in str(f["nombre"]).lower() or q in str(f["empleado"]).lower()
+            ]
+        return filas[:300]
+
+    @rx.var
+    def panel_saldos_resumen(self) -> str:
+        n = len(self.panel_saldos)
+        total = round(sum(f["saldo"] for f in self.panel_saldos), 2)
+        return f"{n} empleados · saldo total ${total:,.2f}"
+
     @rx.event
     async def seleccionar(self, empleado: str, nombre: str):
         self.empleado_sel = empleado

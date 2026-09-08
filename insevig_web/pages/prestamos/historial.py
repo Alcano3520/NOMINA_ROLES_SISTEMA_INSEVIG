@@ -189,15 +189,69 @@ def _detalle_prestamo() -> rx.Component:
     )
 
 
+def _panel_saldos() -> rx.Component:
+    _S = PrestamosState
+    return card(
+        rx.vstack(
+            rx.hstack(
+                rx.heading("Empleados con saldo", size="3"),
+                rx.badge(_S.panel_saldos_resumen, color_scheme="blue"),
+                rx.spacer(),
+                rx.button("Actualizar", on_click=_S.cargar_panel_saldos, variant="ghost", size="1"),
+                width="100%", align="center", wrap="wrap",
+            ),
+            rx.input(
+                placeholder="Filtrar por nombre o código…",
+                value=_S.panel_filtro, on_change=_S.set_panel_filtro, size="2", width="100%",
+            ),
+            rx.cond(
+                _S.panel_cargando,
+                rx.spinner(),
+                rx.box(
+                    scroll_x(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("Cód."),
+                                    rx.table.column_header_cell("Nombre"),
+                                    rx.table.column_header_cell("Saldo ($)"),
+                                )
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    _S.panel_saldos_filtrado,
+                                    lambda f: rx.table.row(
+                                        rx.table.cell(f["empleado"]),
+                                        rx.table.cell(f["nombre"]),
+                                        rx.table.cell(f["saldo"].to_string()),
+                                        on_click=lambda: _S.seleccionar(f["empleado"], f["nombre"]),
+                                        style={"cursor": "pointer"},
+                                        _hover={"background": theme.BG},
+                                    ),
+                                )
+                            ),
+                            variant="surface", size="1", width="100%",
+                        )
+                    ),
+                    max_height="340px", overflow_y="auto", width="100%",
+                ),
+            ),
+            spacing="2", width="100%",
+        ),
+        width="100%",
+    )
+
+
 @rx.page(
     route="/prestamos/historial",
     title="INSEVIG — Historial de préstamos",
-    on_load=AuthState.cargar_sesion,
+    on_load=[AuthState.cargar_sesion, PrestamosState.cargar_panel_saldos],
 )
 def historial() -> rx.Component:
     return pagina(
         page_heading("Historial de préstamos", "Movimientos y saldo de los préstamos del empleado, incluido el histórico."),
         rx.vstack(
+            _panel_saldos(),
             employee_search(
                 texto=PrestamosState.texto_busqueda,
                 resultados=PrestamosState.resultados,
