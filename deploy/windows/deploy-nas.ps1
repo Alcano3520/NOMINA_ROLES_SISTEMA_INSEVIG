@@ -13,7 +13,8 @@ param(
     [int]$Puerto = 3000,
     [string]$Nssm = 'C:\insevig\tools\nssm.exe',
     [string]$Servicio = 'insevig-web',
-    [switch]$SoloActualizar   # salta creacion de venv/servicio; solo git pull + deps + restart
+    [switch]$SoloActualizar,  # salta creacion de venv/servicio; solo git pull + deps + restart
+    [switch]$Force            # limpia .web siempre (recompilacion completa del frontend)
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $Proyecto
@@ -22,8 +23,34 @@ $py  = Join-Path $Proyecto '.venv\Scripts\python.exe'
 $rfx = Join-Path $Proyecto '.venv\Scripts\reflex.exe'
 
 Write-Host "== 1. Actualizar codigo ==" -ForegroundColor Cyan
-if (Test-Path (Join-Path $Proyecto '.git')) { git pull --ff-only }
-else { Write-Host "   (no es repo git; se asume copia manual actualizada)" -ForegroundColor Yellow }
+$rev0 = ''
+if (Test-Path (Join-Path $Proyecto '.git')) {
+    $rev0 = (git rev-parse HEAD).Trim()
+    git pull --ff-only
+    $rev1 = (git rev-parse HEAD).Trim()
+} else {
+    Write-Host "   (no es repo git; se asume copia manual actualizada)" -ForegroundColor Yellow
+}
+
+# ¿Los cambios tocan el frontend? Entonces hay que forzar recompilacion (borrar
+# .web\build/_static) para que se vean cambios de paginas/tema/CSS. Se conserva
+# node_modules (no se reinstala npm).
+$forzarRebuild = $Force -or -not $rev0
+if ($rev0 -and $rev1 -and $rev0 -ne $rev1) {
+    $tocados = git diff --name-only $rev0 $rev1
+    $patronesFront = @('^insevig_web/', '^assets/', '^rxconfig\.py$', '^pyproject\.toml$')
+    foreach ($f in $tocados) {
+        foreach ($p in $patronesFront) { if ($f -match $p) { $forzarRebuild = $true; break } }
+        if ($forzarRebuild) { break }
+    }
+}
+if ($forzarRebuild) {
+    Write-Host "   Cambios de frontend detectados -> se limpia .web (recompila desde cero)." -ForegroundColor Yellow
+    foreach ($d in '.web\build', '.web\_static', '.web\.states', '.web\.web') {
+        $full = Join-Path $Proyecto $d
+        if (Test-Path $full) { Remove-Item -Recurse -Force $full -ErrorAction SilentlyContinue }
+    }
+}
 
 Write-Host "== 2. Entorno virtual + dependencias ==" -ForegroundColor Cyan
 if (-not (Test-Path $py)) { python -m venv .venv }
