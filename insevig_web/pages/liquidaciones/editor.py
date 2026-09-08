@@ -28,12 +28,11 @@ def _item_lista(f) -> rx.Component:
         rx.hstack(
             rx.vstack(
                 rx.text(f["nombre"], size="1", weight="bold"),
-                rx.text(f["fecha_salida"].to_string() + " · " + f["estado"].to_string(),
-                        size="1", color_scheme="gray"),
+                rx.text(f'{f["fecha_salida"]} · {f["estado"]}', size="1", color_scheme="gray"),
                 spacing="0", align="start",
             ),
             rx.spacer(),
-            rx.text("$" + f["total_liquido"].to_string(), size="1"),
+            rx.text(f'${f["total_liquido"]}', size="1"),
             width="100%", align="center",
         ),
         on_click=lambda: _S.abrir(f["id"]),
