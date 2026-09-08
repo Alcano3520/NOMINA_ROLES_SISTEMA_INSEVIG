@@ -17,13 +17,14 @@ _SEL = {
     "background": "#fff", "color": "#1f2937",
 }
 _COLOR_ESTADO = {
-    "borrador": "gray", "generada": "blue", "pagada": "green", "anulada": "red",
+    # "pagado" (no "pagada"): valor real en producción, ver ESTADOS_LIQUIDACION.
+    "borrador": "gray", "generada": "blue", "pagado": "green", "anulada": "red",
 }
 
 
 def _badge_estado(estado: rx.Var) -> rx.Component:
     return rx.badge(estado, color_scheme=rx.match(
-        estado, ("borrador", "gray"), ("generada", "blue"), ("pagada", "green"), ("anulada", "red"), "gray"
+        estado, ("borrador", "gray"), ("generada", "blue"), ("pagado", "green"), ("anulada", "red"), "gray"
     ))
 
 
@@ -89,7 +90,7 @@ def _detalle() -> rx.Component:
                         rx.hstack(
                             rx.cond(
                                 AuthState.permisos_flat.contains("liquidaciones:editar")
-                                & (_S.detalle["estado"].to_string() != "pagada"),
+                                & (_S.detalle["estado"].to_string() != "pagado"),
                                 rx.cond(
                                     _S.editando,
                                     rx.hstack(

@@ -1135,7 +1135,21 @@ TABLA_LIQ_HISTORIAL = "liquidaciones_historial_estados"
 TABLA_LIQ_ELIMINADAS = "liquidaciones_eliminadas_historial"
 TABLA_LIQ_PERIODOS = "liquidaciones_periodos_calculo"
 
-ESTADOS_LIQUIDACION = ("borrador", "generada", "pagada", "anulada")
+# CORREGIDO (2026-09): "pagada" no coincidía con el valor real que usa
+# producción -- Generador_Liquidaciones_INSEVIG.pyw (la app que escribió
+# las 814+ liquidaciones existentes) guarda 'pagado' (masculino, no
+# 'pagada'). Con el valor viejo, guardar_liquidacion(estado='pagado')
+# rebotaba con "Estado inválido" y -- más grave -- los guardas
+# `if registro.get("estado") == "pagada"` de editar_valores_liquidacion/
+# eliminar_liquidacion NUNCA coincidían con un registro real: la
+# protección contra editar/eliminar una liquidación ya pagada estaba
+# rota en silencio para el 100% de los datos reales. 'anulada' no se
+# tocó -- no hay evidencia todavía de si el .pyw real usa 'anulada' o
+# 'cancelado' para ese estado (el .pyw tiene además otros estados
+# intermedios -- 'aprobado', 'cheque_listo', 'consignada',
+# 'legalizada_mrl' -- que este modelo simplificado de 4 estados no
+# cubre; pendiente de revisar si hacen falta al portar Gestión completa).
+ESTADOS_LIQUIDACION = ("borrador", "generada", "pagado", "anulada")
 
 
 def clasificar_tipo_liquidacion(motivo: str | None) -> str:
@@ -1483,13 +1497,13 @@ def editar_valores_liquidacion(
     """Corrige a mano los valores de conceptos de una liquidación guardada
     (el Editor del `.pyw`). `cambios`: `concepto_codigo -> nuevo valor_total`
     (0 quita el concepto). Recalcula los totales y las columnas derivadas de
-    `liquidaciones`. No toca una liquidación en estado 'pagada'."""
+    `liquidaciones`. No toca una liquidación en estado 'pagado'."""
     from core.audit.writer import audit_scope
 
     registro, conceptos = obtener_liquidacion(liquidacion_id)
     if registro is None:
         return False, "No existe esa liquidación."
-    if registro.get("estado") == "pagada":
+    if registro.get("estado") == "pagado":
         return False, "No se puede editar una liquidación ya marcada como pagada."
 
     cambios_norm = {
@@ -1539,14 +1553,14 @@ def eliminar_liquidacion(
     """Elimina una liquidación guardando antes un snapshot completo en
     `liquidaciones_eliminadas_historial` (mismo criterio que
     `eliminar_liquidacion_con_historial` del legado: no elimina si el estado
-    ya es 'pagada'). `liquidaciones_detalle` cae solo por ON DELETE CASCADE."""
+    ya es 'pagado'). `liquidaciones_detalle` cae solo por ON DELETE CASCADE."""
     from core.audit.writer import audit_scope
 
     sb = supabase_client.get_client()
     registro, conceptos = obtener_liquidacion(liquidacion_id)
     if registro is None:
         return False, "No existe esa liquidación."
-    if registro.get("estado") == "pagada":
+    if registro.get("estado") == "pagado":
         return False, "No se puede eliminar una liquidación ya marcada como pagada."
     with audit_scope(
         "liquidaciones", "eliminar_liquidacion", usuario=usuario, roles=roles,

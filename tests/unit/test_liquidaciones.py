@@ -620,12 +620,12 @@ class _FakeClient:
 
 def test_resumen_liquidaciones_cuenta_por_estado(monkeypatch):
     filas = [
-        {"estado": "generada"}, {"estado": "generada"}, {"estado": "pagada"},
+        {"estado": "generada"}, {"estado": "generada"}, {"estado": "pagado"},
         {"estado": "estado_desconocido"},
     ]
     monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClient(filas))
     resumen = lq.resumen_liquidaciones()
-    assert resumen == {"borrador": 0, "generada": 2, "pagada": 1, "anulada": 0}
+    assert resumen == {"borrador": 0, "generada": 2, "pagado": 1, "anulada": 0}
 
 
 def test_buscar_empleado_preview_por_cedula_supabase(monkeypatch):
@@ -742,7 +742,7 @@ def test_editar_valores_liquidacion(monkeypatch, app_db):
 
 
 def test_editar_valores_liquidacion_no_toca_pagada(monkeypatch):
-    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"estado": "pagada"}, []))
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"estado": "pagado"}, []))
     ok, err = lq.editar_valores_liquidacion("L1", {"MULTAS": 5.0}, usuario="x", roles=set())
     assert not ok and "pagada" in err
 

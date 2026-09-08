@@ -20,7 +20,7 @@ def _resumen() -> rx.Component:
     return rx.grid(
         stat_card("Borrador", "Sin confirmar", _S.resumen["borrador"].to_string(), "file-pen"),
         stat_card("Generada", "Lista para pagar", _S.resumen["generada"].to_string(), "file-check"),
-        stat_card("Pagada", "Ya liquidada", _S.resumen["pagada"].to_string(), "circle-dollar-sign"),
+        stat_card("Pagada", "Ya liquidada", _S.resumen["pagado"].to_string(), "circle-dollar-sign"),
         stat_card("Anulada", "Sin efecto", _S.resumen["anulada"].to_string(), "file-x"),
         columns=rx.breakpoints(initial="2", md="4"),
         spacing="3", width="100%",
