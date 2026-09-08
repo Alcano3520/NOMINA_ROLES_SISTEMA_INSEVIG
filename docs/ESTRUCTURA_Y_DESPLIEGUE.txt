@@ -1,0 +1,350 @@
+===============================================================================
+ INSEVIG — SISTEMA DE NÓMINA/RRHH — ESTRUCTURA DEL PROYECTO Y DESPLIEGUE
+ Documento de referencia (actualizado 2026-09-08)
+===============================================================================
+
+Este .txt responde 3 cosas:
+  A) Qué es el proyecto y cómo funciona por dentro.
+  B) Cómo está la estructura de carpetas de TODO el proyecto.
+  C) Cómo funciona la carga/actualización en el servidor (lo que hace el NAS),
+     y si se puede automatizar con algún programa.
+
+
+===============================================================================
+ A) QUÉ ES Y CÓMO FUNCIONA
+===============================================================================
+
+QUÉ ES
+------
+Antes: ~7 programas de escritorio en Python/Tkinter (uno por PC), compilados a
+.exe, cada uno con sus credenciales pegadas en el código.
+
+Ahora: UNA sola aplicación web (framework Reflex) que corre en el servidor de la
+oficina. Los usuarios entran con el navegador a http://192.168.2.181:3000, con
+usuario y contraseña. Cuando se actualiza el código, todos ven la versión nueva
+al recargar (F5) — no hay que reinstalar nada en ningún PC.
+
+Módulos migrados (cada uno = una sección del menú lateral):
+  - Empleados (gestión / CRUD / carga masiva / historial)
+  - Roles de pago (PDF individual y por lote)
+  - Reportes de nómina (consolidado + histórico + comparador)
+  - Préstamos (historial combinado + saldos + análisis IA)
+  - Observaciones / multas / faltas
+  - Registrar egresos/ingresos (BIESS + manual + masivo)
+  - Liquidaciones / finiquitos (4 pantallas: Generar / Editor / Gestión / Descuentos)
+  - Vacaciones (gozadas / pagadas / cálculo / comprobantes PDF+QR / dashboard)
+  - Bitácora / agenda de cobro
+  - Administración (usuarios, roles, auditoría, parámetros)
+
+
+ARQUITECTURA (2 capas + 3 bases de datos)
+-----------------------------------------
+
+   Navegador  ─▶  Reflex (insevig_web/)  ─▶  core/  ─▶  Bases de datos
+                  (interfaz web)             (lógica     ├─ SQL Server 2008 R2
+                                              de negocio)│   (192.168.2.115, "insevig")
+                                                         │   — FUENTE DE VERDAD, filtro
+                                                         │   CODEMP='10' AND CODSUC='10'.
+                                                         │   Lectura casi siempre; escritura
+                                                         │   mínima (RPEMPLEA/RPEMPOBSERV/RPINGDES).
+                                                         ├─ Supabase (nube, PostgREST)
+                                                         │   — espejo de las tablas de SQL Server
+                                                         │   + tablas propias de módulos
+                                                         │   (vac_*, liquidaciones*, descuentos_*,
+                                                         │   bitacora*…). Toda escritura acá deja
+                                                         │   auditoría.
+                                                         └─ PostgreSQL local (en el server)
+                                                             — SOLO datos de la app:
+                                                             usuarios/roles, audit_log, jobs,
+                                                             historial de préstamos migrado del
+                                                             SQLite viejo, configuración.
+
+  * core/  = Python puro, SIN interfaz. Se puede testear solo (pytest). Único
+    lugar con credenciales (core/config.py lee de un archivo .env).
+  * insevig_web/  = la web (Reflex). NO tiene lógica de negocio: llama a core/.
+  * Cada módulo es una "rebanada" independiente:
+        core/repos/<mod>.py         (consultas + operaciones del módulo)
+        core/excel/<mod>_*.py       (Excel del módulo)
+        core/pdf/… (si aplica)
+        insevig_web/states/<mod>_state.py   (estado + eventos de la pantalla)
+        insevig_web/pages/<mod>/*.py        (las pantallas)
+        docs/modulos/<mod>.md              (contrato + estado)
+    Un módulo no importa a otro módulo; la coordinación entre módulos vive en
+    la capa de estado de la web.
+
+  * "Jobs": las operaciones largas (Excel de 2.5M filas, envío de correos,
+    análisis IA) corren en segundo plano y la pantalla muestra una barra de
+    progreso. El backend es UN solo proceso (no hace falta más para ~10
+    usuarios).
+
+  * Selector de fuente: casi toda pantalla de consulta deja elegir SQL Server o
+    Supabase. Si SQL Server no responde (sin driver, sin red), cae a Supabase.
+    Las ESCRITURAS van siempre a SQL Server (lo mínimo) o a Supabase con
+    auditoría, según el módulo.
+
+
+CÓMO CORRE (local, para desarrollo)
+-----------------------------------
+  cd .../NOMINA_ROLES_SISTEMA_INSEVIG
+  ./scripts/dev.sh            → http://localhost:3000   (login admin / admin)
+
+  Verificaciones antes de subir cambios:
+      .venv/bin/python -m pytest -m "not integration"    (tests, sin BD real)
+      .venv/bin/ruff check core/ insevig_web/            (estilo)
+      .venv/bin/mypy core/                                (tipos)
+
+
+===============================================================================
+ B) ESTRUCTURA DE CARPETAS
+===============================================================================
+
+Es un MONOREPO. Conviven:
+  1) La app nueva (core/ + insevig_web/ + soporte).
+  2) Los programas viejos de Tkinter (.pyw), que quedan como referencia hasta
+     el "cutover" final. NO se tocan salvo para copiar lógica.
+
+NOMINA_ROLES_SISTEMA_INSEVIG/
+│
+├── pyproject.toml         Definición del paquete + dependencias (pydantic, pandas,
+│                          pyodbc, supabase, reportlab, openpyxl, reflex, alembic…).
+│                          `pip install -e ".[web]"` instala todo.
+├── rxconfig.py            Config de Reflex (nombre de app, BD, tema, plugins).
+├── alembic.ini            Config de migraciones de la BD de la app.
+├── CLAUDE.md              Notas para el asistente de IA (convenciones del repo).
+│
+├── core/                  ★ LÓGICA DE NEGOCIO (sin interfaz, testeable)
+│   ├── config.py          Lee credenciales de .env (pydantic-settings).
+│   ├── concepts.py        Mapa CLASE(código de nómina) → concepto. NO CAMBIAR sin revisar todo.
+│   ├── parametros.py      SBU por año, config de liquidaciones, config de IA.
+│   ├── utils.py           Normalización de cédula, helpers numéricos/fechas.
+│   ├── storage.py         Guarda las salidas de los Jobs (Excel/ZIP/PDF) con retención.
+│   ├── logging_setup.py
+│   ├── db/                Conexiones:
+│   │   ├── sqlserver.py       fallback de drivers ODBC 17→18→13→11→nativo
+│   │   ├── sqlserver_pool.py  pool acotado
+│   │   ├── supabase_client.py cliente PostgREST cacheado
+│   │   ├── appdb.py           Engine/Session del PostgreSQL de la app
+│   │   ├── models.py          tablas de la app (User, Role, AuditLog, Job, …)
+│   │   └── health.py          "¿qué fuente conviene?"
+│   ├── datos/             Lectura+consolidación de datos de un empleado (unifica el
+│   │                      antiguo shared/obtener_datos.py; SQL Server y Supabase dan
+│   │                      la misma forma de salida).
+│   ├── repos/             ★ UNA operación de negocio por módulo:
+│   │   ├── empleados.py        CRUD de RPEMPLEA + catálogos + auditoría
+│   │   ├── nomina.py           reportes de nómina (generador cursor para RPHISTOR)
+│   │   ├── prestamos.py        historial combinado (RPINGDES + RPHISTOR + migrado) + saldos
+│   │   ├── observaciones.py    RPEMPOBSERV (7 slots) + multas + faltas
+│   │   ├── registrador.py      INSERT en RPINGDES (préstamo, movimiento, BIESS, agrupado)
+│   │   ├── liquidaciones.py    ★ el motor de finiquitos: procesar_empleado, guardar,
+│   │   │                        flujo de estados (autorizar/cheque_listo/pagada/…),
+│   │   │                        ajustar_concepto, recalcular, seguimiento, cuadre_masivo
+│   │   ├── vacaciones.py       cálculo de vacaciones, gozadas/pagadas, dashboard, reportes
+│   │   ├── descuentos_pendientes.py
+│   │   ├── bitacora.py
+│   │   └── admin.py            auditoría, trabajos recientes
+│   ├── excel/             Genera archivos .xlsx (uno o varios builders por módulo)
+│   │                      + parsers (carga masiva, BIESS, Excel de liquidaciones).
+│   ├── pdf/               ReportLab: rol_pago.py, liquidacion_individual.py,
+│   │                      vacaciones_comprobante.py (GOCE/PAGO con QR), ficha_empleado.py…
+│   ├── email/             Envío de roles por correo (SMTP o Microsoft Graph), reanudable.
+│   ├── narrativa/         Análisis de préstamos con IA (Groq/OpenRouter/Ollama) + TTS.
+│   ├── audit/writer.py    Registra toda escritura (pending → ok/error).
+│   ├── jobs/runner.py     Cola de trabajos en segundo plano (pool de 2-4 hilos).
+│   └── migrations_legacy/ Carga única del SQLite viejo de préstamos a PostgreSQL.
+│
+├── insevig_web/           ★ LA APLICACIÓN WEB (Reflex)
+│   ├── insevig_web.py     Crea la app, importa las páginas.
+│   ├── theme.py           Paleta corporativa (#1a4d8f azul, #ffd700 oro).
+│   ├── registry.py        Lista de módulos y sus enlaces del menú lateral.
+│   ├── models.py          SQLModel de las tablas de la app (para alembic).
+│   ├── auth.py            Login (bcrypt), sesión firmada, permisos por módulo/acción.
+│   ├── seed.py            Crea los 3 roles (admin/editor/consulta) + usuario admin.
+│   ├── components/        layout (header+sidebar), employee_picker, job_progress,
+│   │                      data_source_selector, y el sistema de diseño (ui/).
+│   ├── states/            ★ Estado + eventos de cada pantalla (…_state.py por módulo).
+│   └── pages/             ★ Las pantallas (@rx.page), una carpeta por módulo.
+│       ├── login.py  index.py  cuenta.py  trabajos.py
+│       ├── empleados/    buscar, editar (editor 6 pestañas), carga_masiva, avanzada, historial
+│       ├── roles/        generar, lote
+│       ├── reportes/     consolidado, comparador
+│       ├── prestamos/    historial (+ panel "empleados con saldo"), saldos
+│       ├── observaciones/
+│       ├── registrador/
+│       ├── liquidaciones/ index (Generar), editor, guardadas (Gestión), descuentos_pendientes
+│       ├── vacaciones/   index (6 pestañas)
+│       ├── bitacora/  envio/  admin/
+│       └── placeholders.py  (rutas todavía sin pantalla real)
+│
+├── assets/               logo, favicon, theme.css (colores claro/oscuro).
+├── alembic/versions/     Migraciones de la BD de la app.
+├── config/               supabase.yaml (gitignored), openssl_legacy.cnf (TLS 1.0 en Linux).
+├── scripts/              Utilidades de línea de comandos:
+│   ├── dev.sh                        levanta la app en local
+│   ├── healthcheck.py                prueba SQL Server + Supabase + BD app
+│   ├── validar_datos.py             compara SQL Server vs Supabase, campo a campo
+│   ├── validar_conceptos.py         ¿el mapa de conceptos cubre un período real?
+│   ├── humo_repos.py                 prueba todos los repos con un empleado real
+│   ├── cargar_lote_liquidaciones.py  carga masiva de liquidaciones (verifica vs Excel)
+│   ├── importar_liquidaciones_excel.py  importa liquidaciones ya calculadas del Excel
+│   ├── bot_mrl_lote.py              genera el Excel formato "Bot MRL" de un lote
+│   └── dump_liquidacion.py          vuelca el cálculo de una liquidación a JSON
+├── tests/               unit/ (sin BD), integration/ (con SQL Server/Supabase reales,
+│                        no corren por defecto), fixtures/.
+│
+├── deploy/              ★ TODO LO DEL SERVIDOR (ver sección C)
+│   ├── README.md                 runbook completo (con HTTPS/Caddy)
+│   ├── NAS-192.168.2.181.md       puesta en marcha rápida en el NAS
+│   ├── Caddyfile                  config del proxy inverso (en pausa)
+│   ├── windows/
+│   │   ├── setup.ps1                  prerequisitos, guía paso a paso
+│   │   ├── verificar-requisitos.ps1   chequea que estén Python/Node/ODBC/etc.
+│   │   ├── deploy-nas.ps1             ★ despliega/actualiza (git pull + deps + servicio + restart)
+│   │   ├── install-services.ps1      registra los servicios Windows con NSSM
+│   │   ├── enable-tls10.ps1          reactiva TLS 1.0 (fallback SQL Server 2008)
+│   │   └── backup.ps1                pg_dump + copia de STORAGE_DIR
+│   └── docker/                    Dockerfile + compose (alternativa, no se usa)
+│
+├── docs/
+│   ├── PLAN_IMPLEMENTACION.md    plan por fases + checklist
+│   ├── CONTRATOS.md              qué archivos NO se tocan sin acuerdo
+│   ├── ESTRUCTURA_Y_DESPLIEGUE.txt  (este archivo)
+│   └── modulos/                  ficha por módulo + specs de la interfaz Tkinter
+│                                 (prestamos_UI.md, empleados_UI.md, vacaciones_UI.md,
+│                                  liquidaciones_gestion_UI.md, _cuadricula_UI.md, _editor_UI.md)
+│
+├── demo_launcher/       .exe/.bat que solo abre el navegador en la URL correcta.
+├── var/storage/         salidas de Jobs generadas en local (gitignored).
+│
+└── ── PROGRAMAS VIEJOS DE TKINTER (referencia, se retiran al final) ──
+    ├── empleados/SISTEMA_GESTION_EMPLEADOS_10.pyw   (~3000 líneas)
+    ├── roles/Roles_Principal.pyw
+    ├── prestamos/HISTORIAL_PRESTAMOS_10.pyw         (~3150 líneas)
+    ├── reportes/reporte_nomina_GUI.pyw
+    ├── observaciones/  envio_roles/  registrdor_vizulizador_egresosingresos/
+    ├── HISTORIAL PRESTAMOS/   TOTAL_OSERVACIONES/   (repos git anidados propios)
+    └── shared/         código común viejo (obtener_datos.py, detect_db.py)
+
+  Los generadores de LIQUIDACIONES y VACACIONES viejos NO están en este repo:
+    /home/alcano/Documentos/mis_proyecto/LIQUIDACIONES_SISTEMA_INSEVIG/
+    /home/alcano/Documentos/mis_proyecto/VACACIONES_SISTEMA_INSEVIG/
+
+
+===============================================================================
+ C) LA CARGA EN EL SERVIDOR — QUÉ HACE EL NAS Y CÓMO AUTOMATIZARLA
+===============================================================================
+
+DÓNDE VIVE
+----------
+Servidor Windows (el "NAS"), IP fija 192.168.2.181. Dos carpetas de red:
+  \\192.168.2.181\Sistemas_Dev$   = E:\Sistemas_Dev\   (unidad X:)  → el CÓDIGO.
+        Solo el grupo GRP_DEVS lo ve. Ahí está clonado el repo:
+        E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG
+  \\192.168.2.181\Apps_Empresa$\Lanzadores\ = E:\Apps_Empresa\Lanzadores\ (unidad Y:)
+        El .exe lanzador (solo abre el navegador). RRHH tiene lectura/ejecución.
+
+La app corre como SERVICIO de Windows llamado  insevig-web  (con NSSM):
+  - arranque automático al prender el servidor
+  - se reinicia solo si se cae
+  - comando real:  .venv\Scripts\reflex.exe run --env prod --single-port --frontend-port 3000
+  - logs en  C:\insevig\logs\insevig-web.{out,err}.log
+
+Componentes en el servidor:
+  - Python 3.12 + entorno virtual  E:\Sistemas_Dev\...\.venv
+  - PostgreSQL 16  (BD "insevig_app": usuarios, auditoría, jobs, préstamos migrados)
+  - archivo  .env  con TODAS las credenciales (ACL restringida)
+  - (pausado) Caddy como proxy HTTPS — hoy la app se sirve directo en :3000, solo
+    en red local + Tailscale (100.98.34.99:3000)
+
+
+QUÉ HACE UN DESPLIEGUE / ACTUALIZACIÓN  (deploy/windows/deploy-nas.ps1)
+---------------------------------------------------------------------
+Correr en el NAS, como Administrador, dentro de E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG:
+
+    .\deploy\windows\deploy-nas.ps1 -SoloActualizar
+
+Pasos que ejecuta:
+  1. git pull --ff-only                       (baja el código nuevo de GitHub)
+  2. .venv\Scripts\pip install -e ".[web]"    (instala/actualiza dependencias)
+  3. valida el .env y su ACL
+  4. python -m scripts.healthcheck            (¿SQL Server + Supabase + Postgres OK?)
+  5. alembic upgrade head                     (aplica migraciones de BD si hay)
+  6. python -m insevig_web.seed               (asegura el usuario admin)
+  7. (solo en instalación) regla de firewall TCP 3000 + registra el servicio NSSM
+  8. Restart-Service insevig-web
+  9. prueba http://localhost:3000/  → si responde 200, listo.
+
+El frontend (React) lo compila Reflex al arrancar el servicio. La primera vez o
+tras un cambio grande de estilos tarda ~45 s (a veces se borra la carpeta .web
+para forzar recompilación desde cero).
+
+Actualización "en caliente" mínima (lo que se hace en el día a día):
+    git pull  →  pip install -e ".[web]"  →  Restart-Service insevig-web
+El usuario solo tiene que apretar F5.
+
+
+¿SE PUEDE HACER CON ALGÚN PROGRAMA / AUTOMÁTICO?   → SÍ. Opciones:
+-----------------------------------------------------------------
+
+1) UN SOLO CLIC (lo más simple).
+   Un acceso directo / .bat en el escritorio del NAS que ejecuta:
+       powershell -ExecutionPolicy Bypass -File `
+         E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG\deploy\windows\deploy-nas.ps1 -SoloActualizar
+   El operador hace doble clic y espera ~1 min. Es lo que hoy se corre a mano.
+   (Se puede empaquetar como .exe con "Bat To Exe Converter" o "IExpress" si se
+   quiere un ícono propio, pero el .bat ya alcanza.)
+
+2) AUTOMÁTICO AL HACER git push  (recomendado para no depender de nadie).
+   Instalar en el NAS un "self-hosted runner" de GitHub Actions (un servicio
+   más). Un workflow del repo, al hacer push a main, dispara en el NAS:
+       git pull → pip install → alembic upgrade → Restart-Service insevig-web
+       → curl http://localhost:3000 para confirmar.
+   Resultado: subís el código y a los ~1-2 min ya está en producción, sin tocar
+   el servidor. Requiere: el runner instalado + el servicio con permiso para
+   `Restart-Service insevig-web`.
+
+3) TAREA PROGRAMADA (Task Scheduler de Windows).
+   Una tarea que cada noche (o cada X horas) corre `deploy-nas.ps1 -SoloActualizar`.
+   Sencillo, pero despliega "a ciegas" — si un commit rompe algo, entra igual.
+   Sirve como complemento del punto 1 (si alguien olvidó desplegar).
+
+4) WEBHOOK.
+   Un mini servicio que escucha un POST de GitHub ("push a main") y lanza el
+   script. Igual que el punto 2 pero más artesanal; el runner de Actions es más
+   robusto.
+
+5) BOTÓN DENTRO DE LA PROPIA APP  (solo para admin).
+   Una página /admin que, al pulsar "Actualizar sistema", ejecuta el script en
+   el servidor y muestra el log. Cómodo, pero da a la app permiso para
+   reiniciarse y correr pip — hay que sopesar el riesgo. Preferible el punto 2.
+
+RECOMENDACIÓN: punto 1 ya, y punto 2 (runner de GitHub Actions) cuando se quiera
+que el despliegue sea "push y listo" sin entrar al NAS.
+
+
+BACKUPS  (deploy/windows/backup.ps1, programar en Task Scheduler)
+----------------------------------------------------------------
+  - pg_dump de la BD  insevig_app  (diario)
+  - copia de  STORAGE_DIR  (las salidas de Jobs)
+  - retención 30/90 días; probar un restore cada trimestre
+  - SQL Server 192.168.2.115 lo respalda su propio DBA (no es responsabilidad de esta app)
+
+
+PENDIENTES DE SEGURIDAD (registrados, no bloquean)
+-------------------------------------------------
+  - El JWT service_role de Supabase quedó en el historial de git (commit fbd00ea,
+    config/supabase_credentials.txt). Ya no se usa (se rotó a una secret key
+    nueva) — falta purgarlo del historial o confirmar que la vieja está revocada.
+  - El password `sa` de SQL Server también quedó en git. Ya no lo usa el .env
+    (se usan logins dedicados insevig_ro / insevig_rw) — conviene cambiarlo en el
+    SQL Server igual.
+
+
+===============================================================================
+ RESUMEN EN 5 LÍNEAS
+===============================================================================
+1. Una web (Reflex) reemplaza los ~7 .exe; se abre en el navegador con login.
+2. core/ = lógica testeable; insevig_web/ = pantallas; 3 BD (SQL Server = verdad,
+   Supabase = espejo+módulos, PostgreSQL local = datos de la app).
+3. Corre como servicio Windows 'insevig-web' en el NAS 192.168.2.181:3000.
+4. Actualizar = git pull + pip install + Restart-Service (script deploy-nas.ps1).
+5. Automatizable: .bat de un clic ya; runner de GitHub Actions para "push y listo".
