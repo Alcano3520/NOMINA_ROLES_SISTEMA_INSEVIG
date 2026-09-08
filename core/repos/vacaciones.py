@@ -45,6 +45,8 @@ import datetime as dt
 import logging
 from datetime import date, datetime
 
+from postgrest.types import CountMethod
+
 from core.audit.writer import registrar_evento
 from core.db import supabase_client
 from core.utils import a_float, a_int, normalizar_cedula
@@ -379,7 +381,7 @@ def get_count_activos() -> int:
     sb = supabase_client.get_client()
     try:
         r = (
-            sb.table("rpemplea").select("empleado", count="exact")
+            sb.table("rpemplea").select("empleado", count=CountMethod.exact)
             .eq("codemp", "10").eq("codsuc", "10").eq("estado", "ACT").execute()
         )
         return r.count or 0
@@ -584,13 +586,16 @@ def calcular_meses_periodo(
             if not datos_mes.get(100) and sueldo_base:
                 datos_mes[100] = sueldo_base
         fila = {
-            "mes": mes, "anio": anio, "fecha_mes": _fecha(date(anio, mes, calendar.monthrange(anio, mes)[1])).isoformat(),
+            "mes": mes, "anio": anio,
+            "fecha_mes": _fecha(date(anio, mes, calendar.monthrange(anio, mes)[1])).isoformat(),
             "sueldo": round(datos_mes.get(100, 0), 2), "bonificacion": round(datos_mes.get(102, 0), 2),
             "maniobras": round(datos_mes.get(110, 0), 2), "hor25": round(datos_mes.get(113, 0), 2),
             "hor50": round(datos_mes.get(114, 0), 2), "hor100": round(datos_mes.get(115, 0), 2),
             "es_manual": 0, "fuente": "supabase",
         }
-        fila["total_mes"] = round(sum(fila[k] for k in ("sueldo", "bonificacion", "maniobras", "hor25", "hor50", "hor100")), 2)
+        fila["total_mes"] = round(
+            sum(fila[k] for k in ("sueldo", "bonificacion", "maniobras", "hor25", "hor50", "hor100")), 2
+        )
         filas.append(fila)
     return filas
 
@@ -639,7 +644,10 @@ def get_vacaciones_empleado(cedula: str, tipo: str | None = None) -> list[dict]:
         q = sb.table("vac_registros").select(_VAC_COLS).eq("cedula", cedula_n)
         if tipo:
             q = q.eq("tipo", tipo)
-        rows = q.order("periodo", desc=True).order("desde", desc=True).order("fecha_pago", desc=True).execute().data or []
+        rows = (
+            q.order("periodo", desc=True).order("desde", desc=True)
+            .order("fecha_pago", desc=True).execute().data or []
+        )
         return [_norm_vac_row(r) for r in rows]
     except Exception as e:  # noqa: BLE001
         log.error("get_vacaciones_empleado cedula=%s: %s", cedula, e)
@@ -684,7 +692,8 @@ def resumen_empleado(cedula: str) -> dict:
     except Exception as e:  # noqa: BLE001
         log.error("resumen_empleado cedula=%s: %s", cedula, e)
         return vacio
-    dias_goz = gozada_count = total_pag = pagada_count = pendientes = 0
+    dias_goz = gozada_count = pagada_count = pendientes = 0
+    total_pag = 0.0
     for r in rows:
         if r.get("tipo") == "gozada":
             dias_goz += a_int(r.get("dias_tomados"))
@@ -856,7 +865,10 @@ def _insertar(datos: dict, *, usuario: str, roles: set[str]) -> int:
         "dias_adicionales": a_int(datos.get("dias_adicionales")), "anticipo": a_float(datos.get("anticipo")),
         "total_pagar": a_float(datos.get("total_pagar")), "fecha_cobro": datos.get("fecha_cobro"),
     }
-    payload = {k: v for k, v in payload.items() if v is not None or k in ("tipo", "cedula", "dias_tomados", "dias_adicionales")}
+    payload = {
+        k: v for k, v in payload.items()
+        if v is not None or k in ("tipo", "cedula", "dias_tomados", "dias_adicionales")
+    }
     resp = sb.table("vac_registros").insert(payload).execute()
     if not resp.data:
         raise RuntimeError("Supabase no devolvió ID al insertar vacación.")
@@ -1180,14 +1192,14 @@ def get_alertas(cedula: str, fecha_ingreso: str) -> dict:
     except Exception:  # noqa: BLE001
         return {"pendientes": pendientes, "sin_firmar": sin_firmar}
 
-    for per in periodos:
-        lbl = per["label"]
+    for pinfo in periodos:
+        lbl = pinfo["label"]
         if lbl in pagados_set:
             continue
         gozados = gozados_map.get(lbl, 0)
         if gozados >= 15:
             continue
-        dias_adic, _ = calcular_dias_adicionales(fecha_ingreso, per["fin"].strftime("%Y-%m-%d"))
+        dias_adic, _ = calcular_dias_adicionales(fecha_ingreso, pinfo["fin"].strftime("%Y-%m-%d"))
         dias_pend = max(0, 15 + dias_adic - gozados)
         if dias_pend > 0:
             pendientes.append({"periodo": lbl, "dias_pendientes": dias_pend})
@@ -1285,7 +1297,8 @@ def reporte_completo(periodo=None, departamento=None, estado=None) -> list[dict]
             "dias_adicionales": a_int(r.get("dias_adicionales")), "total_pagar": a_float(r.get("total_pagar")),
             "anticipo": a_float(r.get("anticipo")) if tipo == "pagada" else 0.0,
             "fecha_pago": r.get("fecha_pago") if tipo == "pagada" else r.get("fecha_comprobante"),
-            "banco": r.get("banco") if tipo == "pagada" else "", "no_cheque": r.get("no_cheque") if tipo == "pagada" else "",
+            "banco": r.get("banco") if tipo == "pagada" else "",
+            "no_cheque": r.get("no_cheque") if tipo == "pagada" else "",
             "observaciones": r.get("observaciones"),
         })
     result.sort(key=lambda x: (x.get("periodo") or "", x.get("apellidos") or "", x.get("tipo") or ""), reverse=True)
@@ -1294,7 +1307,9 @@ def reporte_completo(periodo=None, departamento=None, estado=None) -> list[dict]
 
 def reporte_nomina_pagos(periodo=None, fecha_desde=None, fecha_hasta=None, banco=None) -> list[dict]:
     """Reporte de pagadas. Porta `model.get_reporte_nomina_pagos`."""
-    rows = fetch_vac_registros(tipo="pagada", periodo=periodo, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, banco=banco)
+    rows = fetch_vac_registros(
+        tipo="pagada", periodo=periodo, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta, banco=banco
+    )
     cedulas = list({r["cedula"] for r in rows if r.get("cedula")})
     emp_data = batch_emp_data(cedulas)
     result = []
@@ -1317,7 +1332,9 @@ def reporte_nomina_pagos(periodo=None, fecha_desde=None, fecha_hasta=None, banco
 def reporte_nomina_gozadas(periodo=None, fecha_desde=None, fecha_hasta=None,
                             departamento=None, estado=None) -> list[dict]:
     """Reporte de gozadas. Porta `model.get_reporte_nomina_gozadas`."""
-    rows = fetch_vac_registros(tipo="gozada", periodo=periodo, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta)
+    rows = fetch_vac_registros(
+        tipo="gozada", periodo=periodo, estado=estado, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta
+    )
     cedulas = list({r["cedula"] for r in rows if r.get("cedula")})
     emp_data = batch_emp_data(cedulas)
     result = []
@@ -1365,7 +1382,9 @@ def resumen_periodos(tipo: str | None = None) -> list[dict]:
     return result
 
 
-def reporte_pendientes_global(n_periodos: int = 5, solo_15: bool = False, departamento: str | None = None) -> list[dict]:
+def reporte_pendientes_global(
+    n_periodos: int = 5, solo_15: bool = False, departamento: str | None = None
+) -> list[dict]:
     """Días pendientes por empleado × período, para todos los activos. Porta `model.get_reporte_pendientes_global`."""
     empleados = fetch_empleados_activos(departamento=departamento)
     if not empleados:
@@ -1392,8 +1411,8 @@ def reporte_pendientes_global(n_periodos: int = 5, solo_15: bool = False, depart
         except Exception:  # noqa: BLE001
             continue
         ev = vac_idx.get(ced, {"gozada": {}, "pagada": set()})
-        for per in periodos:
-            lbl, per_fin = per["label"], per["fin"].strftime("%Y-%m-%d")
+        for pinfo in periodos:
+            lbl, per_fin = pinfo["label"], pinfo["fin"].strftime("%Y-%m-%d")
             if lbl in ev["pagada"]:
                 continue
             dias_adic, _ = calcular_dias_adicionales(fi, per_fin)
@@ -1423,21 +1442,23 @@ def dashboard_stats() -> dict:
             log.warning("dashboard count error: %s", e)
             return 0
 
+    def _sel():
+        return sb.table("vac_registros").select("id", count=CountMethod.exact)
+
     n_activos = get_count_activos()
     n_sin_firmar = _count(
-        sb.table("vac_registros").select("id", count="exact").eq("tipo", "gozada").in_("estado_doc", ["pendiente", "completado"])
+        _sel().eq("tipo", "gozada").in_("estado_doc", ["pendiente", "completado"])
     ) - _count(
-        sb.table("vac_registros").select("id", count="exact").eq("tipo", "gozada")
+        _sel().eq("tipo", "gozada")
         .in_("estado_doc", ["pendiente", "completado"]).eq("firmado", "POSITIVO")
     )
     n_pagadas_sf = _count(
-        sb.table("vac_registros").select("id", count="exact").eq("tipo", "pagada").eq("estado_doc", "completado")
+        _sel().eq("tipo", "pagada").eq("estado_doc", "completado")
     ) - _count(
-        sb.table("vac_registros").select("id", count="exact").eq("tipo", "pagada")
-        .eq("estado_doc", "completado").eq("firmado", "POSITIVO")
+        _sel().eq("tipo", "pagada").eq("estado_doc", "completado").eq("firmado", "POSITIVO")
     )
-    n_gozadas_anio = _count(sb.table("vac_registros").select("id", count="exact").eq("tipo", "gozada").gte("desde", fi))
-    n_pagadas_anio = _count(sb.table("vac_registros").select("id", count="exact").eq("tipo", "pagada").gte("fecha_pago", fi))
+    n_gozadas_anio = _count(_sel().eq("tipo", "gozada").gte("desde", fi))
+    n_pagadas_anio = _count(_sel().eq("tipo", "pagada").gte("fecha_pago", fi))
 
     try:
         cols = "id,cedula,tipo,periodo,desde,hasta,dias_tomados,estado_doc,firmado"
@@ -1465,7 +1486,9 @@ def dashboard_stats() -> dict:
 
     try:
         anio_hoy = date.today().year
-        periodos_check = [f"{anio_hoy - 1}-{anio_hoy}", f"{anio_hoy - 2}-{anio_hoy - 1}", f"{anio_hoy - 3}-{anio_hoy - 2}"]
+        periodos_check = [
+            f"{anio_hoy - 1}-{anio_hoy}", f"{anio_hoy - 2}-{anio_hoy - 1}", f"{anio_hoy - 3}-{anio_hoy - 2}",
+        ]
         pag_rows = (sb.table("vac_registros").select("cedula,periodo").eq("tipo", "pagada")
                     .in_("periodo", periodos_check).limit(5000).execute().data or [])
         pagadas_por_per: dict[str, set] = {}
@@ -1478,13 +1501,15 @@ def dashboard_stats() -> dict:
             anio_base = int(per.split("-")[0])
             corte = f"{anio_base + 1}-12-31"
             n_elegibles = _count(
-                sb.table("rpemplea").select("empleado", count="exact")
+                sb.table("rpemplea").select("empleado", count=CountMethod.exact)
                 .eq("codemp", "10").eq("codsuc", "10").eq("estado", "ACT").lt("fecha_ing", corte)
             )
             n_pagados = len(pagadas_por_per.get(per, set()))
             n_pendientes = max(0, n_elegibles - n_pagados)
             if n_pendientes > 0:
-                pendientes_periodos.append({"periodo": per, "n_empleados": n_pendientes, "total_dias": n_pendientes * 15})
+                pendientes_periodos.append(
+                    {"periodo": per, "n_empleados": n_pendientes, "total_dias": n_pendientes * 15}
+                )
     except Exception as e:  # noqa: BLE001
         log.warning("dashboard pendientes_periodos: %s", e)
         pendientes_periodos = []
@@ -1502,7 +1527,8 @@ def sin_firmar_activos() -> list[dict]:
     try:
         cols = "id,cedula,tipo,periodo,desde,hasta,dias_tomados,firmado,estado_doc"
         gozadas = (sb.table("vac_registros").select(cols).eq("tipo", "gozada")
-                   .in_("estado_doc", ["pendiente", "completado"]).order("id", desc=True).limit(2000).execute().data or [])
+                   .in_("estado_doc", ["pendiente", "completado"])
+                   .order("id", desc=True).limit(2000).execute().data or [])
         pagadas = (sb.table("vac_registros").select(cols).eq("tipo", "pagada")
                    .eq("estado_doc", "completado").order("id", desc=True).limit(2000).execute().data or [])
         pendientes = [r for r in gozadas + pagadas if (r.get("firmado") or "").upper() != "POSITIVO"]
@@ -1522,7 +1548,9 @@ def sin_firmar_activos() -> list[dict]:
                 "vac_id": r["id"], "tipo": r.get("tipo", ""), "periodo": r.get("periodo", ""),
                 "desde": r.get("desde", ""), "hasta": r.get("hasta", ""), "dias_tomados": a_int(r.get("dias_tomados")),
             })
-        result.sort(key=lambda x: (x.get("apellidos", ""), x.get("nombres", ""), x.get("tipo", ""), x.get("periodo", "")))
+        result.sort(
+            key=lambda x: (x.get("apellidos", ""), x.get("nombres", ""), x.get("tipo", ""), x.get("periodo", ""))
+        )
         return result
     except Exception as e:  # noqa: BLE001
         log.error("sin_firmar_activos: %s", e)
