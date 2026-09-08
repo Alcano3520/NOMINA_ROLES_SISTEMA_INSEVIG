@@ -50,6 +50,7 @@ _RUTAS_MIGRADAS = {
     "/bitacora",
     "/liquidaciones",
     "/liquidaciones/guardadas",
+    "/liquidaciones/editor",
     "/liquidaciones/descuentos-pendientes",
     "/vacaciones",
 }

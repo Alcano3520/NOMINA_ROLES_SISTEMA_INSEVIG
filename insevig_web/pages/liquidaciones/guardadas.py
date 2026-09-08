@@ -476,6 +476,8 @@ def guardadas() -> rx.Component:
         rx.hstack(
             rx.link(rx.button(rx.icon("arrow-left", size=14), "Generar", variant="soft", size="2"),
                     href="/liquidaciones"),
+            rx.link(rx.button(rx.icon("pencil", size=14), "Editor", variant="soft", size="2"),
+                    href="/liquidaciones/editor"),
             rx.link(rx.button(rx.icon("wallet", size=14), "Descuentos pendientes", variant="soft", size="2"),
                     href="/liquidaciones/descuentos-pendientes"),
             spacing="2", wrap="wrap",
