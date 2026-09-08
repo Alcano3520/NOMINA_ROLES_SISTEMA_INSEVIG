@@ -84,3 +84,61 @@ def reporte_completo_xlsx(filas: list[dict], *, titulo: str = "REPORTE COMPLETO 
     ws.freeze_panes(4, 0)
     wb.close()
     return buf.getvalue()
+
+
+_COLUMNAS_PENDIENTES = [
+    ("cedula", "Cédula"),
+    ("apellidos", "Apellidos"),
+    ("nombres", "Nombres"),
+    ("cargo", "Cargo"),
+    ("departamento", "Departamento"),
+    ("fecha_ingreso", "Fecha Ingreso"),
+    ("periodo", "Período"),
+    ("dias_derecho", "Días Derecho"),
+    ("dias_adicionales", "Días Adic."),
+    ("dias_gozados", "Días Gozados"),
+    ("dias_pendientes", "Días Pendientes"),
+]
+_INT_PENDIENTES = {"dias_derecho", "dias_adicionales", "dias_gozados", "dias_pendientes"}
+
+
+def pendientes_global_xlsx(filas: list[dict]) -> bytes:
+    """Excel de `core.repos.vacaciones.reporte_pendientes_global()` —
+    días de vacaciones pendientes por empleado × período."""
+    buf = io.BytesIO()
+    wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+    banner = wb.add_format({
+        "bold": True, "font_size": 12, "bg_color": "#0D1B2A", "font_color": "white",
+        "align": "center", "valign": "vcenter",
+    })
+    hdr = wb.add_format({"bold": True, "bg_color": "#1a4d8f", "font_color": "white", "border": 1})
+    cell = wb.add_format({"border": 1})
+    ws = wb.add_worksheet("PENDIENTES")
+
+    ncols = len(_COLUMNAS_PENDIENTES)
+    total_dias = sum(int(f.get("dias_pendientes") or 0) for f in filas)
+    ws.merge_range(0, 0, 0, ncols - 1, "INSEVIG — VACACIONES PENDIENTES (GLOBAL)", banner)
+    ws.merge_range(
+        1, 0, 1, ncols - 1,
+        f"Generado: {dt.datetime.now().strftime('%d/%m/%Y %H:%M')}   ·   "
+        f"{len(filas)} registro(s)   ·   {total_dias} días pendientes en total",
+        wb.add_format({"italic": True, "font_color": "#555555", "align": "center"}),
+    )
+    for j, (_key, label) in enumerate(_COLUMNAS_PENDIENTES):
+        ws.write(3, j, label, hdr)
+
+    for i, f in enumerate(filas, 4):
+        for j, (key, _label) in enumerate(_COLUMNAS_PENDIENTES):
+            v = f.get(key)
+            if key == "cedula":
+                ws.write(i, j, normalizar_cedula(v), cell)
+            elif key in _INT_PENDIENTES:
+                ws.write_number(i, j, int(v or 0), cell)
+            else:
+                ws.write(i, j, "" if v is None else str(v), cell)
+
+    for j, (_key, label) in enumerate(_COLUMNAS_PENDIENTES):
+        ws.set_column(j, j, min(max(len(label) + 2, 10), 40))
+    ws.freeze_panes(4, 0)
+    wb.close()
+    return buf.getvalue()

@@ -583,7 +583,45 @@ def _tab_reportes() -> rx.Component:
                 variant="surface", size="1", width="100%",
             )
         ),
+        rx.divider(margin_y="0.5rem"),
+        rx.heading("Vacaciones pendientes (global)", size="3"),
+        rx.text(
+            "Días de vacaciones pendientes por empleado y período, para todo el personal activo.",
+            size="1", color_scheme="gray",
+        ),
+        rx.hstack(
+            rx.input(placeholder="Departamento (opcional)", value=_S.pg_departamento,
+                     on_change=_S.set_pg_departamento, width="16em"),
+            rx.select(["3", "4", "5", "6", "8", "10"], value=_S.pg_n_periodos,
+                      on_change=_S.set_pg_n_periodos, width="7em"),
+            rx.checkbox("Solo 15 días base", checked=_S.pg_solo_15, on_change=_S.set_pg_solo_15),
+            primary_button("Cargar", on_click=_S.cargar_pendientes_global, loading=_S.pg_cargando),
+            rx.button("Exportar Excel", on_click=_S.exportar_pendientes_global, variant="soft"),
+            spacing="2", wrap="wrap", align="center",
+        ),
+        scroll_x(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(*[rx.table.column_header_cell(c) for c in
+                                   ("Cédula", "Nombre", "Departamento", "Período", "Derecho", "Gozados", "Pendientes")])
+                ),
+                rx.table.body(rx.foreach(_S.pg_filas, _fila_pendiente_global)),
+                variant="surface", size="1", width="100%",
+            )
+        ),
         spacing="3", width="100%",
+    )
+
+
+def _fila_pendiente_global(f: rx.Var) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(f["cedula"]),
+        rx.table.cell(f"{f['apellidos']} {f['nombres']}"),
+        rx.table.cell(f["departamento"]),
+        rx.table.cell(f["periodo"]),
+        rx.table.cell(f["dias_derecho"].to_string()),
+        rx.table.cell(f["dias_gozados"].to_string()),
+        rx.table.cell(f["dias_pendientes"].to_string()),
     )
 
 

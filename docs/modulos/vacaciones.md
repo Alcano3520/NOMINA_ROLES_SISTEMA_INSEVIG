@@ -62,19 +62,23 @@ módulo porta la fórmula de PRODUCCIÓN.
 `vacaciones:ver` (consulta), `vacaciones:crear`/`editar` (editor), `eliminar`
 solo `admin` (vía `ACCIONES` completo).
 
+## Hecho recientemente
+- **PDF individual con QR** — `core/pdf/vacaciones_comprobante.py`
+  (`comprobante_pdf` GOCE/PAGO + `anticipo_pdf`); botón "PDF" en las filas de
+  Gozadas/Pagadas y en el diálogo de anticipo. QR vía `vacaciones.qr_texto()`.
+- **Confirmación de "período anterior pendiente"** antes de guardar
+  (`_dialog_confirmar_periodo` en la página, `get_alertas()` en el state) —
+  bloquea el guardado hasta que el usuario confirme.
+- **Dashboard "Pendientes de Firma"** (tab por defecto) — `dashboard_stats` +
+  `sin_firmar_activos`, con bulk "marcar firmado".
+- **Reporte "Vacaciones pendientes (global)"** en el tab Reportes —
+  `reporte_pendientes_global` (filtro depto / nº períodos / solo-15) +
+  `core/excel/vacaciones_builders.pendientes_global_xlsx`.
+
 ## Pendiente / no portado (deliberado)
-- **PDF individual con QR** (comprobante GOCE/PAGO, `src/pdf_generator.py` +
-  `src/data_extractor.py` del `.pyw`) — no tiene builder equivalente aquí
-  todavía (reportlab + QR). El flujo web hoy solo exporta el reporte a Excel.
 - **Envío a carpeta de financiero** (`_generar_y_exportar_pdf` copia el PDF a
-  una ruta de red) — depende del PDF individual de arriba.
-- Reportes secundarios del `.pyw` no expuestos aún en la página web:
-  `reporte_pendientes` (por tipo, distinto del completo), `reporte_dias_empleado`,
-  `reporte_pendientes_global` (sí portado en `core/repos/vacaciones.py`, falta
-  su pantalla), `dashboard_stats`/`sin_firmar_activos` (sí portados, sin UI).
+  una ruta de red) — en la web se reemplaza por la descarga directa del PDF.
+- Reportes secundarios del `.pyw` sin pantalla propia: `reporte_pendientes`
+  (por tipo, poco distinto del completo), `reporte_dias_empleado`.
 - `renombrador_qr.py` (diálogo standalone para renombrar archivos escaneados
   por su QR) — herramienta de escritorio aparte, no aplica a la app web.
-- Confirmación interactiva de "período anterior pendiente" antes de guardar
-  (`_confirmar_periodo_prioritario` del `.pyw`) — los datos ya están
-  disponibles vía `get_alertas()`; falta el diálogo de confirmación en la UI
-  (hoy la página solo muestra el aviso, no bloquea el guardado).

@@ -639,3 +639,52 @@ class VacacionesState(rx.State):
 
         data = await asyncio.to_thread(_fn)
         return rx.download(data=data, filename="vacaciones_reporte_completo.xlsx")
+
+    # ── Reporte: pendientes global (días de vacaciones pendientes por empleado) ──
+    pg_departamento: str = ""
+    pg_n_periodos: str = "5"
+    pg_solo_15: bool = False
+    pg_filas: list[dict] = []
+    pg_cargando: bool = False
+
+    @rx.event
+    def set_pg_departamento(self, v: str):
+        self.pg_departamento = "" if v == "(todos)" else v
+
+    @rx.event
+    def set_pg_n_periodos(self, v: str):
+        self.pg_n_periodos = v
+
+    @rx.event
+    def set_pg_solo_15(self, v: bool):
+        self.pg_solo_15 = v
+
+    def _pg_args(self) -> tuple[int, bool, str | None]:
+        try:
+            n = max(1, min(10, int(self.pg_n_periodos or 5)))
+        except ValueError:
+            n = 5
+        return n, self.pg_solo_15, (self.pg_departamento or None)
+
+    @rx.event
+    async def cargar_pendientes_global(self):
+        self.pg_cargando = True
+        yield
+        n, solo15, depto = self._pg_args()
+        try:
+            self.pg_filas = await asyncio.to_thread(V.reporte_pendientes_global, n, solo15, depto)
+        except Exception as e:  # noqa: BLE001
+            self.error = f"No se pudo cargar el reporte de pendientes: {e}"
+        self.pg_cargando = False
+
+    @rx.event
+    async def exportar_pendientes_global(self):
+        n, solo15, depto = self._pg_args()
+
+        def _fn() -> bytes:
+            from core.excel.vacaciones_builders import pendientes_global_xlsx
+
+            return pendientes_global_xlsx(V.reporte_pendientes_global(n, solo15, depto))
+
+        data = await asyncio.to_thread(_fn)
+        return rx.download(data=data, filename="vacaciones_pendientes_global.xlsx")
