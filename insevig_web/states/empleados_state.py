@@ -599,16 +599,17 @@ class EmpleadosState(rx.State):
 
     # ── Documentos (CV, certificado, contrato, renuncia) ─────────────────
     @rx.event
-    def generar_documento(self, tipo: str):
-        if not self.edit_campos:
-            return
+    async def generar_documento(self, tipo: str):
         from core.pdf.documentos_empleado import DOCUMENTOS
 
-        if tipo not in DOCUMENTOS:
+        tipo = str(tipo)
+        if not self.edit_campos or tipo not in DOCUMENTOS:
             return
         _nombre, fn = DOCUMENTOS[tipo]
-        data = fn(self.edit_empleado, dict(self.edit_campos))
-        return rx.download(data=data, filename=f"{tipo}_{self.edit_empleado}.pdf")
+        campos = {str(k): ("" if v is None else str(v)) for k, v in self.edit_campos.items()}
+        cod = str(self.edit_empleado)
+        data = await asyncio.to_thread(fn, cod, campos)
+        return rx.download(data=data, filename=f"{tipo}_{cod}.pdf")
 
     @rx.event
     def toggle_campo(self, campo: str):
