@@ -61,12 +61,19 @@ Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` act
 | Bitácora | CRUD contra Supabase `agenda_cobro_registros` | confirmar el nombre real de la tabla; importar `agenda_liquidacion.db` si tiene datos |
 
 ### A2. Profundidad pendiente conocida
-- **Empleados**: editor de 68 campos completo; búsqueda avanzada multi-criterio;
-  exportar catálogos DBTABLAS; imprimir ficha del empleado en PDF.
-- **Registrador**: las 6 pestañas del legado (hoy solo BIESS + manual).
-- **Roles**: preview del PDF embebido en la página (`<iframe>`); logo automático.
-- **Reportes**: prueba de integración `test_concepts_cubre_periodo_real` (que el
-  mapa CLASE→concepto cubra todas las CLASE de un período real).
+- **Empleados**: [x] editor completo (89 campos), [x] búsqueda avanzada
+  multi-criterio (`/empleados/avanzada`), [x] ficha del empleado en PDF
+  (`core/pdf/ficha_empleado.py`) + documentos (`documentos_empleado.py`).
+  [ ] exportar el catálogo DBTABLAS a Excel; [ ] adjuntar imágenes de
+  certificados (el legado solo dibuja recuadros vacíos).
+- **Registrador**: [x] las 6 pestañas del legado (incl. modo agrupado en la
+  carga masiva de egresos/ingresos).
+- **Roles**: [x] preview del PDF embebido (`<iframe>`); [x] checkbox "Incluir
+  logo" (falta cargar el logo INSEVIG por defecto sin subirlo a mano).
+- **Reportes**: [x] `test_concepts_cubre_periodo_real`
+  (`tests/integration/test_reportes_conceptos.py`, gated `integration`).
+- **Vacaciones**: [x] PDF/QR individual, [x] confirmación de período anterior,
+  [x] dashboard "Pendientes de Firma", [x] reporte "pendientes global".
 - **Auditoría**: [x] filtros usuario/módulo/estado/rango de fechas + contador
   de coincidencias en `/admin/auditoria` (`core/repos/admin.buscar_auditoria`).
   [ ] `admin/roles` editable (hoy solo lectura de la matriz por defecto) —
