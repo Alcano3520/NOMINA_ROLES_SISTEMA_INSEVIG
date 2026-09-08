@@ -23,6 +23,47 @@ class AdminState(rx.State):
     nu_rol: str = "consulta"
     msg: str = ""
 
+    # ── "Actualizar sistema" (dispara el despliegue en el servidor) ────
+    deploy_msg: str = ""
+
+    @rx.event
+    async def actualizar_sistema(self):
+        auth_st = await self.get_state(AuthState)
+        if "admin" not in auth_st.roles:
+            return rx.toast.error("Solo un administrador puede actualizar el sistema.")
+        import platform
+        import subprocess
+        from pathlib import Path
+
+        if platform.system() == "Windows":
+            script = Path(r"E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG\deploy\windows\deploy-nas.ps1")
+            if not script.exists():
+                self.deploy_msg = f"No se encontró el script de despliegue: {script}"
+                return
+            cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                   "-File", str(script), "-SoloActualizar"]
+        else:
+            # entorno de desarrollo (Linux): solo git pull, sin reiniciar servicio
+            cmd = ["bash", "-c", "git pull --ff-only"]
+
+        def _lanzar():
+            # detached: el propio deploy reinicia el servicio y mata este proceso,
+            # así que no se puede esperar el resultado desde acá.
+            subprocess.Popen(  # noqa: S603
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
+        try:
+            await asyncio.to_thread(_lanzar)
+            self.deploy_msg = (
+                "Despliegue iniciado. El sistema se actualiza y reinicia en ~1-2 minutos "
+                "(la primera vez o con cambios de estilo, un poco más). Esperá y recargá "
+                "la página (F5)."
+            )
+        except Exception as e:  # noqa: BLE001
+            self.deploy_msg = f"No se pudo iniciar el despliegue: {e}"
+
     @rx.event
     async def cargar_usuarios(self):
         def _q():

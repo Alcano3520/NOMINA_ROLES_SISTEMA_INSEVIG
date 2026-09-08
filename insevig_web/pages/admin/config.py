@@ -5,6 +5,7 @@ import reflex as rx
 from core.config import get_settings
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading
+from insevig_web.states.admin_state import AdminState
 from insevig_web.states.auth_state import AuthState
 
 
@@ -39,6 +40,44 @@ def config() -> rx.Component:
                 spacing="2",
                 align="start",
                 width="100%",
+            ),
+            width="100%",
+        ),
+        card(
+            rx.vstack(
+                rx.heading("Actualizar el sistema", size="3"),
+                rx.text(
+                    "Trae la última versión del código y reinicia el servicio en el "
+                    "servidor. Equivale a correr 'Actualizar-INSEVIG.bat' en el NAS. "
+                    "Solo administradores.",
+                    size="1", color_scheme="gray",
+                ),
+                rx.cond(
+                    AuthState.es_admin,
+                    rx.alert_dialog.root(
+                        rx.alert_dialog.trigger(
+                            rx.button(rx.icon("refresh-cw", size=15), "Actualizar sistema", size="2"),
+                        ),
+                        rx.alert_dialog.content(
+                            rx.alert_dialog.title("Actualizar el sistema"),
+                            rx.alert_dialog.description(
+                                "El servidor va a traer el código nuevo y reiniciarse. "
+                                "Durante ~1-2 minutos la app puede no responder. ¿Continuar?",
+                            ),
+                            rx.hstack(
+                                rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                rx.alert_dialog.action(
+                                    rx.button("Sí, actualizar", on_click=AdminState.actualizar_sistema),
+                                ),
+                                spacing="3", justify="end", margin_top="1rem",
+                            ),
+                        ),
+                    ),
+                    rx.text("(sin permiso)", size="1", color_scheme="gray"),
+                ),
+                rx.cond(AdminState.deploy_msg != "",
+                        rx.callout(AdminState.deploy_msg, size="1", margin_top="0.5rem")),
+                spacing="2", align="start", width="100%",
             ),
             width="100%",
         ),

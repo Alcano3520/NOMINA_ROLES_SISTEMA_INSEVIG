@@ -1,0 +1,103 @@
+===============================================================================
+ INSEVIG WEB — CÓMO DESPLEGAR SIN DEPENDER DE NADIE
+===============================================================================
+
+"Desplegar" = poner la última versión del código en línea en el NAS
+(192.168.2.181:3000). Todo esto se hace UNA VEZ en el NAS; después queda solo.
+
+Hay 5 formas, de más simple a más automática. Se pueden combinar
+(ej. el .bat de un clic + el runner automático).
+
+Todos los archivos están en el repo, en:
+    E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG\deploy\windows\
+
+-------------------------------------------------------------------------------
+ 1) BOTÓN EN EL ESCRITORIO  (un clic, manual)          ← lo más simple, ya listo
+-------------------------------------------------------------------------------
+Archivo:  deploy\windows\Actualizar-INSEVIG.bat
+          deploy\windows\crear-acceso-directo.ps1
+
+Instalar en el NAS (una vez, como Administrador):
+    cd E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG
+    powershell -ExecutionPolicy Bypass -File deploy\windows\crear-acceso-directo.ps1
+
+Queda un icono "Actualizar INSEVIG Web" en el Escritorio.
+Doble clic -> pide permiso de Administrador -> corre git pull + dependencias +
+migraciones + reinicia el servicio + verifica que responde. ~1 min.
+La ventana muestra si salió bien o mal y no se cierra sola.
+
+-------------------------------------------------------------------------------
+ 2) AUTOMÁTICO AL HACER git push  (GitHub Actions self-hosted runner)  ← recomendado
+-------------------------------------------------------------------------------
+Archivos:  .github\workflows\deploy-nas.yml   (ya en el repo)
+           deploy\windows\instalar-runner.ps1
+
+Instalar el runner en el NAS (una vez, como Administrador):
+  a) Ir a:
+       https://github.com/Alcano3520/NOMINA_ROLES_SISTEMA_INSEVIG/settings/actions/runners/new
+     Botón "New self-hosted runner" -> copiar el TOKEN que aparece en el paso
+     "Configure" (empieza con una A, dura 1 hora).
+  b) En el NAS:
+       cd E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG
+       powershell -ExecutionPolicy Bypass -File deploy\windows\instalar-runner.ps1 -Token "AXXXXXXXX..."
+     Eso descarga el runner, lo registra con la etiqueta 'insevig-nas' y lo
+     deja como servicio de Windows (arranque automático, corre como SYSTEM
+     para poder reiniciar 'insevig-web').
+
+Desde ese momento: cada vez que se hace push a main (desde acá o desde donde
+sea), a los ~1-2 minutos la versión nueva está en producción. No hay que
+tocar el NAS. Se ve el progreso en la pestaña "Actions" del repo en GitHub.
+
+Si el runner se apaga o falla, NO rompe nada: el .bat del punto 1 sigue
+sirviendo para desplegar a mano.
+
+-------------------------------------------------------------------------------
+ 3) TAREA PROGRAMADA  (cada noche, "por las dudas")
+-------------------------------------------------------------------------------
+En el NAS, Task Scheduler -> Crear tarea:
+  - Ejecutar: powershell.exe
+  - Argumentos: -NoProfile -ExecutionPolicy Bypass -File
+      "E:\Sistemas_Dev\NOMINA_ROLES_SISTEMA_INSEVIG\deploy\windows\deploy-nas.ps1" -SoloActualizar
+  - Con privilegios más altos. Disparador: diario 02:00.
+
+Despliega "a ciegas": si un commit rompió algo, entra igual. Sirve como red de
+seguridad si alguien olvidó desplegar, no como método principal.
+
+-------------------------------------------------------------------------------
+ 4) WEBHOOK  (mini-servicio propio, alternativa al punto 2)
+-------------------------------------------------------------------------------
+Archivo:  deploy\windows\webhook-deploy.ps1
+
+Un servicio 'insevig-webhook' escucha en el puerto 9000 los avisos de GitHub.
+Instrucciones de instalación completas en la cabecera del propio archivo
+(elegir un secreto, registrar con NSSM, abrir el firewall, y en GitHub
+Settings -> Webhooks agregar la URL http://<nas>:9000/deploy con ese secreto).
+
+Menos robusto que el runner de Actions (sin reintentos, sin historial), pero
+100% propio. Usar el punto 2 salvo que no se quiera instalar el runner.
+
+-------------------------------------------------------------------------------
+ 5) BOTÓN DENTRO DE LA PROPIA APP  (solo admin)                     ← ya listo
+-------------------------------------------------------------------------------
+En la web:  Administración -> Configuración -> "Actualizar sistema".
+Solo lo ve un usuario con rol admin. Pide confirmación y dispara el mismo
+deploy-nas.ps1. Como el reinicio corta la app, muestra "esperá 1-2 min y
+recargá (F5)".
+
+Requisito: el servicio 'insevig-web' tiene que poder ejecutar powershell y
+reiniciarse. Ya funciona si el servicio corre como SYSTEM o Administrador
+(que es como lo dejó install-services / deploy-nas). Si más adelante se pasa
+a la cuenta 'svc_insevig' de mínimo privilegio, este botón deja de andar y
+hay que usar el punto 1 o 2.
+
+===============================================================================
+ QUÉ ELEGIR
+===============================================================================
+- Para trabajar ya, sin instalar nada más:  punto 1 (bat en el escritorio)
+  + punto 5 (botón en la app).
+- Para que sea "subo el código y listo":  punto 2 (runner de Actions).
+  Es una instalación de 5 minutos en el NAS y después nunca más se toca.
+- Punto 3 como complemento opcional. Punto 4 solo si no se quiere el runner.
+
+Todo esto reemplaza el pedir por chat "desplegá el commit X".
+===============================================================================
