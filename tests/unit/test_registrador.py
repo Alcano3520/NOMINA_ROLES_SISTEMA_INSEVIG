@@ -67,6 +67,26 @@ def test_registrar_movimiento_dry_run():
     assert not mal.ok
 
 
+def test_registrar_movimiento_agrupado_dry_run():
+    r = rg.registrar_movimiento_agrupado(
+        [{"empleado": "1012", "valor": 25.0}, {"empleado": "1013", "valor": "10"},
+         {"empleado": "", "valor": 5.0}, {"empleado": "1014", "valor": 0}],
+        clase="203", fecha="2026-07-31", observacion="MULTA LOTE",
+        usuario="t", roles=set(), dry_run=True,
+    )
+    assert r.ok
+    assert "2 filas" in r.detalle and "35.00" in r.detalle  # 2 válidas, total 35
+
+    assert not rg.registrar_movimiento_agrupado(
+        [{"empleado": "1012", "valor": 25.0}], clase="999", fecha="2026-07-31",
+        observacion="", usuario="t", roles=set(), dry_run=True,
+    ).ok
+    assert not rg.registrar_movimiento_agrupado(
+        [{"empleado": "", "valor": 0}], clase="203", fecha="2026-07-31",
+        observacion="", usuario="t", roles=set(), dry_run=True,
+    ).ok
+
+
 def test_fila_mov_mapea_sqlserver_y_supabase():
     sql_row = {"NUMERO": " 42 ", "EMPLEADO": "1012", "SECUENCIA": 3, "CLASE": "205",
                "FECHA_VEN": "2026-07-31T00:00:00", "VALOR": "300.0", "CONCEPTO": "PRESTAMO",

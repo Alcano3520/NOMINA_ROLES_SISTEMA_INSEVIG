@@ -573,6 +573,53 @@ def registrar_movimiento(
     return ResultadoRegistro(True, numero=numero, detalle=f"N° {numero:05d} · {NOMBRE_CLASE.get(clase, clase)}")
 
 
+def registrar_movimiento_agrupado(
+    items: list[dict], *, clase: str, fecha: str, observacion: str,
+    usuario: str, roles: set[str], dry_run: bool = True,
+) -> ResultadoRegistro:
+    """Modo 'agrupado' del legado (`_tt_procesar` con modo=='agrupado'): un solo
+    NUMERO para todo el lote, SECUENCIA incremental por fila, observación común, y
+    un único UPDATE del contador + commit al final. Todas las filas son de la MISMA
+    clase. `items` = [{"empleado": str, "valor": float}, ...]."""
+    if clase not in CLASES_SIMPLIFICADAS:
+        return ResultadoRegistro(False, detalle=f"Clase {clase} no soportada")
+    cfg = CLASES_SIMPLIFICADAS[clase]
+    filas: list[tuple[str, float]] = []
+    for it in items:
+        emp = str(it.get("empleado", "")).strip()
+        val = round(a_float(it.get("valor")), 2)
+        if emp and val > 0:
+            filas.append((emp, val))
+    if not filas:
+        return ResultadoRegistro(False, detalle="Sin filas válidas (empleado y valor > 0)")
+    total = round(sum(v for _e, v in filas), 2)
+    obs = (observacion or "Procesamiento agrupado")[:700]
+    if dry_run:
+        return ResultadoRegistro(
+            True, detalle=f"{len(filas)} filas · {NOMBRE_CLASE.get(clase, clase)} · total {total:.2f}",
+        )
+    with audit_scope(
+        "registrador", "registrar_rpingdes", usuario=usuario, roles=roles,
+        target_table="RPINGDES", target_key=f"AGRUP/{clase}/{fecha}",
+        after={"clase": clase, "n": len(filas), "total": total},
+    ), sqlserver.conexion(write=True) as conn:
+        cur = conn.cursor()
+        numero = _proximo_numero(cur, cfg["tipo"])
+        for secuencia, (emp, val) in enumerate(filas, start=1):
+            depto, seccion = _depto_seccion(cur, emp)
+            cur.execute(
+                _INSERT_RPINGDES.format(clase=clase),
+                (numero, emp, secuencia, fecha, fecha, val, obs, depto, seccion,
+                 cfg["aporta"], 3, 1, cfg["codigo"], cfg["concepto"], val, 1),
+            )
+        _fijar_numero(cur, cfg["tipo"], numero)
+        conn.commit()
+    return ResultadoRegistro(
+        True, numero=numero,
+        detalle=f"N° {numero:05d} · {len(filas)} filas · {NOMBRE_CLASE.get(clase, clase)} · {total:.2f}",
+    )
+
+
 def eliminar_movimiento(numero: str, empleado: str, clase: str, *, usuario: str, roles: set[str]) -> int:
     """Borra todas las filas (cuotas) NO asentadas de un movimiento. Devuelve cuántas borró."""
     flt = get_settings().sqlserver_filter

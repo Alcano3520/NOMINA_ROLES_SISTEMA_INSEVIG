@@ -28,7 +28,10 @@ Estado: **puerto completo de REGISTRAR_PRESTAMOS_UNIFICADO.pyw** (6 pestañas).
    reembolsos 111, movilización 120) — `registrar_movimiento`, con confirmación antes
    de escribir y "Limpiar". Incluye la misma **grilla editable + pegar de Excel o
    cargar archivo** (`_bulk_egr_ing`, columnas código/clase/valor/fecha/observación)
-   con Validar + resumen + confirmación + Job + CSV.
+   con Validar + resumen + confirmación + Job + CSV. **Modo individual** (un N° por
+   fila) o **agrupado** (`registrar_movimiento_agrupado`: un solo N° para todo el
+   lote, misma clase, SECUENCIA incremental, observación común, un único UPDATE del
+   contador — igual que `_tt_procesar` con `modo=="agrupado"` del legado).
 4. (unificada con la 3 en la web)
 5. **BIESS quirografarios / hipotecarios** — CLASE 204 o 207, autodetección de
    fila/columnas con override manual editable + "Ver Excel" (diagnóstico) +
@@ -53,9 +56,5 @@ Lectura: SQL Server o Supabase (rpingdesres). Escritura: SOLO SQL Server, con
 igual que el legado — riesgo de colisión con instancias concurrentes: aceptable v1).
 
 ## Pendiente
-- Egresos/Ingresos masivo: modo "agrupado" del legado (un solo número de egreso
-  para todo el lote, con observación común) — hoy cada fila puede tener su propia
-  clase y siempre se numera individualmente; funcionalmente cubre el caso de uso
-  pero no replica ese modo exacto. BIESS sí implementa el agrupado.
 - Respaldo por operación (`modulo_seguridad_prestamos` del legado — no existía nunca;
   su reemplazo real es `core.audit`).

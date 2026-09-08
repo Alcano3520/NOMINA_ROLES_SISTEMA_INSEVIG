@@ -652,10 +652,22 @@ class RegistradorState(rx.State):
     bulk_status: str = ""
     bulk_msg: str = ""
     bulk_path: str = ""
+    # Modo del legado: "individual" (un N° por fila) o "agrupado" (un solo N°
+    # para todo el lote, misma clase, observación común).
+    bulk_modo: str = "individual"
+    bulk_obs_comun: str = ""
 
     @rx.event
     def set_bulk_pegar(self, v: str):
         self.bulk_pegar = v
+
+    @rx.event
+    def set_bulk_modo(self, v: str):
+        self.bulk_modo = v
+
+    @rx.event
+    def set_bulk_obs_comun(self, v: str):
+        self.bulk_obs_comun = v
 
     @rx.event
     def bulk_nueva_fila(self):
@@ -670,6 +682,7 @@ class RegistradorState(rx.State):
         self.bulk_grid = []
         self.bulk_job = 0
         self.bulk_status = self.bulk_msg = self.bulk_path = ""
+        self.bulk_obs_comun = ""
 
     @rx.event
     def bulk_set_celda(self, idx: int, campo: str, v: str):
@@ -753,29 +766,59 @@ class RegistradorState(rx.State):
         filas = [f for f in self.bulk_grid if f.get("valido") and f.get("empleado")]
         if not filas:
             return rx.toast.error("Valida primero: no hay filas listas.")
+        agrupado = self.bulk_modo == "agrupado"
+        clase_grupo = ""
+        if agrupado:
+            clases = {str(f["clase"]).strip() for f in filas}
+            if len(clases) != 1:
+                return rx.toast.error("Modo agrupado: todas las filas deben ser de la misma clase.")
+            clase_grupo = clases.pop()
         usuario, roles = auth.username, set(auth.roles)
+        obs_comun = self.bulk_obs_comun.strip()
 
         def _fn(ctx):
             import csv
             import io
 
             from core import storage
-            from core.repos.registrador import NOMBRE_CLASE, registrar_movimiento
+            from core.repos.registrador import (
+                NOMBRE_CLASE,
+                registrar_movimiento,
+                registrar_movimiento_agrupado,
+            )
 
             res = []
-            for i, f in enumerate(filas, 1):
+            if agrupado:
+                fecha = next((str(f["fecha"])[:10] for f in filas if str(f.get("fecha", "")).strip()), "")
                 try:
-                    r = registrar_movimiento(
-                        f["empleado"], str(f["clase"]).strip(), float(f["valor"]),
-                        str(f["fecha"])[:10], f.get("observacion") or NOMBRE_CLASE.get(str(f["clase"]).strip(), ""),
+                    r = registrar_movimiento_agrupado(
+                        [{"empleado": f["empleado"], "valor": float(f["valor"])} for f in filas],
+                        clase=clase_grupo, fecha=fecha,
+                        observacion=obs_comun or NOMBRE_CLASE.get(clase_grupo, ""),
                         usuario=usuario, roles=roles, dry_run=False,
                     )
-                    res.append({"empleado": f["empleado"], "clase": f["clase"],
-                                "ok": r.ok, "detalle": r.detalle})
+                    ok_g, det_g = r.ok, r.detalle
                 except Exception as e:  # noqa: BLE001
-                    res.append({"empleado": f["empleado"], "clase": f["clase"],
-                                "ok": False, "detalle": str(e)[:150]})
-                ctx.progreso(i, len(filas), f"{i}/{len(filas)}")
+                    ok_g, det_g = False, str(e)[:150]
+                for f in filas:
+                    res.append({"empleado": f["empleado"], "clase": clase_grupo,
+                                "ok": ok_g, "detalle": det_g})
+                ctx.progreso(len(filas), len(filas), det_g)
+            else:
+                for i, f in enumerate(filas, 1):
+                    try:
+                        r = registrar_movimiento(
+                            f["empleado"], str(f["clase"]).strip(), float(f["valor"]),
+                            str(f["fecha"])[:10],
+                            f.get("observacion") or NOMBRE_CLASE.get(str(f["clase"]).strip(), ""),
+                            usuario=usuario, roles=roles, dry_run=False,
+                        )
+                        res.append({"empleado": f["empleado"], "clase": f["clase"],
+                                    "ok": r.ok, "detalle": r.detalle})
+                    except Exception as e:  # noqa: BLE001
+                        res.append({"empleado": f["empleado"], "clase": f["clase"],
+                                    "ok": False, "detalle": str(e)[:150]})
+                    ctx.progreso(i, len(filas), f"{i}/{len(filas)}")
             buf = io.StringIO()
             w = csv.DictWriter(buf, fieldnames=["empleado", "clase", "ok", "detalle"])
             w.writeheader()

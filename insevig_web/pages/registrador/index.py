@@ -656,6 +656,30 @@ def _bulk_egr_ing() -> rx.Component:
                 placeholder="0920116811\t203\t25.00\t2026-07-31\tMULTA ATRASO\n1712345678\t102\t40\t2026-07-31\tBONO",
             ),
             rx.hstack(
+                rx.text("Modo:", size="1", weight="bold"),
+                rx.radio(
+                    ["individual", "agrupado"],
+                    value=_S.bulk_modo, on_change=_S.set_bulk_modo,
+                    direction="row", size="1", spacing="3",
+                ),
+                rx.text(
+                    rx.cond(
+                        _S.bulk_modo == "agrupado",
+                        "Un solo N° para todo el lote (misma clase, observación común).",
+                        "Un N° de egreso/ingreso por fila.",
+                    ),
+                    size="1", color_scheme="gray",
+                ),
+                spacing="2", align="center", wrap="wrap",
+            ),
+            rx.cond(
+                _S.bulk_modo == "agrupado",
+                rx.input(
+                    value=_S.bulk_obs_comun, on_change=_S.set_bulk_obs_comun,
+                    placeholder="Observación común del lote", width="100%", size="1",
+                ),
+            ),
+            rx.hstack(
                 rx.button("Cargar en la tabla", on_click=_S.bulk_cargar_pegado, variant="soft", size="1"),
                 rx.upload(
                     rx.button("Cargar archivo", variant="soft", size="1", type="button"),
@@ -677,7 +701,9 @@ def _bulk_egr_ing() -> rx.Component:
                         rx.alert_dialog.trigger(primary_button("Registrar todo")),
                         rx.alert_dialog.content(
                             rx.alert_dialog.title("Confirmar carga masiva de egresos/ingresos"),
-                            rx.alert_dialog.description(_S.bulk_resumen + ". Se registrarán en el sistema."),
+                            rx.alert_dialog.description(
+                                _S.bulk_resumen + " · modo " + _S.bulk_modo + ". Se registrarán en el sistema."
+                            ),
                             rx.hstack(
                                 rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
                                 rx.alert_dialog.action(
