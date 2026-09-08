@@ -41,6 +41,9 @@ def main() -> int:
     p.add_argument("--tolerancia", type=float, default=0.50)
     p.add_argument("--usuario", default="carga_historica_excel")
     p.add_argument("--solo", choices=("faltantes", "correcciones"), default="")
+    p.add_argument("--refrescar-periodos", action="store_true",
+                   help="además, re-guarda las que coinciden en total pero no tienen "
+                        "el desglose mensual del décimo tercero (columnas del bot MRL)")
     p.add_argument("--guardar", action="store_true",
                    help="sin este flag es dry-run: no toca Supabase")
     p.add_argument("--reporte", default="reporte_import_liquidaciones_excel.csv")
@@ -107,8 +110,41 @@ def main() -> int:
         base["total_supabase"] = tl
         base["estado"] = estado_actual
 
-        # ── caso 2: existe y coincide -> nada ─────────────────────────
+        # ── caso 2: existe y coincide ────────────────────────────────
         if abs(tl - excel_total) <= args.tolerancia:
+            # ¿le falta el desglose mensual del décimo (para el bot MRL)?
+            if args.refrescar_periodos and liq.detalle_decimo_tercera:
+                prev = (
+                    sb.table(repo.TABLA_LIQ_PERIODOS).select("meses")
+                    .eq("liquidacion_id", reg["id"]).eq("tipo", "DEC_TERCERA")
+                    .limit(1).execute().data or []
+                )
+                meses_prev = (prev[0].get("meses") or []) if prev else []
+                tiene_valido = any(" -" in (m.get("label") or "") for m in meses_prev)
+                if not tiene_valido:
+                    n_corrige += 1
+                    base["situacion"] = "SIN_DESGLOSE_MENSUAL"
+                    if not args.guardar or args.solo == "faltantes":
+                        base["accion"] = "refrescaría desglose mensual del décimo"
+                        filas_rep.append(base)
+                        print(f"  DESGLOSE {ced} {liq.nombre[:29]:<29} falta desglose mensual del décimo")
+                        continue
+                    if estado_actual not in repo.ESTADOS_LIQUIDACION:
+                        base["accion"] = "ERROR"
+                        base["detalle"] = f"estado '{estado_actual}' inválido"
+                        n_err += 1
+                        filas_rep.append(base)
+                        continue
+                    ok, res = repo.guardar_liquidacion(
+                        liq, estado_actual, cfg, usuario=args.usuario, roles={args.usuario},
+                        liquidacion_id_existente=reg["id"],
+                    )
+                    base["accion"] = "UPDATE desglose ok" if ok else "UPDATE ERROR"
+                    base["detalle"] = res
+                    n_err += 0 if ok else 1
+                    filas_rep.append(base)
+                    print(f"  {'DESGLOSE' if ok else 'ERROR   '}{ced} {liq.nombre[:29]:<29} {res}")
+                    continue
             n_ok += 1
             base["situacion"] = "OK"
             base["accion"] = "sin cambios"
