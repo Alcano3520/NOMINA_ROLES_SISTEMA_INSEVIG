@@ -1133,6 +1133,7 @@ TABLA_LIQ = "liquidaciones"
 TABLA_LIQ_DETALLE = "liquidaciones_detalle"
 TABLA_LIQ_HISTORIAL = "liquidaciones_historial_estados"
 TABLA_LIQ_ELIMINADAS = "liquidaciones_eliminadas_historial"
+TABLA_LIQ_AJUSTES = "liquidaciones_ajustes_concepto"  # confirmada existente en producción
 TABLA_LIQ_PERIODOS = "liquidaciones_periodos_calculo"
 
 # CORREGIDO (2026-09): "pagada" no coincidía con el valor real que usa
@@ -1519,6 +1520,19 @@ _CONCEPTOS_DETALLE: tuple[tuple[str, str, str, str], ...] = (
     ("MULTAS", "Multas", "descuento", "MULTAS"),
     ("PENSION_ALIMENTICIA", "Pensión alimenticia", "descuento", "PENSION_ALIMENTICIA"),
     ("IMPUESTO_RENTA", "Impuesto a la renta", "descuento", "IMPUESTO_RENTA"),
+    # Agregados 2026-09 para Editar en cuadrícula / Cuadre masivo (ver
+    # docs/modulos/liquidaciones_cuadricula_UI.md) -- ninguno lo calcula
+    # procesar_empleado hoy, son campos manuales del Editor/cuadrícula.
+    # "DESCUENTOS_REGISTRADOS" (plural) es la misma clave que ya usa
+    # procesar_empleado para descuentos_pendientes (ver
+    # descuentos_pendientes_de) -- no una clave nueva.
+    ("DESCUENTO_REGISTRADO", "Descuentos registrados (pendientes)", "descuento", "DESCUENTOS_REGISTRADOS"),
+    # Ajuste de cuadre contra el MRL -- admite negativo a propósito, se
+    # muestra del lado de "ingreso" (puede restar) igual que el .pyw
+    # (generacion_bot_mrl.py: OTROS_INGRESOS = INDEM_DESPIDO + AJUSTE_CUADRE).
+    ("AJUSTE_CUADRE", "Ajuste de Cuadre (MRL)", "ingreso", "AJUSTE_CUADRE"),
+    ("OTRAS_INDEM", "Otras indemnizaciones", "ingreso", "OTRAS_INDEM"),
+    ("VALOR_NO_CONSIDERADO", "Por cualquier valor no considerado", "ingreso", "VALOR_NO_CONSIDERADO"),
 )
 
 
@@ -1826,6 +1840,120 @@ def eliminar_liquidacion(
             return True, ""
         except Exception as e:  # noqa: BLE001
             return False, str(e)
+
+
+def ajustar_concepto(
+    liquidacion_id: str, concepto_codigo: str, delta: float, *, motivo: str, usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """SUMA `delta` (admite negativo) al valor actual de un concepto de una
+    liquidación ya guardada -- a diferencia de `editar_valores_liquidacion`
+    (que REEMPLAZA el valor), esto es incremental: paridad con el "+" del
+    Editor de Liquidaciones y con Editar en cuadrícula/Cuadre masivo (ver
+    docs/modulos/liquidaciones_cuadricula_UI.md). Deja un registro en
+    `liquidaciones_ajustes_concepto` (motivo, usuario, fecha -- tabla
+    confirmada existente en producción) además de actualizar
+    `liquidaciones_detalle`/los totales."""
+    concepto_codigo = str(concepto_codigo)
+    if concepto_codigo not in _TIPO_POR_CODIGO:
+        return False, f"Concepto desconocido: {concepto_codigo}"
+    motivo = (motivo or "").strip()
+    if not motivo:
+        return False, "Ingrese el motivo del ajuste."
+    registro, conceptos = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    if registro.get("estado") == "pagado":
+        return False, "No se puede ajustar una liquidación ya marcada como pagada."
+
+    valores: dict[str, float] = {str(c["concepto_codigo"]): float(c.get("valor_total") or 0) for c in conceptos}
+    valor_anterior = valores.get(concepto_codigo, 0.0)
+    valor_nuevo = round(valor_anterior + float(delta), 2)
+    valores[concepto_codigo] = valor_nuevo
+    derivados = _totales_desde_valores(valores)
+
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "ajustar_concepto", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id,
+        antes={concepto_codigo: valor_anterior},
+        after={concepto_codigo: valor_nuevo, "delta": delta, "motivo": motivo},
+    ):
+        sb = supabase_client.get_client()
+        if valor_nuevo == 0:
+            sb.table(TABLA_LIQ_DETALLE).delete().eq("liquidacion_id", liquidacion_id).eq(
+                "concepto_codigo", concepto_codigo).execute()
+        else:
+            upd = sb.table(TABLA_LIQ_DETALLE).update({"valor_total": valor_nuevo}).eq(
+                "liquidacion_id", liquidacion_id).eq("concepto_codigo", concepto_codigo).execute()
+            if not (upd.data or []):
+                sb.table(TABLA_LIQ_DETALLE).insert({
+                    "liquidacion_id": liquidacion_id, "concepto_codigo": concepto_codigo,
+                    "concepto_nombre": _NOMBRE_POR_CODIGO.get(concepto_codigo, concepto_codigo),
+                    "concepto_tipo": _TIPO_POR_CODIGO[concepto_codigo], "valor_total": valor_nuevo,
+                    "orden": len(conceptos),
+                }).execute()
+        sb.table(TABLA_LIQ).update({**derivados, "updated_by": usuario}).eq("id", liquidacion_id).execute()
+        with contextlib.suppress(Exception):
+            sb.table(TABLA_LIQ_AJUSTES).insert({
+                "liquidacion_id": liquidacion_id, "concepto_codigo": concepto_codigo,
+                "concepto_nombre": _NOMBRE_POR_CODIGO.get(concepto_codigo, concepto_codigo),
+                "monto": round(float(delta), 2), "motivo": motivo, "usuario": usuario,
+            }).execute()
+    return True, ""
+
+
+def cuadre_masivo(texto: str, *, usuario: str, roles: set[str]) -> tuple[int, list[str]]:
+    """Carga masiva de "Ajuste de Cuadre (MRL)" por texto libre -- paridad
+    con `_abrir_carga_masiva_ajuste_cuadre`. Una línea por liquidación:
+    `cedula, fecha_salida (dd/mm/aaaa o aaaa-mm-dd), monto`. El monto se
+    SUMA al ajuste de cuadre existente (no lo reemplaza), admite negativo
+    -- reutiliza `ajustar_concepto` sobre el concepto `AJUSTE_CUADRE` con
+    motivo fijo "Cuadre masivo" (el `.pyw` deja elegir un motivo por carga,
+    no por línea; acá se simplifica a un motivo fijo -- si hace falta
+    elegirlo, agregar un parámetro `motivo` a esta función).
+
+    Retorna `(cantidad_aplicada, errores)` -- una línea con error no
+    bloquea el resto del lote."""
+    errores: list[str] = []
+    aplicadas = 0
+    for num_linea, linea in enumerate(texto.splitlines(), start=1):
+        linea = linea.strip()
+        if not linea:
+            continue
+        partes = [p.strip() for p in linea.split(",")]
+        if len(partes) < 3:
+            errores.append(f"Línea {num_linea}: faltan datos (cédula, fecha de salida, monto) -> '{linea}'.")
+            continue
+        cedula_raw, fecha_raw, monto_raw = partes[0], partes[1], partes[2]
+        fecha_sal = _f(fecha_raw)
+        if not cedula_raw or fecha_sal is None:
+            errores.append(f"Línea {num_linea}: cédula o fecha inválida (use dd/mm/aaaa) -> '{linea}'.")
+            continue
+        try:
+            monto = round(float(monto_raw.replace("$", "").replace(",", ".")), 2)
+        except ValueError:
+            errores.append(f"Línea {num_linea}: monto inválido -> '{monto_raw}'.")
+            continue
+        ced = normalizar_cedula(cedula_raw)
+        sb = supabase_client.get_client()
+        filas = (
+            sb.table(TABLA_LIQ).select("id").eq("empleado_cedula", ced)
+            .eq("fecha_salida", fecha_sal.isoformat()).limit(1).execute().data or []
+        )
+        if not filas:
+            errores.append(
+                f"Línea {num_linea}: no se encontró liquidación para {ced} con salida {fecha_sal.isoformat()}.")
+            continue
+        ok, err = ajustar_concepto(
+            filas[0]["id"], "AJUSTE_CUADRE", monto,
+            motivo="Cuadre masivo", usuario=usuario, roles=roles,
+        )
+        if ok:
+            aplicadas += 1
+        else:
+            errores.append(f"Línea {num_linea} ({ced}): {err}")
+    return aplicadas, errores
 
 
 # concepto_codigo -> clave de Liquidacion.campos, para reconstruir (inverso de

@@ -921,6 +921,81 @@ def test_listar_liquidaciones_filtra_por_lote_y_fechas(monkeypatch):
     assert capturado["order"] == ("fecha_salida", False)
 
 
+def test_ajustar_concepto_suma_al_valor_existente(monkeypatch, app_db):
+    registro = {"id": "L1", "estado": "generada"}
+    conceptos = [{"concepto_codigo": "MULTAS", "concepto_tipo": "descuento", "valor_total": 10.0}]
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.ajustar_concepto("L1", "MULTAS", 5.0, motivo="Ajuste manual", usuario="ana", roles=set())
+    assert ok and err == ""
+    detalle_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_DETALLE and op == "update")
+    assert detalle_upd == {"valor_total": 15.0}  # 10 + 5, no reemplaza
+    ajuste = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_AJUSTES and op == "insert")
+    assert ajuste["concepto_codigo"] == "MULTAS" and ajuste["monto"] == 5.0 and ajuste["motivo"] == "Ajuste manual"
+
+
+def test_ajustar_concepto_a_cero_borra_el_concepto(monkeypatch, app_db):
+    registro = {"id": "L1", "estado": "generada"}
+    conceptos = [{"concepto_codigo": "MULTAS", "concepto_tipo": "descuento", "valor_total": 10.0}]
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.ajustar_concepto("L1", "MULTAS", -10.0, motivo="Se anula", usuario="ana", roles=set())
+    assert ok and err == ""
+    assert any(t == lq.TABLA_LIQ_DETALLE and op == "delete" for (t, op, _pl) in cliente.log)
+
+
+def test_ajustar_concepto_exige_motivo():
+    ok, err = lq.ajustar_concepto("L1", "MULTAS", 5.0, motivo="  ", usuario="ana", roles=set())
+    assert not ok and "motivo" in err
+
+
+def test_ajustar_concepto_concepto_desconocido():
+    ok, err = lq.ajustar_concepto("L1", "NO_EXISTE", 5.0, motivo="x", usuario="ana", roles=set())
+    assert not ok and "NO_EXISTE" in err
+
+
+def test_ajustar_concepto_no_toca_pagada(monkeypatch):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "pagado"}, []))
+    ok, err = lq.ajustar_concepto("L1", "MULTAS", 5.0, motivo="x", usuario="ana", roles=set())
+    assert not ok and "pagada" in err
+
+
+def test_cuadre_masivo_delega_en_ajustar_concepto_por_linea(monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(
+        lq, "ajustar_concepto",
+        lambda liq_id, cod, delta, *, motivo, usuario, roles: (
+            llamadas.append((liq_id, cod, delta, motivo)) or (True, "")
+        ),
+    )
+    monkeypatch.setattr(
+        lq.supabase_client, "get_client",
+        lambda: _FakeClientPorTabla({"liquidaciones": [{"id": "L1"}]}),
+    )
+    texto = "0704090805, 31/07/2026, 0.01\n0921509527, 15/08/2026, -0.02"
+    aplicadas, errores = lq.cuadre_masivo(texto, usuario="ana", roles=set())
+    assert aplicadas == 2 and errores == []
+    assert llamadas[0] == ("L1", "AJUSTE_CUADRE", 0.01, "Cuadre masivo")
+    assert llamadas[1] == ("L1", "AJUSTE_CUADRE", -0.02, "Cuadre masivo")
+
+
+def test_cuadre_masivo_reporta_errores_de_formato_sin_bloquear(monkeypatch):
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClientPorTabla({"liquidaciones": []}))
+    texto = "linea sin suficientes datos\n0704090805, fecha-mala, 0.01\n0704090805, 31/07/2026, no-es-numero"
+    aplicadas, errores = lq.cuadre_masivo(texto, usuario="ana", roles=set())
+    assert aplicadas == 0 and len(errores) == 3
+
+
+def test_cuadre_masivo_reporta_cedula_no_encontrada(monkeypatch):
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClientPorTabla({"liquidaciones": []}))
+    aplicadas, errores = lq.cuadre_masivo("0704090805, 31/07/2026, 0.01", usuario="ana", roles=set())
+    assert aplicadas == 0 and "no se encontró" in errores[0]
+
+
 class _FakeQueryPorTabla:
     def __init__(self, datos_por_tabla, tabla):
         self._d, self._t = datos_por_tabla, tabla

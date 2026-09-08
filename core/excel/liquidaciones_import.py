@@ -117,11 +117,11 @@ def parse_excel_liquidaciones(datos: bytes) -> tuple[list[Liquidacion], list[str
       contra `rpemplea` para corregirlo; hacerlo es responsabilidad de
       quien llama, si lo necesita.
     - Las columnas "OTRAS INDEMNIZACIONES" y "POR CUALQUIER VALOR NO
-      CONSIDERADO" no tienen concepto equivalente en `_CONCEPTOS_DETALLE`
-      de `core.repos.liquidaciones` -- se devuelven en
-      `Liquidacion.campos["OTRAS_INDEM_EXCEL"]`/`["VALOR_NO_CONSIDERADO_EXCEL"]`
-      (con ese sufijo para no chocar con ningún código real de concepto);
-      `_construir_conceptos` actual las va a ignorar tal cual está hoy.
+      CONSIDERADO" se devuelven en `Liquidacion.campos["OTRAS_INDEM"]`/
+      `["VALOR_NO_CONSIDERADO"]` -- mismas claves que usa
+      `_CONCEPTOS_DETALLE` de `core.repos.liquidaciones` (agregado
+      2026-09 para Editar en cuadrícula/Cuadre masivo), así que
+      `_construir_conceptos` SÍ las va a incluir si vienen distintas de 0.
     - "DECIMA CUARTA REMUNERACION_ANTERIOR" viene con signo negativo en
       algunas filas del Excel de origen -- se pasa tal cual, sin
       "corregir" el signo (observado, no explicado).
@@ -200,8 +200,8 @@ def parse_excel_liquidaciones(datos: bytes) -> tuple[list[Liquidacion], list[str
                 "VACACIONES_CALCULADAS": _num(fila[COL["vac_pendientes"]]),
                 "DESAHUCIO": _num(fila[COL["desahucio"]]),
                 "INDEM_DESPIDO": _num(fila[COL["indem_despido"]]),
-                "OTRAS_INDEM_EXCEL": _num(fila[COL["otras_indem"]]),
-                "VALOR_NO_CONSIDERADO_EXCEL": _num(fila[COL["valor_no_considerado"]]),
+                "OTRAS_INDEM": _num(fila[COL["otras_indem"]]),
+                "VALOR_NO_CONSIDERADO": _num(fila[COL["valor_no_considerado"]]),
                 "APORT_IESS": _num(fila[COL["iess"]]),
                 "PRESTAMOS_QUIROGRAFARIOS": _num(fila[COL["prest_quirografario"]]),
                 "PRESTAMOS_COMPANIA": _num(fila[COL["prest_compania"]]),
