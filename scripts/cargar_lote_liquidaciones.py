@@ -50,6 +50,29 @@ def _num_ec(txt: str) -> float | None:
         return None
 
 
+def _aplicar_defaults(liq, mult: float, ant: float) -> list[str]:
+    """Aplica los 'Valores por Defecto' del .pyw a `liq.campos` (MULTAS /
+    ANTICIPOS_OTROS cuando el movimiento real da 0) y recalcula los totales.
+    Ambos son descuentos planos, así que no afectan a IESS ni a otros conceptos."""
+    c = liq.campos
+    cambios: list[str] = []
+    delta = 0.0
+    if mult and float(c.get("MULTAS") or 0) == 0:
+        c["MULTAS"] = mult
+        delta += mult
+        cambios.append(f"MULTAS={mult:g}")
+    if ant and float(c.get("ANTICIPOS_OTROS") or 0) == 0:
+        c["ANTICIPOS_OTROS"] = ant
+        delta += ant
+        cambios.append(f"ANTICIPOS_OTROS={ant:g}")
+    if delta:
+        c["TOTAL_DESCUENTOS"] = round(float(c.get("TOTAL_DESCUENTOS") or 0) + delta, 2)
+        c["TOTAL_A_RECIBIR"] = round(
+            float(c.get("TOTAL_INGRESOS") or 0) - float(c["TOTAL_DESCUENTOS"]), 2
+        )
+    return cambios
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -60,6 +83,11 @@ def main() -> int:
     p.add_argument("--region", default="COSTA", choices=("COSTA", "SIERRA"))
     p.add_argument("--tolerancia", type=float, default=0.50,
                    help="diferencia máxima en $ para considerar que cuadra (default 0.50)")
+    p.add_argument("--default-multas", type=float, default=0.0,
+                   help="valor fijo a MULTAS cuando el movimiento real da 0 "
+                        "(campo 'Valores por Defecto' del .pyw, no portado; para esta reconciliación)")
+    p.add_argument("--default-anticipos-otros", type=float, default=0.0,
+                   help="ídem para ANTICIPOS_OTROS")
     p.add_argument("--usuario", default="carga_lote")
     p.add_argument("--guardar", action="store_true",
                    help="sin este flag es dry-run: solo verifica, no toca Supabase")
@@ -103,7 +131,8 @@ def main() -> int:
         base = {
             "cedula": ced_in, "nombre": nombre_ref or liq.nombre,
             "fecha_salida": liq.fecha_salida, "total_excel": total_esp,
-            "total_calculado": "", "diferencia": "", "resultado": "", "detalle": "",
+            "total_calculado": "", "diferencia": "", "resultado": "",
+            "defaults_aplicados": "", "detalle": "",
         }
 
         if liq.error:
@@ -113,6 +142,9 @@ def main() -> int:
             filas_rep.append(base)
             print(f"  ERROR   {ced_in} {nombre_ref[:28]:<28} {liq.error}")
             continue
+
+        cambios = _aplicar_defaults(liq, args.default_multas, args.default_anticipos_otros)
+        base["defaults_aplicados"] = " ".join(cambios)
 
         total_calc = round(float(liq.campos.get("TOTAL_A_RECIBIR") or 0), 2)
         base["total_calculado"] = total_calc
