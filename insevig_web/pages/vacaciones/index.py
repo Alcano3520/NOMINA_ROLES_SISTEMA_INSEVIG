@@ -497,11 +497,41 @@ def _tab_calculo() -> rx.Component:
             _S.calc_resultado,
             card(
                 rx.vstack(
-                    rx.hstack(rx.text("Días gozados:", weight="bold"), rx.text(_S.calc_dias_gozados)),
-                    rx.hstack(rx.text("Días adicionales (Art.69):", weight="bold"), rx.text(_S.calc_dias_adicionales)),
-                    rx.hstack(rx.text("Días a pagar:", weight="bold"), rx.text(_S.calc_resultado["dias_a_pagar"])),
-                    rx.hstack(rx.text("Total período (12m):", weight="bold"), rx.text(f"${_S.calc_resultado['total_periodo']}")),
-                    rx.hstack(rx.text("Vacaciones calc. (total/24):", weight="bold"), rx.text(f"${_S.calc_resultado['vacaciones_calc']}")),
+                    rx.hstack(
+                        rx.vstack(rx.text("Días gozados", size="1", weight="bold"),
+                                  rx.input(value=_S.calc_dias_gozados.to_string(), type="number",
+                                           on_change=lambda v: _S.set_calc_dias("gozados", v),
+                                           size="1", width="6em")),
+                        rx.vstack(rx.text("Días adicionales Art.69", size="1", weight="bold"),
+                                  rx.input(value=_S.calc_dias_adicionales.to_string(), type="number",
+                                           on_change=lambda v: _S.set_calc_dias("adicionales", v),
+                                           size="1", width="6em")),
+                        rx.vstack(rx.text("Días a pagar", size="1", weight="bold"),
+                                  rx.text(_S.calc_resultado["dias_a_pagar"], size="2")),
+                        spacing="4", wrap="wrap", align="end",
+                    ),
+                    rx.text("Podés editar los días o un mes de la tabla — el total se recalcula solo.",
+                            size="1", color_scheme="gray"),
+                    scroll_x(rx.table.root(
+                        rx.table.header(rx.table.row(*[
+                            rx.table.column_header_cell(c) for c in ("Mes", "Total del mes ($)")
+                        ])),
+                        rx.table.body(rx.foreach(
+                            _S.calc_detalles,
+                            lambda m, i: rx.table.row(
+                                rx.table.cell(m["fecha_mes"]),
+                                rx.table.cell(rx.input(
+                                    value=m["total_mes"].to_string(), type="number", size="1", width="120px",
+                                    on_change=lambda v: _S.set_calc_mes(i, v),
+                                )),
+                            ),
+                        )),
+                        variant="surface", size="1",
+                    )),
+                    rx.hstack(rx.text("Total período (12m):", weight="bold"),
+                              rx.text(f"${_S.calc_resultado['total_periodo']}")),
+                    rx.hstack(rx.text("Vacaciones calc. (total/24):", weight="bold"),
+                              rx.text(f"${_S.calc_resultado['vacaciones_calc']}")),
                     rx.hstack(rx.text("TOTAL A PAGAR:", weight="bold", size="4"),
                              rx.text(f"${_S.calc_resultado['total_pagar']}", size="4", color_scheme="green")),
                     spacing="2", width="100%",

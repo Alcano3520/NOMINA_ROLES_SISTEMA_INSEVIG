@@ -512,6 +512,39 @@ class VacacionesState(rx.State):
         self.calc_periodo = v
 
     @rx.event
+    def set_calc_dias(self, campo: str, v: str):
+        """Editar 'Días gozados' o 'Días adicionales Art.69' a mano (como el
+        botón '✏ Modificar días adic.' del .pyw) y recalcular el pago."""
+        try:
+            n = max(0, int(float(str(v).strip() or 0)))
+        except ValueError:
+            return
+        setattr(self, f"calc_dias_{campo}", n)
+        self._recalcular_pago()
+
+    @rx.event
+    def set_calc_mes(self, idx: int, v: str):
+        """Editar el total de un mes de la tabla de 12 meses y recalcular."""
+        try:
+            val = round(float(str(v).replace(",", ".").strip() or 0), 2)
+        except ValueError:
+            return
+        filas = list(self.calc_detalles)
+        if 0 <= idx < len(filas):
+            filas[idx] = {**filas[idx], "total_mes": val}
+            self.calc_detalles = filas
+            self._recalcular_pago()
+
+    def _recalcular_pago(self):
+        total = round(sum(a_float(m.get("total_mes")) for m in self.calc_detalles), 2)
+        self.calc_total_periodo = total
+        with suppress(Exception):
+            self.calc_resultado = V.calcular_pago(
+                dias_gozados=self.calc_dias_gozados, dias_adicionales=self.calc_dias_adicionales,
+                total_periodo_12m=total, anticipo=float(self.form_pago.get("anticipo") or 0),
+            )
+
+    @rx.event
     async def calcular(self):
         """Trae los 12 meses de nómina del período y aplica la fórmula real de pago
         (`core.repos.vacaciones.calcular_pago` — NO la de `calculos.py`, ver su docstring)."""
