@@ -1137,19 +1137,254 @@ TABLA_LIQ_PERIODOS = "liquidaciones_periodos_calculo"
 
 # CORREGIDO (2026-09): "pagada" no coincidía con el valor real que usa
 # producción -- Generador_Liquidaciones_INSEVIG.pyw (la app que escribió
-# las 814+ liquidaciones existentes) guarda 'pagado' (masculino, no
+# las 4100+ liquidaciones existentes) guarda 'pagado' (masculino, no
 # 'pagada'). Con el valor viejo, guardar_liquidacion(estado='pagado')
 # rebotaba con "Estado inválido" y -- más grave -- los guardas
 # `if registro.get("estado") == "pagada"` de editar_valores_liquidacion/
 # eliminar_liquidacion NUNCA coincidían con un registro real: la
 # protección contra editar/eliminar una liquidación ya pagada estaba
-# rota en silencio para el 100% de los datos reales. 'anulada' no se
-# tocó -- no hay evidencia todavía de si el .pyw real usa 'anulada' o
-# 'cancelado' para ese estado (el .pyw tiene además otros estados
-# intermedios -- 'aprobado', 'cheque_listo', 'consignada',
-# 'legalizada_mrl' -- que este modelo simplificado de 4 estados no
-# cubre; pendiente de revisar si hacen falta al portar Gestión completa).
-ESTADOS_LIQUIDACION = ("borrador", "generada", "pagado", "anulada")
+# rota en silencio para el 100% de los datos reales.
+#
+# FLUJO COMPLETO (2026-09-08, paridad total pedida por el usuario) --
+# verificado línea por línea contra "Gestión de Liquidaciones" del `.pyw`
+# (ACCION_POR_ESTADO/_abrir_dialogo_*, líneas ~13600-14045):
+#   generada -> aprobado -> registrado_mrl -> cheque_listo ->
+#       {pagado | consignada} -> legalizada_mrl
+#   (+ 'cancelado', 'borrador', 'impreso', 'archivado')
+#
+# IMPORTANTE -- chequeado contra los datos reales de producción (2026-09-08,
+# 4101 filas): SOLO existen 'generada' (198) y 'pagado' (3903). Cero filas
+# en 'aprobado'/'registrado_mrl'/'cheque_listo'/'consignada'/
+# 'legalizada_mrl'/'impreso'/'archivado'/'cancelado'/'borrador' -- el flujo
+# de aprobación intermedio existe en el código del `.pyw` pero nadie lo usa
+# en la práctica hoy. Se implementa de todos modos por pedido explícito del
+# usuario (paridad completa con la interfaz, no con el uso real).
+#
+# 'impreso'/'archivado': aparecen en `ESTADOS_AVANZADOS` del `.pyw` (línea
+# ~8366) pero NO tienen ninguna entrada en `ACCION_POR_ESTADO` de Gestión de
+# Liquidaciones -- no se encontró el disparador real de estas dos
+# transiciones en el código leído; se dejan declaradas (sin fila en
+# TRANSICIONES que lleve a ellas) hasta encontrar de dónde salen.
+# 'cancelado': mismo caso, sin botón confirmado en Gestión de
+# Liquidaciones -- se asume alcanzable desde 'generada'/'aprobado' (chips
+# de filtro CHIPS_FILA_2/línea ~9647 lo sugieren) pero no está confirmado
+# con un botón real.
+ESTADOS_LIQUIDACION = (
+    "borrador", "generada", "aprobado", "registrado_mrl", "cheque_listo",
+    "consignada", "pagado", "legalizada_mrl", "impreso", "archivado", "cancelado",
+)
+
+# Transiciones válidas desde cada estado (para que la UI sepa qué botones
+# mostrar). Ver el comentario de ESTADOS_LIQUIDACION para la evidencia de
+# cada tramo -- 'impreso'/'archivado' quedan sin fila de origen (no
+# confirmado); 'cancelado' es un supuesto razonable, no confirmado.
+TRANSICIONES: dict[str, tuple[str, ...]] = {
+    "borrador": ("generada",),
+    "generada": ("aprobado", "cancelado"),
+    "aprobado": ("registrado_mrl", "cancelado"),
+    "registrado_mrl": ("cheque_listo",),
+    "cheque_listo": ("pagado", "consignada"),
+    "pagado": ("legalizada_mrl",),
+    "consignada": ("legalizada_mrl",),
+    "legalizada_mrl": (),
+    "impreso": (),
+    "archivado": (),
+    "cancelado": (),
+}
+
+# Campos de "seguimiento de firma y cobro" (panel de detalle, botón
+# "Guardar todo" del .pyw) -- independientes del estado, se pueden guardar
+# en cualquier momento. Ver guardar_seguimiento().
+_CAMPOS_SEGUIMIENTO = (
+    "color_etiqueta", "lugar_firma", "numero_acta", "fecha_firma_acuerdo",
+    "fecha_lista_cobro", "fecha_citado_cobro", "fecha_consignacion", "observaciones",
+)
+
+
+def _insertar_historial(sb, liquidacion_id: str, estado: str, usuario: str, observacion: str = "") -> None:
+    with contextlib.suppress(Exception):
+        sb.table(TABLA_LIQ_HISTORIAL).insert({
+            "liquidacion_id": liquidacion_id, "estado": estado,
+            "usuario": usuario, "observacion": observacion or None,
+        }).execute()
+
+
+def historial_estados(liquidacion_id: str) -> list[dict]:
+    """Timeline de cambios de estado de una liquidación (más reciente
+    primero) -- para la sección "HISTORIAL DE ESTADOS" del panel de
+    detalle (paridad con Gestión de Liquidaciones)."""
+    sb = supabase_client.get_client()
+    return (
+        sb.table(TABLA_LIQ_HISTORIAL).select("*")
+        .eq("liquidacion_id", liquidacion_id).order("created_at", desc=True)
+        .execute().data or []
+    )
+
+
+def guardar_seguimiento(
+    liquidacion_id: str, campos: dict, *, usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """Guarda color/seguimiento de firma-cobro/observaciones -- paridad con
+    el botón "💾 Guardar todo (color, seguimiento y observaciones)" del
+    panel de detalle. Independiente del estado -- se puede guardar en
+    cualquier momento, incluso sobre una liquidación ya pagada. Ignora
+    cualquier clave de `campos` que no esté en `_CAMPOS_SEGUIMIENTO`."""
+    datos = {k: v for k, v in campos.items() if k in _CAMPOS_SEGUIMIENTO}
+    if not datos:
+        return False, "No hay campos válidos para guardar."
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "guardar_seguimiento", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id, after=datos,
+    ):
+        sb = supabase_client.get_client()
+        sb.table(TABLA_LIQ).update({**datos, "updated_by": usuario}).eq("id", liquidacion_id).execute()
+    return True, ""
+
+
+def autorizar(liquidacion_id: str, *, autorizado_por: str, usuario: str, roles: set[str]) -> tuple[bool, str]:
+    """generada -> aprobado. Paridad con el diálogo "Confirmar autorización"
+    de Gestión de Liquidaciones."""
+    autorizado_por = (autorizado_por or "").strip()
+    if not autorizado_por:
+        return False, "Ingrese el nombre de quien autoriza."
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    estado_actual = registro.get("estado", "")
+    if "aprobado" not in TRANSICIONES.get(estado_actual, ()):
+        return False, f"No se puede autorizar una liquidación en estado '{estado_actual}'."
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "autorizar", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id,
+        antes={"estado": estado_actual}, after={"estado": "aprobado"},
+    ):
+        sb = supabase_client.get_client()
+        sb.table(TABLA_LIQ).update({
+            "estado": "aprobado",
+            "aprobado_por_rrhh": autorizado_por,
+            "fecha_aprobacion_rrhh": dt.datetime.now().isoformat(),
+            "updated_by": usuario,
+        }).eq("id", liquidacion_id).execute()
+        _insertar_historial(sb, liquidacion_id, "aprobado", usuario, f"Autorizado por {autorizado_por}")
+    return True, ""
+
+
+def marcar_cheque_listo(
+    liquidacion_id: str, *, forma_pago: str, comprobante_pago: str = "", usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """registrado_mrl -> cheque_listo. Paridad con el diálogo "Marcar Cheque
+    Listo". `comprobante_pago` es opcional -- en el `.pyw`, cuando se marca
+    un LOTE de varias liquidaciones a la vez, el número de cheque se deja
+    en blanco (cada una tiene el suyo) y se completa después, una por una.
+    Este archivo no tiene todavía una forma de actualizar solo
+    `comprobante_pago` sin volver a pasar por esta función (que exige venir
+    de 'registrado_mrl') -- si hace falta completarlo después de que la
+    liquidación ya avanzó de estado, agregar una función aparte cuando se
+    necesite (no inventada acá para no adelantarse sin caso de uso real)."""
+    forma_pago = (forma_pago or "").strip()
+    if not forma_pago:
+        return False, "Seleccione la forma de pago."
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    estado_actual = registro.get("estado", "")
+    if "cheque_listo" not in TRANSICIONES.get(estado_actual, ()):
+        return False, f"No se puede marcar 'Cheque Listo' desde el estado '{estado_actual}'."
+    datos = {"estado": "cheque_listo", "forma_pago": forma_pago, "updated_by": usuario}
+    comprobante_pago = (comprobante_pago or "").strip()
+    if comprobante_pago:
+        datos["comprobante_pago"] = comprobante_pago
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "marcar_cheque_listo", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id,
+        antes={"estado": estado_actual}, after=datos,
+    ):
+        sb = supabase_client.get_client()
+        sb.table(TABLA_LIQ).update(datos).eq("id", liquidacion_id).execute()
+        _insertar_historial(sb, liquidacion_id, "cheque_listo", usuario,
+                             f"{forma_pago} · {comprobante_pago or 'pendiente'}")
+    return True, ""
+
+
+def _marcar_fecha_pago(
+    liquidacion_id: str, estado_final: str, *, fecha: str, usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    estado_actual = registro.get("estado", "")
+    if estado_final not in TRANSICIONES.get(estado_actual, ()):
+        return False, f"No se puede marcar '{estado_final}' desde el estado '{estado_actual}'."
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", f"marcar_{estado_final}", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id,
+        antes={"estado": estado_actual}, after={"estado": estado_final, "fecha_pago": fecha},
+    ):
+        sb = supabase_client.get_client()
+        sb.table(TABLA_LIQ).update({
+            "estado": estado_final, "fecha_pago": fecha, "updated_by": usuario,
+        }).eq("id", liquidacion_id).execute()
+        _insertar_historial(sb, liquidacion_id, estado_final, usuario)
+    return True, ""
+
+
+def marcar_pagada(liquidacion_id: str, *, fecha: str, usuario: str, roles: set[str]) -> tuple[bool, str]:
+    """cheque_listo -> pagado. Paridad con el botón "Pagada" del diálogo
+    "Marcar como Pagada o Consignada" (misma columna `fecha_pago` que
+    `marcar_consignada`)."""
+    return _marcar_fecha_pago(liquidacion_id, "pagado", fecha=fecha, usuario=usuario, roles=roles)
+
+
+def marcar_consignada(liquidacion_id: str, *, fecha: str, usuario: str, roles: set[str]) -> tuple[bool, str]:
+    """cheque_listo -> consignada. Paridad con el botón "Consignada" del
+    mismo diálogo que `marcar_pagada`."""
+    return _marcar_fecha_pago(liquidacion_id, "consignada", fecha=fecha, usuario=usuario, roles=roles)
+
+
+def avanzar_estado(
+    liquidacion_id: str, nuevo_estado: str, *, responsable: str, usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """Transición genérica que solo pide "quién hizo la acción" -- paridad
+    con `_abrir_dialogo_avance` del `.pyw` (usada hoy para
+    aprobado->registrado_mrl "Registrar en MRL" y
+    pagado/consignada->legalizada_mrl "Legalizar en MRL"). El responsable
+    se ANEXA a `observaciones` (nunca la pisa), igual que el original."""
+    responsable = (responsable or "").strip()
+    if not responsable:
+        return False, "Ingrese el nombre del responsable."
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    estado_actual = registro.get("estado", "")
+    if nuevo_estado not in TRANSICIONES.get(estado_actual, ()):
+        return False, f"No se puede pasar de '{estado_actual}' a '{nuevo_estado}'."
+    nota = f"{nuevo_estado} por {responsable} el {dt.datetime.now().strftime('%d/%m/%Y %H:%M')}."
+    obs_previa = (registro.get("observaciones") or "").strip()
+    obs_nueva = f"{obs_previa}\n{nota}".strip() if obs_previa else nota
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "avanzar_estado", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ, target_key=liquidacion_id,
+        antes={"estado": estado_actual}, after={"estado": nuevo_estado},
+    ):
+        sb = supabase_client.get_client()
+        sb.table(TABLA_LIQ).update({
+            "estado": nuevo_estado, "observaciones": obs_nueva, "updated_by": usuario,
+        }).eq("id", liquidacion_id).execute()
+        _insertar_historial(sb, liquidacion_id, nuevo_estado, usuario, f"Por {responsable}")
+    return True, ""
 
 
 def clasificar_tipo_liquidacion(motivo: str | None) -> str:
@@ -1401,25 +1636,43 @@ def resumen_liquidaciones() -> dict[str, int]:
 
 
 def listar_liquidaciones(
-    *, texto: str = "", estado: str = "", tipo: str = "", limite: int = 200,
+    *, texto: str = "", estado: str = "", tipo: str = "", lote: str = "",
+    desde: str = "", hasta: str = "", orden: str = "-created_at", limite: int = 200,
 ) -> list[dict]:
-    """Lista de `liquidaciones` para el Editor/Gestión — más recientes primero."""
+    """Lista de `liquidaciones` para el Editor/Gestión — más recientes
+    primero por defecto.
+
+    `lote`: filtra por `codigo_lote` exacto (selector "Lote:" de Gestión de
+    Liquidaciones). `desde`/`hasta`: rango de `fecha_salida` (ISO
+    aaaa-mm-dd), paridad con el filtro de fechas "Desde"/"Hasta". `orden`:
+    columna a ordenar, con prefijo "-" para descendente (default
+    "-created_at", más recientes primero); columnas típicas:
+    "fecha_salida", "total_liquido", "empleado_apellidos"."""
     sb = supabase_client.get_client()
     q = sb.table(TABLA_LIQ).select(
         "id,empleado_codigo,empleado_cedula,empleado_nombres,empleado_apellidos,"
-        "cargo,fecha_salida,tipo_liquidacion,estado,total_liquido,created_at"
+        "cargo,fecha_salida,tipo_liquidacion,estado,total_liquido,created_at,"
+        "codigo_lote,forma_pago,comprobante_pago,fecha_pago,aprobado_por_rrhh,"
+        "color_etiqueta"
     )
     if estado:
         q = q.eq("estado", estado)
     if tipo:
         q = q.eq("tipo_liquidacion", tipo)
+    if lote:
+        q = q.eq("codigo_lote", lote)
+    if desde:
+        q = q.gte("fecha_salida", desde)
+    if hasta:
+        q = q.lte("fecha_salida", hasta)
     if texto.strip():
         t = texto.strip()
         if t.isdigit() or normalizar_cedula(t) == t.zfill(10):
-            q = q.or_(f"empleado_cedula.eq.{normalizar_cedula(t)},empleado_codigo.eq.{t}")
+            q = q.or_(f"empleado_cedula.eq.{normalizar_cedula(t)},empleado_codigo.eq.{t},codigo_lote.eq.{t}")
         else:
             q = q.or_(f"empleado_apellidos.ilike.%{t}%,empleado_nombres.ilike.%{t}%")
-    filas = q.order("created_at", desc=True).limit(limite).execute().data or []
+    campo_orden = orden.lstrip("-")
+    filas = q.order(campo_orden, desc=orden.startswith("-")).limit(limite).execute().data or []
     for f in filas:
         f["nombre"] = f"{f.get('empleado_apellidos', '')} {f.get('empleado_nombres', '')}".strip()
     return filas
@@ -1454,11 +1707,7 @@ def cambiar_estado_liquidacion(
         sb.table(TABLA_LIQ).update(
             {"estado": estado, "updated_by": usuario}
         ).eq("id", liquidacion_id).execute()
-        with contextlib.suppress(Exception):
-            sb.table(TABLA_LIQ_HISTORIAL).insert({
-                "liquidacion_id": liquidacion_id, "estado": estado,
-                "usuario": usuario, "observacion": observacion or None,
-            }).execute()
+        _insertar_historial(sb, liquidacion_id, estado, usuario, observacion)
 
 
 _TIPO_POR_CODIGO: dict[str, str] = {cod: tipo for cod, _n, tipo, _c in _CONCEPTOS_DETALLE}

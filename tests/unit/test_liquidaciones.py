@@ -507,6 +507,29 @@ def test_excel_liquidaciones_valido():
     assert ws.max_row == 2
 
 
+def test_listado_liquidaciones_xlsx_valido():
+    import io
+
+    import openpyxl
+
+    from core.excel.liquidaciones_builders import listado_liquidaciones_xlsx
+
+    filas = [{
+        "empleado_codigo": "1012", "nombre": "PEREIRA JUAN", "empleado_cedula": "0920116811",
+        "cargo": "GUARDIA", "fecha_salida": "2026-06-01", "tipo_liquidacion": "renuncia",
+        "estado": "pagado", "total_liquido": 1300.0, "codigo_lote": "L-001",
+        "forma_pago": "Cheque", "comprobante_pago": "555", "fecha_pago": "2026-06-05",
+        "aprobado_por_rrhh": "Juan Pérez", "observaciones": "Sin novedad.",
+    }]
+    data = listado_liquidaciones_xlsx(filas)
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    ws = wb["Liquidaciones"]
+    headers = [c.value for c in ws[1]]
+    assert "Total líquido" in headers and "Lote" in headers and "Autorizado por" in headers
+    assert ws.max_row == 2
+    assert ws.cell(row=2, column=headers.index("Total líquido") + 1).value == 1300.0
+
+
 def _liq_ejemplo(**overrides) -> "lq.Liquidacion":
     base = dict(
         empleado="1012", nombre="PEREIRA JUAN", cedula="0920116811",
@@ -625,7 +648,9 @@ def test_resumen_liquidaciones_cuenta_por_estado(monkeypatch):
     ]
     monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClient(filas))
     resumen = lq.resumen_liquidaciones()
-    assert resumen == {"borrador": 0, "generada": 2, "pagado": 1, "anulada": 0}
+    assert resumen["generada"] == 2 and resumen["pagado"] == 1
+    assert set(resumen) == set(lq.ESTADOS_LIQUIDACION)
+    assert sum(resumen.values()) == 3  # "estado_desconocido" no cuenta en ningún estado real
 
 
 def test_buscar_empleado_preview_por_cedula_supabase(monkeypatch):
@@ -747,6 +772,155 @@ def test_editar_valores_liquidacion_no_toca_pagada(monkeypatch):
     assert not ok and "pagada" in err
 
 
+def test_transiciones_cubre_los_11_estados():
+    assert set(lq.TRANSICIONES) == set(lq.ESTADOS_LIQUIDACION)
+
+
+def test_autorizar_generada_a_aprobado(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "generada"}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.autorizar("L1", autorizado_por="Juan Pérez", usuario="ana", roles={"editor"})
+    assert ok and err == ""
+    liq_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ and op == "update")
+    assert liq_upd["estado"] == "aprobado"
+    assert liq_upd["aprobado_por_rrhh"] == "Juan Pérez"
+    assert "fecha_aprobacion_rrhh" in liq_upd
+    hist = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_HISTORIAL and op == "insert")
+    assert hist["estado"] == "aprobado" and "Juan Pérez" in hist["observacion"]
+
+
+def test_autorizar_rechaza_estado_no_generada(monkeypatch):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "pagado"}, []))
+    ok, err = lq.autorizar("L1", autorizado_por="Juan", usuario="ana", roles=set())
+    assert not ok and "pagado" in err
+
+
+def test_autorizar_exige_nombre():
+    ok, err = lq.autorizar("L1", autorizado_por="  ", usuario="ana", roles=set())
+    assert not ok and "autoriza" in err
+
+
+def test_marcar_cheque_listo_desde_registrado_mrl(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "obtener_liquidacion",
+                         lambda _id: ({"id": "L1", "estado": "registrado_mrl"}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.marcar_cheque_listo(
+        "L1", forma_pago="Cheque", comprobante_pago="12345", usuario="ana", roles=set())
+    assert ok and err == ""
+    liq_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ and op == "update")
+    assert liq_upd == {
+        "estado": "cheque_listo", "forma_pago": "Cheque",
+        "updated_by": "ana", "comprobante_pago": "12345",
+    }
+
+
+def test_marcar_pagada_y_consignada_desde_cheque_listo(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "obtener_liquidacion",
+                         lambda _id: ({"id": "L1", "estado": "cheque_listo"}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.marcar_pagada("L1", fecha="2026-09-08", usuario="ana", roles=set())
+    assert ok and err == ""
+    liq_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ and op == "update")
+    assert liq_upd["estado"] == "pagado" and liq_upd["fecha_pago"] == "2026-09-08"
+
+
+def test_marcar_consignada_rechaza_desde_generada(monkeypatch):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "generada"}, []))
+    ok, err = lq.marcar_consignada("L1", fecha="2026-09-08", usuario="ana", roles=set())
+    assert not ok and "generada" in err
+
+
+def test_avanzar_estado_anexa_observaciones_sin_pisar(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (
+        {"id": "L1", "estado": "aprobado", "observaciones": "Nota previa a mano."}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.avanzar_estado(
+        "L1", "registrado_mrl", responsable="María Solís", usuario="ana", roles=set())
+    assert ok and err == ""
+    liq_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ and op == "update")
+    assert liq_upd["estado"] == "registrado_mrl"
+    assert liq_upd["observaciones"].startswith("Nota previa a mano.\n")
+    assert "María Solís" in liq_upd["observaciones"]
+
+
+def test_avanzar_estado_rechaza_transicion_invalida(monkeypatch):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "generada"}, []))
+    ok, err = lq.avanzar_estado("L1", "legalizada_mrl", responsable="X", usuario="ana", roles=set())
+    assert not ok and "generada" in err and "legalizada_mrl" in err
+
+
+def test_guardar_seguimiento_ignora_campos_no_permitidos(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1"}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.guardar_seguimiento(
+        "L1",
+        {"color_etiqueta": "verde", "observaciones": "todo bien", "estado": "pagado", "total_liquido": 999},
+        usuario="ana", roles=set(),
+    )
+    assert ok and err == ""
+    liq_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ and op == "update")
+    assert liq_upd == {"color_etiqueta": "verde", "observaciones": "todo bien", "updated_by": "ana"}
+
+
+def test_guardar_seguimiento_sin_campos_validos():
+    ok, err = lq.guardar_seguimiento("L1", {"estado": "pagado"}, usuario="ana", roles=set())
+    assert not ok and err != ""
+
+
+def test_historial_estados_orden_mas_reciente_primero(monkeypatch):
+    filas = [{"estado": "generada", "created_at": "2026-01-01"}, {"estado": "aprobado", "created_at": "2026-01-02"}]
+    monkeypatch.setattr(lq.supabase_client, "get_client",
+                         lambda: _FakeClientPorTabla({"liquidaciones_historial_estados": filas}))
+    assert lq.historial_estados("L1") == filas
+
+
+def test_listar_liquidaciones_filtra_por_lote_y_fechas(monkeypatch):
+    capturado = {}
+
+    class _Q:
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, campo, valor):
+            capturado[f"eq_{campo}"] = valor
+            return self
+
+        def gte(self, campo, valor):
+            capturado[f"gte_{campo}"] = valor
+            return self
+
+        def lte(self, campo, valor):
+            capturado[f"lte_{campo}"] = valor
+            return self
+
+        def order(self, campo, desc=False):
+            capturado["order"] = (campo, desc)
+            return self
+
+        def limit(self, *a, **k):
+            return self
+
+        def execute(self):
+            return _FakeExec([])
+
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: type("C", (), {"table": lambda self, n: _Q()})())
+    lq.listar_liquidaciones(lote="L-001", desde="2026-01-01", hasta="2026-01-31", orden="fecha_salida")
+    assert capturado["eq_codigo_lote"] == "L-001"
+    assert capturado["gte_fecha_salida"] == "2026-01-01"
+    assert capturado["lte_fecha_salida"] == "2026-01-31"
+    assert capturado["order"] == ("fecha_salida", False)
+
+
 class _FakeQueryPorTabla:
     def __init__(self, datos_por_tabla, tabla):
         self._d, self._t = datos_por_tabla, tabla
@@ -755,6 +929,9 @@ class _FakeQueryPorTabla:
         return self
 
     def eq(self, *a, **k):
+        return self
+
+    def order(self, *a, **k):
         return self
 
     def limit(self, *a, **k):

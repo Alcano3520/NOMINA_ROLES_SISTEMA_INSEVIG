@@ -84,3 +84,46 @@ def liquidaciones_xlsx(liquidaciones: list) -> bytes:
     ws.freeze_panes(1, 2)
     wb.close()
     return buf.getvalue()
+
+
+# Columnas del listado de GUARDADAS (Gestión de Liquidaciones, botón
+# "⬇ Exportar a Excel") -- una fila por registro de `liquidaciones`, no
+# una liquidación recién calculada (por eso las claves son columnas de la
+# tabla, no de Liquidacion.campos). "responsable" no es una columna real
+# de `liquidaciones` -- el .pyw lo anexa como texto libre dentro de
+# `observaciones` (ver avanzar_estado en core/repos/liquidaciones.py), así
+# que no se puede extraer como campo propio; se expone `observaciones`
+# completa en su lugar.
+COLUMNAS_LISTADO = [
+    ("Código", "empleado_codigo"), ("Nombre", "nombre"), ("Cédula", "empleado_cedula"),
+    ("Cargo", "cargo"), ("Fecha salida", "fecha_salida"), ("Tipo", "tipo_liquidacion"),
+    ("Estado", "estado"), ("Total líquido", "total_liquido"), ("Lote", "codigo_lote"),
+    ("Forma de pago", "forma_pago"), ("Cheque/comprobante", "comprobante_pago"),
+    ("Fecha de pago", "fecha_pago"), ("Autorizado por", "aprobado_por_rrhh"),
+    ("Observaciones", "observaciones"),
+]
+
+
+def listado_liquidaciones_xlsx(filas: list[dict]) -> bytes:
+    """Excel del listado de liquidaciones GUARDADAS ya filtrado (Gestión de
+    Liquidaciones, botón "⬇ Exportar a Excel") -- `filas` es lo que
+    devuelve `listar_liquidaciones()` de `core.repos.liquidaciones`, no
+    objetos `Liquidacion`."""
+    buf = io.BytesIO()
+    wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+    hdr = wb.add_format({"bold": True, "bg_color": "#1a4d8f", "font_color": "white", "border": 1})
+    money = wb.add_format({"num_format": "#,##0.00"})
+    ws = wb.add_worksheet("Liquidaciones")
+
+    for c, (titulo, _) in enumerate(COLUMNAS_LISTADO):
+        ws.write(0, c, titulo, hdr)
+    for r, fila in enumerate(filas, start=1):
+        for c, (_, clave) in enumerate(COLUMNAS_LISTADO):
+            v = fila.get(clave)
+            if isinstance(v, (int, float)):
+                ws.write_number(r, c, float(v), money)
+            else:
+                ws.write(r, c, "" if v is None else str(v))
+    ws.freeze_panes(1, 2)
+    wb.close()
+    return buf.getvalue()
