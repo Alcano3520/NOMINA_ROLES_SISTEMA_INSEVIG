@@ -201,6 +201,41 @@ siguen siendo necesarios ya que el modo Individual no depende de un
 periodo de corte fijo.
 
 ## Pendiente / a validar contra el legado
+- **BUG SIN RESOLVER (2026-09-08) -- `procesar_empleado` da resultados muy
+  negativos para algunos empleados de larga antigüedad/secciones
+  "todo incluido"** (ej. `CUSTODIO $652.34 INC-FR FIJO`,
+  `24H 715.67 INC-FR CAMARONERAS`, `CHOFER AUX $702.36 INC-FR FIJO`).
+  Detectado al reconciliar "Liquidaciones_por_subir.xlsx" (135 casos
+  reales, 2026-09): 5+ cédulas dieron `total_liquido` cientos o miles de
+  dólares NEGATIVOS con el motor actual, cuando el valor real (Excel ya
+  validado por RRHH) era positivo y razonable -- ej. cédula 2100696455:
+  motor -$2045.08 vs. real $809.93; cédula 0941345589: motor -$1128.98
+  vs. real $66.02. Se descartó `descuentos_pendientes` como causa (tabla
+  vacía para esas cédulas). El nombre "INC-FR FIJO" de la sección NO debe
+  tratarse como regla de negocio especial (decisión explícita del
+  usuario: "es solo un nombre... tiene que guiarse por los valores
+  reflejados") -- la correlación con esas secciones puede ser
+  coincidencia (empleados de sueldo bajo/muchas horas) o puede ser la
+  pista real de dónde está el bug; no se investigó a fondo por falta de
+  acceso a los `campos` completos calculados para esos casos. El lote
+  histórico de 135 se resolvió cargando los valores ya calculados del
+  Excel tal cual (`core/excel/liquidaciones_import.py`,
+  `scripts/importar_liquidaciones_excel.py`), sin pasar por
+  `procesar_empleado` -- este bug sigue activo para cualquier cálculo EN
+  VIVO de esas personas (modo Individual/Lote de `insevig_web/`).
+  Próximo paso: tomar 1-2 cédulas afectadas, volcar el `campos` completo
+  de `procesar_empleado` (no solo un resumen) y compararlo campo a campo
+  contra `nucleo_modular` (`LIQUIDACIONES_SISTEMA_INSEVIG`) para el mismo
+  caso.
+- **Fórmula de Fondo de Reserva puede diferir del `.pyw` real en casos de
+  alta muy reciente.** El `.pyw` calcula FR como 8.33% del ÚLTIMO mes de
+  una lista `_obtener_remuneraciones_mensuales` (arranca en diciembre);
+  si en el momento en que se corrió el `.pyw` ese mes todavía no tenía
+  movimientos posteados, daba $0.00 -- un recálculo posterior (cuando el
+  mes ya cerró con datos reales) puede dar un valor distinto y no
+  necesariamente estar "mal", es una foto tomada en otro momento. No es
+  necesariamente un bug de fórmula; ver hilo de reconciliación del
+  2026-09-08 para el caso concreto (MENDOZA MORA, cédula 1205368457).
 - **Sobretiempos del mes en curso: portado (2026-09-06)** -- ver
   `procesar_empleado(periodo_calc_anio, periodo_calc_mes,
   usar_valores_reales_mes_actual)` y `_horas_seccion`. Falta cablear el
