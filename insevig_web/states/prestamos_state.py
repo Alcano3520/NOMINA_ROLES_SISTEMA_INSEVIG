@@ -14,6 +14,47 @@ from insevig_web.states.datasource_state import DataSourceState
 
 _TERMINALES = {"ok", "error", "cancelado"}
 
+_IA_LABELS = {
+    "Todo el historial": "todo", "Año actual": "anio",
+    "Último año": "ultimo_anio", "Último semestre": "semestre",
+}
+
+
+def _a_fecha(txt: str):
+    import datetime as _dt
+
+    s = str(txt or "").strip()[:10]
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return _dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def _filtrar_rango_ia(movs: list, rango: str) -> list:
+    """Filtra los movimientos por el rango del análisis IA (como el .pyw:
+    Todo / Año actual / Último año / Último semestre)."""
+    import datetime as _dt
+
+    if rango in ("", "todo"):
+        return movs
+    hoy = _dt.date.today()
+    if rango == "anio":
+        desde = _dt.date(hoy.year, 1, 1)
+    elif rango == "ultimo_anio":
+        desde = hoy - _dt.timedelta(days=365)
+    elif rango == "semestre":
+        desde = hoy - _dt.timedelta(days=183)
+    else:
+        return movs
+    out = []
+    for m in movs:
+        f = _a_fecha(getattr(m, "fecha", ""))
+        if f is None or f >= desde:
+            out.append(m)
+    return out
+
 
 class PrestamosState(rx.State):
     # búsqueda de empleado
@@ -101,6 +142,16 @@ class PrestamosState(rx.State):
     narrativa: str = ""
     narrativa_job: int = 0
     narrativa_status: str = ""
+    ia_rango: str = "todo"  # todo | anio | ultimo_anio | semestre
+
+    @rx.event
+    def set_ia_rango(self, v: str):
+        self.ia_rango = _IA_LABELS.get(v, "todo")
+
+    @rx.var
+    def ia_rango_label(self) -> str:
+        return next((lbl for lbl, val in _IA_LABELS.items() if val == self.ia_rango),
+                    "Todo el historial")
 
     # saldos de todos (Job)
     saldos_job: int = 0
@@ -182,6 +233,29 @@ class PrestamosState(rx.State):
             sum(m["valor"] for m in self.movimientos if m["tipo"] == "pendiente"), 2
         )
         self.cargando_hist = False
+
+    # detalle de un MOVIMIENTO individual (clic en la fila del historial) — como
+    # el diálogo "DETALLE DEL {INGRESO|EGRESO}" del .pyw
+    mov_detalle: dict[str, str] = {}
+
+    @rx.event
+    def ver_mov_detalle(self, mov: dict):
+        self.mov_detalle = {
+            "fecha": str(mov.get("fecha", "")),
+            "numero": str(mov.get("numero", "")),
+            "valor": f"{float(mov.get('valor', 0) or 0):,.2f}",
+            "tipo": str(mov.get("tipo", "")),
+            "origen": str(mov.get("origen", "")),
+            "concepto": str(mov.get("concepto", "") or "Sin observaciones registradas"),
+        }
+
+    @rx.event
+    def cerrar_mov_detalle(self):
+        self.mov_detalle = {}
+
+    @rx.var
+    def mov_detalle_abierto(self) -> bool:
+        return bool(self.mov_detalle)
 
     # detalle de un préstamo (doble clic en la fila del resumen)
     detalle_movs: list[dict] = []
@@ -278,6 +352,7 @@ class PrestamosState(rx.State):
         movs = await asyncio.to_thread(
             prestamos.historial_empleado, self.empleado_sel, await self._fuente()
         )
+        movs = _filtrar_rango_ia(movs, self.ia_rango)
         deuda = self.saldo_empleado
 
         def _fn(ctx):

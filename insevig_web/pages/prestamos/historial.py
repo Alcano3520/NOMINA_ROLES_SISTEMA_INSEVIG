@@ -39,6 +39,9 @@ def _tabla_movimientos() -> rx.Component:
                         rx.table.cell(m["origen"]),
                         rx.table.cell(m["numero"]),
                         rx.table.cell(rx.cond(m["es_cuadre"], "SÍ", "")),
+                        on_click=lambda: PrestamosState.ver_mov_detalle(m),
+                        style={"cursor": "pointer"},
+                        _hover={"background": theme.BG},
                     ),
                 )
             ),
@@ -46,6 +49,51 @@ def _tabla_movimientos() -> rx.Component:
             size="1",
             width="100%",
         )
+    )
+
+
+def _dialog_mov_detalle() -> rx.Component:
+    _M = PrestamosState.mov_detalle
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title(
+                rx.match(
+                    _M["tipo"],
+                    ("pendiente", "Detalle del movimiento — Pendiente"),
+                    ("desembolso", "Detalle del movimiento — Desembolso"),
+                    "Detalle del movimiento — Pago",
+                ),
+                size="4",
+            ),
+            rx.vstack(
+                *[
+                    rx.hstack(
+                        rx.text(etq, weight="bold", size="2", width="9em"),
+                        rx.text(_M[campo].to_string(), size="2"),
+                        spacing="2", align="start",
+                    )
+                    for etq, campo in (
+                        ("Fecha", "fecha"), ("Número", "numero"),
+                        ("Valor ($)", "valor"), ("Tipo", "tipo"),
+                        ("Origen", "origen"),
+                    )
+                ],
+                rx.text("Observación", weight="bold", size="2", margin_top="0.5rem"),
+                rx.box(
+                    rx.text(_M["concepto"].to_string(), size="2"),
+                    padding="0.5rem", border="1px solid var(--gray-6)",
+                    border_radius="6px", width="100%", white_space="pre-wrap",
+                ),
+                rx.hstack(
+                    rx.dialog.close(rx.button("Cerrar", variant="soft")),
+                    justify="end", width="100%", margin_top="1rem",
+                ),
+                spacing="2", width="100%",
+            ),
+            max_width="640px",
+        ),
+        open=PrestamosState.mov_detalle_abierto,
+        on_open_change=PrestamosState.cerrar_mov_detalle,
     )
 
 
@@ -290,6 +338,7 @@ def historial() -> rx.Component:
                             wrap="wrap",
                         ),
                         rx.cond(PrestamosState.cargando_hist, rx.spinner(), _tabla_movimientos()),
+                        _dialog_mov_detalle(),
                         rx.cond(
                             PrestamosState.resumen.length() > 0,
                             rx.vstack(
@@ -301,6 +350,15 @@ def historial() -> rx.Component:
                             ),
                         ),
                         rx.hstack(
+                            rx.select(
+                                [
+                                    "Todo el historial", "Año actual",
+                                    "Último año", "Último semestre",
+                                ],
+                                value=PrestamosState.ia_rango_label,
+                                on_change=PrestamosState.set_ia_rango,
+                                size="1",
+                            ),
                             rx.button(
                                 "Analizar con IA",
                                 on_click=PrestamosState.generar_narrativa,
