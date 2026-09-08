@@ -63,17 +63,23 @@ Para 8–10 empleados y 1 período, cada salida debe coincidir con el `.pyw` act
 ### A2. Profundidad pendiente conocida
 - **Empleados**: [x] editor completo (89 campos), [x] búsqueda avanzada
   multi-criterio (`/empleados/avanzada`), [x] ficha del empleado en PDF
-  (`core/pdf/ficha_empleado.py`) + documentos (`documentos_empleado.py`).
-  [ ] exportar el catálogo DBTABLAS a Excel; [ ] adjuntar imágenes de
-  certificados (el legado solo dibuja recuadros vacíos).
+  (`core/pdf/ficha_empleado.py`) + documentos (`documentos_empleado.py`),
+  [x] exportar catálogo DBTABLAS a Excel (`exportar_catalogos`).
+  [ ] adjuntar imágenes de certificados (el legado solo dibuja recuadros
+  vacíos — probablemente no haga falta).
 - **Registrador**: [x] las 6 pestañas del legado (incl. modo agrupado en la
   carga masiva de egresos/ingresos).
-- **Roles**: [x] preview del PDF embebido (`<iframe>`); [x] checkbox "Incluir
-  logo" (falta cargar el logo INSEVIG por defecto sin subirlo a mano).
+- **Roles**: [x] preview del PDF embebido (`<iframe>`); [x] logo INSEVIG
+  automático (`assets/logo_insevig.png`, checkbox para desactivarlo).
 - **Reportes**: [x] `test_concepts_cubre_periodo_real`
   (`tests/integration/test_reportes_conceptos.py`, gated `integration`).
 - **Vacaciones**: [x] PDF/QR individual, [x] confirmación de período anterior,
   [x] dashboard "Pendientes de Firma", [x] reporte "pendientes global".
+- **Bitácora**: [ ] "Formato de Renuncia" PDF y botón "Registrar" (UPDATE a
+  RPEMPLEA FECHA_SAL/ESTADO) — escritura a nómina, iría por `core/repos/empleados`
+  con auditoría; pendiente de decisión con RRHH.
+- **Liquidaciones**: [ ] BUG del motor (`procesar_empleado` da totales
+  negativos para algunos casos — ver `docs/modulos/liquidaciones.md`).
 - **Auditoría**: [x] filtros usuario/módulo/estado/rango de fechas + contador
   de coincidencias en `/admin/auditoria` (`core/repos/admin.buscar_auditoria`).
   [ ] `admin/roles` editable (hoy solo lectura de la matriz por defecto) —
