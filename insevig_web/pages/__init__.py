@@ -16,6 +16,7 @@ from insevig_web.pages import (  # noqa: F401, I001
     roles,
     envio,
     registrador,
+    faltas,
     admin,
     bitacora,
     liquidaciones,
