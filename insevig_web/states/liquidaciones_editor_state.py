@@ -183,6 +183,24 @@ class LiquidacionesEditorState(rx.State):
         self.ed_campos = {cod: str(por_cod.get(cod, 0.0)) for cod, _ in _TODOS}
         self.ed_orig = dict(self.ed_campos)
         self.ed_fecha_calc_valida = self.ed_datos["fecha_salida"]
+        with contextlib.suppress(Exception):
+            self.ed_ajustes_todos = await asyncio.to_thread(
+                repo.listar_ajustes_concepto, liquidacion_id
+            )
+
+    async def _recargar_valores(self):
+        """Vuelve a traer el registro y refresca los valores de los conceptos
+        (tras editar/eliminar un ajuste, que cambia el detalle + totales)."""
+        registro, conceptos = await asyncio.to_thread(repo.obtener_liquidacion, self.ed_id)
+        if registro is None:
+            return
+        por_cod = {str(c["concepto_codigo"]): round(float(c.get("valor_total") or 0), 2)
+                   for c in conceptos}
+        self.ed_campos = {cod: str(por_cod.get(cod, 0.0)) for cod, _ in _TODOS}
+        self.ed_orig = dict(self.ed_campos)
+        self.ed_ajustes_todos = await asyncio.to_thread(
+            repo.listar_ajustes_concepto, self.ed_id
+        )
 
     @rx.event
     def cerrar(self):
@@ -190,6 +208,8 @@ class LiquidacionesEditorState(rx.State):
         self.ed_datos = {}
         self.ed_campos = {}
         self.ed_orig = {}
+        self.ed_ajustes_todos = []
+        self.hist_abierto = ""
         self.ed_msg = ""
 
     @rx.event
@@ -262,6 +282,98 @@ class LiquidacionesEditorState(rx.State):
         self.ed_orig = {**self.ed_orig, cod: self.ed_campos[cod]}
         self.aj_abierto = ""
         self.ed_msg = f"Ajuste de {delta:+.2f} aplicado a {cod}."
+        with contextlib.suppress(Exception):
+            self.ed_ajustes_todos = await asyncio.to_thread(
+                repo.listar_ajustes_concepto, self.ed_id
+            )
+
+    # ── Historial de ajustes "+" ya registrados (ver / editar / eliminar) ──
+    ed_ajustes_todos: list[dict] = []   # todos los ajustes de la liquidación
+    hist_abierto: str = ""              # concepto_codigo del panel abierto ("" = ninguno)
+    hist_edit_id: str = ""              # id del ajuste en edición inline
+    hist_edit_monto: str = ""
+    hist_edit_motivo: str = ""
+
+    @rx.var
+    def ed_ajustes_conteo(self) -> dict[str, int]:
+        """concepto_codigo -> nº de ajustes registrados (0 para todos los demás)."""
+        c = {cod: 0 for cod, _ in _TODOS}
+        for a in self.ed_ajustes_todos:
+            k = str(a.get("concepto_codigo") or "")
+            if k in c:
+                c[k] += 1
+        return c
+
+    @rx.var
+    def hist_ajustes(self) -> list[dict]:
+        """Ajustes del concepto abierto, formateados para la tabla."""
+        out = []
+        for a in self.ed_ajustes_todos:
+            if str(a.get("concepto_codigo") or "") != self.hist_abierto:
+                continue
+            out.append({
+                "id": str(a.get("id") or ""),
+                "fecha": str(a.get("fecha") or "")[:19].replace("T", " "),
+                "monto": f"{float(a.get('monto') or 0):+.2f}",
+                "motivo": str(a.get("motivo") or ""),
+                "usuario": str(a.get("usuario") or ""),
+            })
+        return out
+
+    @rx.event
+    def ver_ajustes(self, cod: str):
+        self.hist_abierto = "" if self.hist_abierto == cod else cod
+        self.hist_edit_id = ""
+
+    @rx.event
+    def cerrar_ajustes(self):
+        self.hist_abierto = ""
+        self.hist_edit_id = ""
+
+    @rx.event
+    def iniciar_edit_ajuste(self, ajuste: dict):
+        self.hist_edit_id = str(ajuste.get("id") or "")
+        self.hist_edit_monto = str(ajuste.get("monto") or "").replace("+", "")
+        self.hist_edit_motivo = str(ajuste.get("motivo") or "")
+
+    @rx.event
+    def cancelar_edit_ajuste(self):
+        self.hist_edit_id = ""
+
+    @rx.event
+    def set_hist_edit(self, campo: str, v: str):
+        setattr(self, f"hist_edit_{campo}", v)
+
+    @rx.event
+    async def confirmar_edit_ajuste(self):
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:editar" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        ok, error = await asyncio.to_thread(
+            repo.editar_ajuste, self.hist_edit_id,
+            nuevo_monto=_f(self.hist_edit_monto), motivo=self.hist_edit_motivo.strip(),
+            usuario=auth.username, roles=set(auth.roles),
+        )
+        if not ok:
+            self.ed_msg = error
+            return
+        self.hist_edit_id = ""
+        self.ed_msg = "Ajuste corregido."
+        await self._recargar_valores()
+
+    @rx.event
+    async def borrar_ajuste(self, ajuste_id: str):
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:editar" not in auth.permisos_flat:
+            return rx.toast.error("Sin permiso.")
+        ok, error = await asyncio.to_thread(
+            repo.eliminar_ajuste, ajuste_id, usuario=auth.username, roles=set(auth.roles),
+        )
+        if not ok:
+            self.ed_msg = error
+            return
+        self.ed_msg = "Ajuste eliminado."
+        await self._recargar_valores()
 
     # ── Recalcular ─────────────────────────────────────────────────
     @rx.event

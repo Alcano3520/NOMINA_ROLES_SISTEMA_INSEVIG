@@ -97,6 +97,58 @@ def _lista() -> rx.Component:
 
 # ── Panel derecho: formulario ────────────────────────────────────────────────
 
+def _fila_ajuste(a) -> rx.Component:
+    en_edicion = _S.hist_edit_id == a["id"]
+    return rx.box(
+        rx.cond(
+            en_edicion,
+            rx.hstack(
+                rx.input(value=_S.hist_edit_monto, on_change=lambda v: _S.set_hist_edit("monto", v),
+                         type="number", size="1", width="100px"),
+                rx.input(value=_S.hist_edit_motivo, on_change=lambda v: _S.set_hist_edit("motivo", v),
+                         placeholder="motivo", size="1", width="100%"),
+                rx.button("Guardar", size="1", on_click=_S.confirmar_edit_ajuste),
+                rx.button("Cancelar", size="1", variant="soft", on_click=_S.cancelar_edit_ajuste),
+                spacing="1", width="100%", align="center",
+            ),
+            rx.hstack(
+                rx.text(a["fecha"], size="1", color_scheme="gray", width="9em"),
+                rx.text(a["monto"], size="1", weight="bold", width="6em"),
+                rx.text(a["motivo"], size="1", flex_grow="1"),
+                rx.text(a["usuario"], size="1", color_scheme="gray"),
+                rx.button("Editar", size="1", variant="ghost",
+                          on_click=lambda: _S.iniciar_edit_ajuste(a)),
+                rx.button("Eliminar", size="1", variant="ghost", color_scheme="red",
+                          on_click=lambda: _S.borrar_ajuste(a["id"])),
+                spacing="1", width="100%", align="center",
+            ),
+        ),
+        padding="2px 0",
+    )
+
+
+def _indicador_ajustes(cod: str) -> rx.Component:
+    return rx.cond(
+        _S.ed_ajustes_conteo[cod].to(int) > 0,
+        rx.vstack(
+            rx.button(
+                _S.ed_ajustes_conteo[cod].to_string() + " ajuste(s) registrado(s) ▾",
+                size="1", variant="ghost", color_scheme="blue",
+                on_click=lambda: _S.ver_ajustes(cod),
+            ),
+            rx.cond(
+                _S.hist_abierto == cod,
+                rx.box(
+                    rx.foreach(_S.hist_ajustes, _fila_ajuste),
+                    padding="6px 10px", border="1px solid var(--gray-5)",
+                    border_radius="6px", width="100%", background=theme.BG,
+                ),
+            ),
+            spacing="1", width="100%", align="start",
+        ),
+    )
+
+
 def _campo_concepto(cod: str, label: str) -> rx.Component:
     etiqueta = rx.text(label, size="1", width="16em", flex_shrink="0")
     total = rx.input(
@@ -107,7 +159,7 @@ def _campo_concepto(cod: str, label: str) -> rx.Component:
                     title="Ajuste incremental con motivo")
     if cod in _HORAS_KEYS:
         kc, kv = _HORAS_KEYS[cod]
-        return rx.hstack(
+        fila = rx.hstack(
             etiqueta,
             rx.vstack(rx.text("cant.", size="1", color_scheme="gray"),
                       rx.input(value=_S.ed_datos[kc], size="1", width="70px", read_only=True),
@@ -119,7 +171,9 @@ def _campo_concepto(cod: str, label: str) -> rx.Component:
             mas,
             spacing="2", align="end",
         )
-    return rx.hstack(etiqueta, total, mas, spacing="2", align="center")
+    else:
+        fila = rx.hstack(etiqueta, total, mas, spacing="2", align="center")
+    return rx.vstack(fila, _indicador_ajustes(cod), spacing="1", width="100%", align="start")
 
 
 def _seccion(titulo: str, campos: list) -> rx.Component:
