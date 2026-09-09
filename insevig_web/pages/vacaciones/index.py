@@ -266,7 +266,7 @@ def _tab_resumen() -> rx.Component:
 
 def _campo_gozada(key: str, label: str, tipo: str) -> rx.Component:
     return rx.vstack(
-        rx.text(label, size="1", weight="bold"),
+        rx.text(label, size="1", weight="bold", color_scheme="gray"),
         rx.input(value=_S.form_gozada[key], on_change=lambda v, k=key: _S.set_campo_gozada(k, v),
                  type=tipo, size="2", width="100%"),
         spacing="1", width="100%",
@@ -278,7 +278,7 @@ def _form_gozada() -> rx.Component:
         _S.mostrar_form_gozada,
         card(
             rx.vstack(
-                rx.heading(rx.cond(_S.editando_gozada_id > 0, "Editar vacación gozada", "Nueva vacación gozada"), size="3"),
+                rx.heading(rx.cond(_S.editando_gozada_id > 0, "Editar vacación gozada", "Nueva vacación gozada"), size="4"),
                 rx.grid(*[_campo_gozada(k, lbl, t) for k, lbl, t in _CAMPOS_GOZADA],
                         columns=rx.breakpoints(initial="1", sm="2", lg="3"), spacing="3", width="100%"),
                 rx.hstack(
@@ -352,17 +352,17 @@ def _form_editar_pagada() -> rx.Component:
         _S.mostrar_form_editar_pagada,
         card(
             rx.vstack(
-                rx.heading("Editar vacación pagada", size="3"),
+                rx.heading("Editar vacación pagada", size="4"),
                 rx.grid(
-                    rx.vstack(rx.text("Forma de pago", size="1", weight="bold"),
+                    rx.vstack(rx.text("Forma de pago", size="1", weight="bold", color_scheme="gray"),
                              rx.select(FORMAS_PAGO, value=_S.form_editar_pagada["forma_pago"],
                                       on_change=lambda v: _S.set_campo_editar_pagada("forma_pago", v))),
-                    rx.vstack(rx.text("Estado", size="1", weight="bold"),
+                    rx.vstack(rx.text("Estado", size="1", weight="bold", color_scheme="gray"),
                              rx.select(ESTADOS_DOC, value=_S.form_editar_pagada["estado_doc"],
                                       on_change=lambda v: _S.set_campo_editar_pagada("estado_doc", v))),
                     *[
                         rx.vstack(
-                            rx.text(lbl, size="1", weight="bold"),
+                            rx.text(lbl, size="1", weight="bold", color_scheme="gray"),
                             rx.input(value=_S.form_editar_pagada[k], type=t,
                                      on_change=lambda v, k=k: _S.set_campo_editar_pagada(k, v)),
                             spacing="1", width="100%",
@@ -392,13 +392,13 @@ def _form_registrar_pago() -> rx.Component:
                 rx.text("Ingrese el número de cheque/transferencia para pasar esta pagada a 'completado'.",
                        size="1", color_scheme="gray"),
                 rx.grid(
-                    rx.vstack(rx.text("Banco", size="1", weight="bold"),
+                    rx.vstack(rx.text("Banco", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_registrar_pago["banco"],
                                       on_change=lambda v: _S.set_campo_registrar_pago("banco", v))),
-                    rx.vstack(rx.text("No. Cheque/Transferencia", size="1", weight="bold"),
+                    rx.vstack(rx.text("No. Cheque/Transferencia", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_registrar_pago["no_cheque"],
                                       on_change=lambda v: _S.set_campo_registrar_pago("no_cheque", v))),
-                    rx.vstack(rx.text("Fecha de pago", size="1", weight="bold"),
+                    rx.vstack(rx.text("Fecha de pago", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_registrar_pago["fecha_pago"], type="date",
                                       on_change=lambda v: _S.set_campo_registrar_pago("fecha_pago", v))),
                     columns=rx.breakpoints(initial="1", sm="3"), spacing="3", width="100%",
@@ -468,7 +468,7 @@ def _dialog_anticipo() -> rx.Component:
                 rx.vstack(
                     rx.text(f"${_S.form_pago['anticipo']}", size="6", weight="bold", color_scheme="green"),
                     rx.vstack(
-                        rx.text("Fecha del comprobante", size="1", weight="bold"),
+                        rx.text("Fecha del comprobante", size="1", weight="bold", color_scheme="gray"),
                         rx.input(value=_S.anticipo_fecha, type="date", on_change=_S.set_anticipo_fecha),
                         spacing="1", width="100%",
                     ),
@@ -498,15 +498,15 @@ def _tab_calculo() -> rx.Component:
             card(
                 rx.vstack(
                     rx.hstack(
-                        rx.vstack(rx.text("Días gozados", size="1", weight="bold"),
+                        rx.vstack(rx.text("Días gozados", size="1", weight="bold", color_scheme="gray"),
                                   rx.input(value=_S.calc_dias_gozados.to_string(), type="number",
                                            on_change=lambda v: _S.set_calc_dias("gozados", v),
                                            size="1", width="6em")),
-                        rx.vstack(rx.text("Días adicionales Art.69", size="1", weight="bold"),
+                        rx.vstack(rx.text("Días adicionales Art.69", size="1", weight="bold", color_scheme="gray"),
                                   rx.input(value=_S.calc_dias_adicionales.to_string(), type="number",
                                            on_change=lambda v: _S.set_calc_dias("adicionales", v),
                                            size="1", width="6em")),
-                        rx.vstack(rx.text("Días a pagar", size="1", weight="bold"),
+                        rx.vstack(rx.text("Días a pagar", size="1", weight="bold", color_scheme="gray"),
                                   rx.text(_S.calc_resultado["dias_a_pagar"], size="2")),
                         spacing="4", wrap="wrap", align="end",
                     ),
@@ -543,22 +543,22 @@ def _tab_calculo() -> rx.Component:
             rx.vstack(
                 rx.heading("Datos de pago", size="3"),
                 rx.grid(
-                    rx.vstack(rx.text("Forma de pago", size="1", weight="bold"),
+                    rx.vstack(rx.text("Forma de pago", size="1", weight="bold", color_scheme="gray"),
                              rx.select(FORMAS_PAGO, value=_S.form_pago["forma_pago"],
                                       on_change=lambda v: _S.set_campo_pago("forma_pago", v))),
-                    rx.vstack(rx.text("Banco", size="1", weight="bold"),
+                    rx.vstack(rx.text("Banco", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_pago["banco"], on_change=lambda v: _S.set_campo_pago("banco", v))),
-                    rx.vstack(rx.text("Cta. Cte. No.", size="1", weight="bold"),
+                    rx.vstack(rx.text("Cta. Cte. No.", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_pago["cta_cte_no"], on_change=lambda v: _S.set_campo_pago("cta_cte_no", v))),
-                    rx.vstack(rx.text("No. Cheque/Transferencia", size="1", weight="bold"),
+                    rx.vstack(rx.text("No. Cheque/Transferencia", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_pago["no_cheque"], on_change=lambda v: _S.set_campo_pago("no_cheque", v))),
-                    rx.vstack(rx.text("Fecha de pago", size="1", weight="bold"),
+                    rx.vstack(rx.text("Fecha de pago", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_pago["fecha_pago"], type="date",
                                       on_change=lambda v: _S.set_campo_pago("fecha_pago", v))),
-                    rx.vstack(rx.text("Anticipo ($)", size="1", weight="bold"),
+                    rx.vstack(rx.text("Anticipo ($)", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_pago["anticipo"], type="number",
                                       on_change=lambda v: _S.set_campo_pago("anticipo", v))),
-                    rx.vstack(rx.text("Observaciones", size="1", weight="bold"),
+                    rx.vstack(rx.text("Observaciones", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_pago["observaciones"],
                                       on_change=lambda v: _S.set_campo_pago("observaciones", v))),
                     columns=rx.breakpoints(initial="1", sm="2", lg="3"), spacing="3", width="100%",
