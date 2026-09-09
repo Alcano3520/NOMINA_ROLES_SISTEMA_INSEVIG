@@ -91,7 +91,7 @@ def _dialog_detalle() -> rx.Component:
                 *[
                     rx.hstack(
                         rx.text(etq, weight="bold", size="2", width="12em"),
-                        rx.text(_M[campo].to_string(), size="2"),
+                        rx.text(_M[campo], size="2"),
                         spacing="2", align="start",
                     )
                     for etq, campo in (
@@ -103,7 +103,7 @@ def _dialog_detalle() -> rx.Component:
                 ],
                 rx.text("📝 Observación completa", weight="bold", size="2", margin_top="0.5rem"),
                 rx.box(
-                    rx.text(_M["concepto"].to_string(), size="2"),
+                    rx.text(_M["concepto"], size="2"),
                     padding="0.5rem", border="1px solid var(--gray-6)",
                     border_radius="6px", width="100%", white_space="pre-wrap",
                     max_height="220px", overflow_y="auto",
@@ -111,7 +111,7 @@ def _dialog_detalle() -> rx.Component:
                 rx.hstack(
                     rx.button(
                         "📋 Copiar observación",
-                        on_click=rx.set_clipboard(_M["concepto"].to_string()),
+                        on_click=rx.set_clipboard(_M["concepto"]),
                         variant="soft", size="1",
                     ),
                     rx.spacer(),

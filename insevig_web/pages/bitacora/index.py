@@ -166,7 +166,7 @@ def _tab_agenda() -> rx.Component:
                         rx.foreach(
                             _S.registros,
                             lambda r: rx.table.row(
-                                *[rx.table.cell(r[k].to_string()) for k, _lbl in _COLS],
+                                *[rx.table.cell(r[k]) for k, _lbl in _COLS],
                                 rx.table.cell(
                                     rx.hstack(
                                         rx.button("Editar", on_click=lambda: _S.editar(r),
