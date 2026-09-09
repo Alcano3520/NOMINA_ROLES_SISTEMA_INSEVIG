@@ -66,6 +66,13 @@ MODULES: list[ModuleSpec] = [
          NavItem("Carga masiva", "/observaciones/carga-masiva", "crear")],
     ),
     ModuleSpec(
+        "faltas", "Gestión de faltas", "calendar-x",
+        [NavItem("Registro masivo", "/faltas/masivo", "crear"),
+         NavItem("Registro uno a uno", "/faltas/individual", "crear"),
+         NavItem("Ver / editar período", "/faltas/periodo"),
+         NavItem("Cargador de restas de horas", "/faltas/restas", "cargar_masivo")],
+    ),
+    ModuleSpec(
         "bitacora", "Agenda de liquidaciones", "calendar-clock",
         [NavItem("Agenda de cobro", "/bitacora")],
     ),

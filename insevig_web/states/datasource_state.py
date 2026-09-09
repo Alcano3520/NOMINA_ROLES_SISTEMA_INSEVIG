@@ -20,7 +20,7 @@ CLAVE = {v: k for k, v in ETIQUETA.items()}
 
 _MODULOS = (
     "reportes", "prestamos", "observaciones", "empleados", "roles", "registrador",
-    "bitacora", "liquidaciones",
+    "bitacora", "liquidaciones", "faltas",
 )
 
 
