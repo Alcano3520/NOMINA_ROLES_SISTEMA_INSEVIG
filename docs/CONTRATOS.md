@@ -29,6 +29,12 @@ no lo hace por su cuenta.
 | `states/auth_state.py` | `AuthState` (`autenticado`, `roles`, `permisos_flat`, `can`, `login`, `logout`). |
 | `states/datasource_state.py` | `DataSourceState.fuente_de(modulo)` / `set_fuente`. |
 | `registry.py` | `ModuleSpec`, `NavItem`, `MODULES`. Editarlo = integrar un módulo (no es tarea de módulo). |
+
+**`sanciones` es backend puro.** El frontend de sanciones es la app Flutter
+`sistema_sanciones_insevig/`. `core/repos/sanciones.py` existe (trasplante de
+`nucleo_modular`), pero **no** se añade `"sanciones"` a `MODULES`/`MODULOS`, **no**
+hay páginas en `insevig_web/pages/sanciones/`, **no** hay `sanciones_state.py`.
+`test_registry_coherente` debe seguir verde sin `"sanciones"`.
 | `theme.py` + `components/ui/*` | Sistema de diseño. Los módulos usan estos componentes, no crean estilos. |
 | `components/layout.py` | `pagina(*contenido, requiere=(modulo, accion))`. Envoltura obligatoria de toda página. |
 | `components/sidebar.py`, `components/data_source_selector.py` | Se consumen, no se editan. |
@@ -62,7 +68,9 @@ Es un sistema obsoleto y frágil (parche TLS 1.0) y a futuro se retira. Por tant
 
 - La app **lee** de SQL Server; **escribe solo lo imprescindible**, nunca "por modificar".
 - Superficie de escritura permitida: **exactamente** `RPEMPLEA`, `RPEMPOBSERV`,
-  `RPINGDES`. Ninguna otra tabla. Ningún `ALTER`, ningún cambio de esquema.
+  `RPINGDES`, `RPHORTOT`. Ninguna otra tabla. Ningún `ALTER`, ningún cambio de
+  esquema. `RPHORTOT` = período de faltas **abierto** (módulo `faltas`); `RPHORHIS`
+  (meses cerrados) es **solo lectura**, nunca se escribe.
 - Toda escritura: **vista previa obligatoria** + `core/audit` + (en lotes) `dry-run`.
 - Nada de `UPDATE`/`DELETE` masivos sin filtro por empleado y sin confirmación.
 - Siempre `WHERE ... AND CODEMP='10' AND CODSUC='10'` y parámetros, nunca concatenación.
@@ -71,6 +79,27 @@ Es un sistema obsoleto y frágil (parche TLS 1.0) y a futuro se retira. Por tant
 ### Fuente de datos
 - El selector (`DataSourceState.fuente_de(modulo)`) solo afecta **lecturas**.
 - Escrituras: siempre SQL Server (en v1). Ver "Futuro" abajo.
+
+### Cédulas: normalización en la frontera de `core/repos/`
+- `core.utils.normalizar_cedula` se aplica **al entrar** (parámetros que llegan
+  como cédula) y **al salir** (cédulas en los dicts/DataFrames que devuelve el
+  repo), **nunca** en medio de la lógica trasplantada.
+- SQL Server / Supabase devuelven `cedula` como float (`920116811.0`); la forma
+  canónica es `str(int(x)).zfill(10)`.
+- Si al trasplantar lógica legada aparece una diferencia de formato de cédula
+  entre dos fuentes, se **documenta** (`# LEGADO: <bug> — [replicado | corregido]`),
+  no se "arregla" en silencio dentro del código portado.
+
+### Supabase: proyectos y keys
+- Proyecto de nómina/empleados (`buzcapcwmksasrtjofae`): `SUPABASE_URL` /
+  `SUPABASE_KEY` (lectura). `SUPABASE_SERVICE_KEY` solo si un flujo server-side lo
+  necesita (p. ej. carga de usuarios).
+- Proyecto de sanciones (`syxzopyevfuwymmltbwn`): `SUPABASE_SANCIONES_URL` +
+  `_ANON_KEY` + `_SERVICE_KEY`. Backend puro (`core/repos/sanciones.py`).
+- Las `*_SERVICE_KEY` **solo** se usan en `core/`; nunca se serializan a un
+  `rx.State` ni llegan al navegador. El cliente Supabase se **inyecta como
+  parámetro** a las funciones de `core/repos/`, no se lee la config global adentro.
+- No se replica el volcado de contraseñas generadas a un `.txt` (lo hace el legado).
 
 ### Futuro (post-v1): Supabase-nube como fuente de verdad + operación offline
 Decidido: a futuro todo migra a **Supabase en la nube**, pero el servidor de la
