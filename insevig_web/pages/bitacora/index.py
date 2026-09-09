@@ -69,10 +69,47 @@ def _campo(c: str) -> rx.Component:
     )
 
 
+def _emp_buscador() -> rx.Component:
+    """Buscar un empleado en la nómina y llenar el formulario (como el combo
+    'elegir empleado' + 'Buscar' del .pyw)."""
+    return rx.vstack(
+        rx.text("Buscar en la nómina por apellido, nombre o cédula:",
+                size="1", weight="bold"),
+        rx.hstack(
+            rx.input(value=_S.emp_texto, on_change=_S.set_emp_texto,
+                     placeholder="apellido, nombre o cédula…", size="2", width="100%"),
+            rx.button("Buscar", on_click=_S.buscar_empleado_nomina, size="2", type="button"),
+            width="100%", spacing="2",
+        ),
+        rx.cond(
+            _S.emp_resultados.length() > 0,
+            rx.vstack(
+                rx.foreach(
+                    _S.emp_resultados,
+                    lambda e: rx.button(
+                        rx.hstack(
+                            rx.text(e["empleado"], weight="bold", size="1"),
+                            rx.text(e["apellidos_nombres"], size="1"),
+                            rx.text(e["cedula"], color_scheme="gray", size="1"),
+                            spacing="3", wrap="wrap",
+                        ),
+                        on_click=lambda: _S.elegir_empleado(e["empleado"], e["apellidos_nombres"]),
+                        variant="soft", width="100%", justify="start", type="button",
+                    ),
+                ),
+                spacing="1", width="100%", max_height="200px", overflow_y="auto",
+            ),
+        ),
+        spacing="2", width="100%",
+        padding="10px 12px", border="1px solid var(--gray-5)", border_radius="8px",
+    )
+
+
 def _form() -> rx.Component:
     return card(
         rx.vstack(
             rx.heading(rx.cond(_S.editando_id > 0, "Editar registro", "Nuevo registro"), size="3"),
+            _emp_buscador(),
             rx.grid(
                 *[_campo(c) for c in CAMPOS],
                 columns=rx.breakpoints(initial="1", sm="2", lg="3"),
@@ -163,16 +200,27 @@ def _tab_agenda() -> rx.Component:
 def _tab_atencion() -> rx.Component:
     af = _S.at_form
     return rx.vstack(
+        card(
+            rx.hstack(
+                rx.heading("Bitácora de Atención Personal", size="3"),
+                rx.spacer(),
+                rx.input(value=_S.at_texto, on_change=_S.set_at_texto,
+                         placeholder="nombre o cédula ya registrados…", width="220px", size="1"),
+                rx.button("Buscar", on_click=_S.cargar_atenciones, size="1"),
+                rx.cond(
+                    AuthState.permisos_flat.contains("bitacora:crear"),
+                    primary_button("Nuevo", on_click=_S.nueva_atencion),
+                ),
+                spacing="2", wrap="wrap", align="center", width="100%",
+            ),
+            width="100%",
+        ),
         rx.cond(
-            AuthState.permisos_flat.contains("bitacora:crear"),
+            _S.mostrar_at_form,
             card(
                 rx.vstack(
-                    rx.hstack(
-                        rx.heading("Registrar atención", size="3"),
-                        rx.spacer(),
-                        rx.button("Limpiar", on_click=_S.nueva_atencion, size="1", variant="soft"),
-                        width="100%",
-                    ),
+                    rx.heading("Registrar atención", size="3"),
+                    _emp_buscador(),
                     rx.grid(
                         rx.vstack(rx.text("Apellidos y nombres", size="1", weight="bold"),
                                   rx.input(value=af["apellidos_nombres"],
@@ -203,6 +251,7 @@ def _tab_atencion() -> rx.Component:
                                  rows="2", width="100%"),
                     rx.hstack(
                         primary_button("Guardar atención", on_click=_S.guardar_atencion),
+                        rx.button("Cancelar", on_click=_S.cerrar_at_form, variant="soft"),
                         rx.cond(_S.at_msg != "", rx.badge(_S.at_msg)),
                         spacing="2",
                     ),
@@ -213,14 +262,7 @@ def _tab_atencion() -> rx.Component:
         ),
         card(
             rx.vstack(
-                rx.hstack(
-                    rx.heading("Historial de atenciones", size="3"),
-                    rx.spacer(),
-                    rx.input(value=_S.at_texto, on_change=_S.set_at_texto,
-                             placeholder="nombre o cédula…", width="200px"),
-                    rx.button("Buscar", on_click=_S.cargar_atenciones, size="1"),
-                    width="100%", wrap="wrap",
-                ),
+                rx.heading("Historial de atenciones", size="3"),
                 rx.cond(
                     _S.at_cargando,
                     rx.spinner(),

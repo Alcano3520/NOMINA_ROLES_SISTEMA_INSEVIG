@@ -9,7 +9,9 @@ import datetime as dt
 import reflex as rx
 
 from core.repos import bitacora
+from core.utils import normalizar_cedula
 from insevig_web.states.auth_state import AuthState
+from insevig_web.states.datasource_state import DataSourceState
 
 CAMPOS = list(bitacora.CAMPOS)
 ESTADOS = list(bitacora.ESTADOS)
@@ -34,6 +36,69 @@ class BitacoraState(rx.State):
     form: dict = {}
     mostrar_form: bool = False
     cedula_aviso: str = ""
+
+    # búsqueda de empleado en la nómina para llenar los formularios (como el
+    # combo "elegir empleado" + "Buscar" del .pyw)
+    emp_texto: str = ""
+    emp_resultados: list[dict] = []
+    emp_destino: str = "agenda"   # "agenda" | "atencion"
+
+    @rx.event
+    def set_emp_texto(self, v: str):
+        self.emp_texto = v
+
+    async def _fuente(self) -> str:
+        ds = await self.get_state(DataSourceState)
+        return await ds.resolver("bitacora")
+
+    @rx.event
+    async def buscar_empleado_nomina(self):
+        if not self.emp_texto.strip():
+            self.emp_resultados = []
+            return
+        from core.repos import observaciones
+
+        fuente = await self._fuente()
+        self.emp_resultados = await asyncio.to_thread(
+            observaciones.buscar_empleados, self.emp_texto, fuente
+        )
+
+    @rx.event
+    async def elegir_empleado(self, cod: str, nombre: str):
+        """Trae al empleado de RPEMPLEA y llena el formulario destino, como
+        `_cargar_empleado_formulario` / `_cargar_empleado_bitacora` del `.pyw`."""
+        from core.repos import empleados
+
+        fuente = await self._fuente()
+        emp = await asyncio.to_thread(empleados.obtener, cod, fuente)
+        c = (emp.campos if emp else {}) or {}
+
+        def _s(k: str) -> str:
+            v = c.get(k)
+            return "" if v in (None, "") else str(v).strip()
+
+        apellidos_nombres = nombre or f"{_s('APELLIDOS')} {_s('NOMBRES')}".strip()
+        cedula = normalizar_cedula(c.get("CEDULA")) or _s("CEDULA")
+        self.emp_resultados = []
+        self.emp_texto = ""
+        if self.emp_destino == "atencion":
+            self.at_form = {
+                **self.at_form,
+                "apellidos_nombres": apellidos_nombres,
+                "cedula": cedula,
+                "empleado_cod": str(cod),
+            }
+        else:
+            self.form = {
+                **self.form,
+                "empleado_cod": str(cod),
+                "apellidos_nombres": apellidos_nombres,
+                "cedula": cedula,
+                "telefono_celular": _s("TELEFONO"),
+                "cargo": _s("CARGO"),
+                "fecha_ingreso": bitacora.fecha_iso(_s("FECHA_ING")),
+                "fecha_salida": bitacora.fecha_iso(_s("FECHA_SAL")),
+            }
 
     @rx.event
     def set_tab(self, v: str):
@@ -86,6 +151,9 @@ class BitacoraState(rx.State):
         self.mostrar_form = True
         self.cedula_aviso = ""
         self.msg = ""
+        self.emp_destino = "agenda"
+        self.emp_texto = ""
+        self.emp_resultados = []
 
     @rx.event
     def editar(self, reg: dict):
@@ -95,10 +163,14 @@ class BitacoraState(rx.State):
         self.mostrar_form = True
         self.cedula_aviso = ""
         self.msg = ""
+        self.emp_destino = "agenda"
+        self.emp_texto = ""
+        self.emp_resultados = []
 
     @rx.event
     def cerrar_form(self):
         self.mostrar_form = False
+        self.emp_resultados = []
 
     @rx.event
     def set_campo(self, campo: str, v: str):
@@ -175,6 +247,12 @@ class BitacoraState(rx.State):
         "motivo": "", "observacion": "", "fecha": "", "hora": "",
     }
     at_msg: str = ""
+    mostrar_at_form: bool = False   # el formulario arranca escondido, como la Agenda
+
+    @rx.event
+    def cerrar_at_form(self):
+        self.mostrar_at_form = False
+        self.emp_resultados = []
 
     @rx.event
     async def cargar_atenciones(self):
@@ -202,6 +280,10 @@ class BitacoraState(rx.State):
             "hora": dt.datetime.now().strftime("%H:%M"),
         }
         self.at_msg = ""
+        self.mostrar_at_form = True
+        self.emp_destino = "atencion"
+        self.emp_texto = ""
+        self.emp_resultados = []
 
     @rx.event
     def set_at_campo(self, campo: str, v: str):
@@ -229,6 +311,7 @@ class BitacoraState(rx.State):
             )
             self.at_msg = "Atención registrada."
             self.at_form = {}
+            self.mostrar_at_form = False
             await self.cargar_atenciones()
         except Exception as e:  # noqa: BLE001
             self.at_msg = f"Error: {e}"
