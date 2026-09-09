@@ -24,7 +24,7 @@ def _fila(e: rx.Var) -> rx.Component:
                   style={"width": "1%", "whiteSpace": "nowrap"}),
         data_cell(rx.text(e["apellidos_nombres"], weight="medium",
                           style={"whiteSpace": "nowrap", "overflow": "hidden",
-                                 "textOverflow": "ellipsis", "maxWidth": "16rem"})),
+                                 "textOverflow": "ellipsis", "maxWidth": "12rem"})),
         data_cell(e["cedula"], style={"width": "1%", "whiteSpace": "nowrap"}),
         data_cell(rx.badge(e["estado"], size="1",
                            color_scheme=rx.cond(e["estado"] == "ACT", "green", "gray")),
@@ -108,7 +108,7 @@ def buscar() -> rx.Component:
         rx.grid(
             _lista(),
             card(editor_panel(), width="100%"),
-            columns=rx.breakpoints(initial="1", lg="minmax(360px, 460px) minmax(0, 1fr)"),
+            columns=rx.breakpoints(initial="1", lg="minmax(400px, 520px) minmax(0, 1fr)"),
             spacing="3", width="100%", align_items="start",
         ),
         requiere=("empleados", "ver"),
