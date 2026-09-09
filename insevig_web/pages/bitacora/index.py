@@ -35,7 +35,7 @@ def _campo(c: str) -> rx.Component:
     if c == "qap":
         return rx.hstack(
             rx.checkbox(checked=_S.form["qap"] != "", on_change=lambda _v: _S.toggle_qap()),
-            rx.text(etq, size="1"),
+            rx.text(etq, size="2"),
             spacing="2", align="center", width="100%",
         )
     if c == "estado":
@@ -63,7 +63,8 @@ def _campo(c: str) -> rx.Component:
         if c == "en_sistema" else rx.fragment()
     )
     return rx.vstack(
-        rx.hstack(rx.text(etq, size="1", weight="bold"), rx.spacer(), boton, width="100%"),
+        rx.hstack(rx.text(etq, size="1", weight="bold", color_scheme="gray"),
+                  rx.spacer(), boton, width="100%"),
         control, extra,
         spacing="1", width="100%",
     )
@@ -108,20 +109,21 @@ def _emp_buscador() -> rx.Component:
 def _form() -> rx.Component:
     return card(
         rx.vstack(
-            rx.heading(rx.cond(_S.editando_id > 0, "Editar registro", "Nuevo registro"), size="3"),
+            rx.heading(rx.cond(_S.editando_id > 0, "Editar registro", "Nuevo registro"), size="4"),
             _emp_buscador(),
             rx.grid(
                 *[_campo(c) for c in CAMPOS],
                 columns=rx.breakpoints(initial="1", sm="2", lg="3"),
-                spacing="3", width="100%",
+                spacing="4", width="100%",
             ),
-            rx.hstack(
+            rx.divider(),
+            rx.flex(
                 primary_button("Guardar", on_click=_S.guardar),
                 rx.button("Cancelar", on_click=_S.cerrar_form, variant="soft"),
-                spacing="2",
+                gap="2", align="center", wrap="wrap",
             ),
             rx.cond(_S.msg != "", rx.callout(_S.msg, size="1")),
-            spacing="3", width="100%",
+            spacing="4", width="100%",
         ),
         width="100%",
     )
@@ -130,18 +132,20 @@ def _form() -> rx.Component:
 def _tab_agenda() -> rx.Component:
     return rx.vstack(
         card(
-            rx.hstack(
+            rx.flex(
                 rx.select(["(todos)", *ESTADOS], default_value="(todos)",
-                          on_change=_S.set_filtro_estado),
-                rx.select(_S.periodos, default_value="(todos)", on_change=_S.set_filtro_periodo),
+                          on_change=_S.set_filtro_estado, size="2"),
+                rx.select(_S.periodos, default_value="(todos)",
+                          on_change=_S.set_filtro_periodo, size="2"),
                 rx.input(value=_S.filtro_texto, on_change=_S.set_filtro_texto,
-                         placeholder="nombre o cédula…", width="200px"),
-                rx.button("Buscar", on_click=_S.cargar),
+                         placeholder="Nombre o cédula ya agendados…", size="2",
+                         flex_grow="1", min_width="140px"),
+                rx.button(rx.icon("search", size=15), on_click=_S.cargar, size="2"),
                 rx.cond(
                     AuthState.permisos_flat.contains("bitacora:crear"),
                     primary_button("Nuevo", on_click=_S.nuevo),
                 ),
-                spacing="2", wrap="wrap",
+                gap="2", wrap="wrap", align="center", width="100%",
             ),
             width="100%",
         ),
