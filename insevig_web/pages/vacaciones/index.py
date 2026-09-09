@@ -6,7 +6,14 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import card, page_heading, primary_button, scroll_x, stat_card
+from insevig_web.components.ui import (
+    card,
+    data_table,
+    page_heading,
+    primary_button,
+    scroll_x,
+    stat_card,
+)
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.vacaciones_state import (
     ESTADOS_DOC,
@@ -61,11 +68,11 @@ def _fila_top5(r: rx.Var) -> rx.Component:
 
 
 def _fila_periodo_pendiente(p: rx.Var) -> rx.Component:
-    return rx.hstack(
-        rx.text(p["periodo"], weight="bold", color_scheme="orange", width="6em"),
-        rx.text(f"{p['n_empleados']} empleados"),
-        rx.text(f"{p['total_dias']} días pendientes", color_scheme="red", weight="bold"),
-        spacing="3", width="100%",
+    return rx.table.row(
+        rx.table.cell(rx.text(p["periodo"], weight="bold", color_scheme="orange")),
+        rx.table.cell(p["n_empleados"].to_string()),
+        rx.table.cell(rx.text(p["total_dias"].to_string() + " días",
+                              color_scheme="red", weight="bold")),
     )
 
 
@@ -153,7 +160,10 @@ def _tab_dashboard() -> rx.Component:
                     rx.heading("Vacaciones pendientes — últimos 3 períodos", size="3"),
                     rx.cond(
                         _S.dash_pendientes_periodos.length() > 0,
-                        rx.vstack(rx.foreach(_S.dash_pendientes_periodos, _fila_periodo_pendiente), spacing="3", width="100%"),
+                        data_table(
+                            ["Período", "Empleados", "Días pendientes"],
+                            rx.foreach(_S.dash_pendientes_periodos, _fila_periodo_pendiente),
+                        ),
                         rx.text("Sin pendientes registrados.", size="1", color_scheme="gray"),
                     ),
                     spacing="2", width="100%",
@@ -508,7 +518,7 @@ def _tab_calculo() -> rx.Component:
                                            size="1", width="6em")),
                         rx.vstack(rx.text("Días a pagar", size="1", weight="bold", color_scheme="gray"),
                                   rx.text(_S.calc_resultado["dias_a_pagar"], size="2")),
-                        spacing="4", wrap="wrap", align="end",
+                        spacing="2", wrap="wrap", align="end",
                     ),
                     rx.text("Podés editar los días o un mes de la tabla — el total se recalcula solo.",
                             size="1", color_scheme="gray"),
