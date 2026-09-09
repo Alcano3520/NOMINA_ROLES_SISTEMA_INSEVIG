@@ -728,6 +728,8 @@ def procesar_empleado(
     periodo_calc_anio: int | None = None,
     periodo_calc_mes: int | None = None,
     usar_valores_reales_mes_actual: bool = False,
+    default_multas: float = 0.0,
+    default_antic_otros: float = 0.0,
 ) -> Liquidacion:
     """Procesa un empleado y arma su liquidación.
 
@@ -739,6 +741,18 @@ def procesar_empleado(
     Sueldo del mes de salida..." del modo individual y el 4º campo
     SIPAGO/NOPAGO de una línea en modo lote del `.pyw` (no portado aún del
     lado de `procesar_lote`/`_parse_linea` -- ver docs/modulos/liquidaciones.md).
+
+    `default_multas`/`default_antic_otros` (default `0.0`, agregados
+    2026-09): "4. Valores por Defecto" del `.pyw` -- si el rubro real de
+    MULTAS/ANTICIPOS_OTROS del mes de salida da $0, se reemplaza por este
+    valor (nunca se SUMA, se reemplaza -- mismo criterio que
+    `if fila['MULTAS'] == 0 and self._default_multas > 0`). No se aplica
+    si `incluir_sueldo=False` (el `.pyw` no deja que un default se cuele
+    justo en el mes que se pidió dejar en $0 a propósito). Usado por
+    `recalcular_liquidacion` para reproducir "🔄 Recalcular Liquidación"
+    del Editor con los mismos valores por defecto que tenía la
+    liquidación original -- si se omiten acá, el recálculo puede dar un
+    MULTAS/ANTICIPOS_OTROS distinto (0) al que se guardó originalmente.
 
     `indemnizacion_manual` (default `0.0`): monto de indemnización por
     despido intempestivo que la persona ingresó a mano -- pasa tal cual a
@@ -946,6 +960,15 @@ def procesar_empleado(
             "IMPUESTO_RENTA",
         ):
             val[_campo] = 0.0
+    else:
+        # "4. Valores por Defecto" del .pyw: reemplaza (no suma) MULTAS/
+        # ANTICIPOS_OTROS si el rubro real del mes de salida da $0 --
+        # nunca se aplica si incluir_sueldo=False (ver arriba), para no
+        # colar un default justo en el mes que se dejó en $0 a propósito.
+        if val["MULTAS"] == 0 and default_multas > 0:
+            val["MULTAS"] = round(default_multas, 2)
+        if val["ANTICIPOS_OTROS"] == 0 and default_antic_otros > 0:
+            val["ANTICIPOS_OTROS"] = round(default_antic_otros, 2)
 
     # 4. Vacaciones: TODOS los periodos pendientes (no caducan), descartando
     # los ya pagados/gozados según `vac_registros` (ver total_vacaciones_a_pagar).
@@ -1104,7 +1127,13 @@ def procesar_empleado(
     )
 
 
-def procesar_lote(texto: str, fuente: str, cfg: ConfigLiquidacion) -> list[Liquidacion]:
+def procesar_lote(
+    texto: str, fuente: str, cfg: ConfigLiquidacion, *,
+    default_multas: float = 0.0, default_antic_otros: float = 0.0,
+) -> list[Liquidacion]:
+    """`default_multas`/`default_antic_otros`: "4. Valores por Defecto" del
+    `.pyw` -- un único valor para todo el lote (mismo control que el modo
+    Individual, ver `procesar_empleado`), no por línea."""
     out = []
     for linea in texto.splitlines():
         if not linea.strip():
@@ -1115,7 +1144,10 @@ def procesar_lote(texto: str, fuente: str, cfg: ConfigLiquidacion) -> list[Liqui
                                    error=f"línea inválida: {linea!r}"))
             continue
         ced, fecha, motivo, fecha_ing = parsed
-        out.append(procesar_empleado(ced, fecha, motivo, fuente, cfg, fecha_ingreso=fecha_ing))
+        out.append(procesar_empleado(
+            ced, fecha, motivo, fuente, cfg, fecha_ingreso=fecha_ing,
+            default_multas=default_multas, default_antic_otros=default_antic_otros,
+        ))
     return out
 
 
@@ -1842,6 +1874,41 @@ def eliminar_liquidacion(
             return False, str(e)
 
 
+def _aplicar_delta_a_detalle(
+    sb, liquidacion_id: str, concepto_codigo: str, delta: float,
+    conceptos: list[dict], usuario: str,
+) -> float:
+    """SUMA `delta` al `valor_total` de un concepto en `liquidaciones_detalle`
+    (crea la fila si no existía, la borra si el resultado da 0) y
+    recalcula/guarda los totales derivados en `liquidaciones`. Devuelve el
+    valor nuevo del concepto. Compartido por `ajustar_concepto` (inserta un
+    ajuste nuevo) y `editar_ajuste`/`eliminar_ajuste` (aplican un delta
+    compensatorio sobre un ajuste YA existente) -- la parte de escritura en
+    `liquidaciones_detalle`/`liquidaciones` es idéntica en los tres casos,
+    solo cambia qué pasa con la fila de `liquidaciones_ajustes_concepto`."""
+    valores: dict[str, float] = {str(c["concepto_codigo"]): float(c.get("valor_total") or 0) for c in conceptos}
+    valor_anterior = valores.get(concepto_codigo, 0.0)
+    valor_nuevo = round(valor_anterior + delta, 2)
+    valores[concepto_codigo] = valor_nuevo
+    derivados = _totales_desde_valores(valores)
+
+    if valor_nuevo == 0:
+        sb.table(TABLA_LIQ_DETALLE).delete().eq("liquidacion_id", liquidacion_id).eq(
+            "concepto_codigo", concepto_codigo).execute()
+    else:
+        upd = sb.table(TABLA_LIQ_DETALLE).update({"valor_total": valor_nuevo}).eq(
+            "liquidacion_id", liquidacion_id).eq("concepto_codigo", concepto_codigo).execute()
+        if not (upd.data or []):
+            sb.table(TABLA_LIQ_DETALLE).insert({
+                "liquidacion_id": liquidacion_id, "concepto_codigo": concepto_codigo,
+                "concepto_nombre": _NOMBRE_POR_CODIGO.get(concepto_codigo, concepto_codigo),
+                "concepto_tipo": _TIPO_POR_CODIGO[concepto_codigo], "valor_total": valor_nuevo,
+                "orden": len(conceptos),
+            }).execute()
+    sb.table(TABLA_LIQ).update({**derivados, "updated_by": usuario}).eq("id", liquidacion_id).execute()
+    return valor_nuevo
+
+
 def ajustar_concepto(
     liquidacion_id: str, concepto_codigo: str, delta: float, *,
     motivo: str = "", usuario: str, roles: set[str],
@@ -1883,11 +1950,8 @@ def ajustar_concepto(
     if registro.get("estado") == "pagado":
         return False, "No se puede ajustar una liquidación ya marcada como pagada."
 
-    valores: dict[str, float] = {str(c["concepto_codigo"]): float(c.get("valor_total") or 0) for c in conceptos}
-    valor_anterior = valores.get(concepto_codigo, 0.0)
-    valor_nuevo = round(valor_anterior + delta, 2)
-    valores[concepto_codigo] = valor_nuevo
-    derivados = _totales_desde_valores(valores)
+    valor_anterior = next(
+        (float(c.get("valor_total") or 0) for c in conceptos if str(c["concepto_codigo"]) == concepto_codigo), 0.0)
 
     from core.audit.writer import audit_scope
 
@@ -1895,7 +1959,7 @@ def ajustar_concepto(
         "liquidaciones", "ajustar_concepto", usuario=usuario, roles=roles,
         target_table=TABLA_LIQ, target_key=liquidacion_id,
         antes={concepto_codigo: valor_anterior},
-        after={concepto_codigo: valor_nuevo, "delta": delta, "motivo": motivo},
+        after={concepto_codigo: round(valor_anterior + delta, 2), "delta": delta, "motivo": motivo},
     ):
         sb = supabase_client.get_client()
         try:
@@ -1911,21 +1975,103 @@ def ajustar_concepto(
                 "No se pudo registrar el ajuste: el sistema no confirmó el guardado. "
                 "El monto NO se sumó -- intente de nuevo."
             )
+        _aplicar_delta_a_detalle(sb, liquidacion_id, concepto_codigo, delta, conceptos, usuario)
+    return True, ""
 
-        if valor_nuevo == 0:
-            sb.table(TABLA_LIQ_DETALLE).delete().eq("liquidacion_id", liquidacion_id).eq(
-                "concepto_codigo", concepto_codigo).execute()
-        else:
-            upd = sb.table(TABLA_LIQ_DETALLE).update({"valor_total": valor_nuevo}).eq(
-                "liquidacion_id", liquidacion_id).eq("concepto_codigo", concepto_codigo).execute()
-            if not (upd.data or []):
-                sb.table(TABLA_LIQ_DETALLE).insert({
-                    "liquidacion_id": liquidacion_id, "concepto_codigo": concepto_codigo,
-                    "concepto_nombre": _NOMBRE_POR_CODIGO.get(concepto_codigo, concepto_codigo),
-                    "concepto_tipo": _TIPO_POR_CODIGO[concepto_codigo], "valor_total": valor_nuevo,
-                    "orden": len(conceptos),
-                }).execute()
-        sb.table(TABLA_LIQ).update({**derivados, "updated_by": usuario}).eq("id", liquidacion_id).execute()
+
+def listar_ajustes_concepto(liquidacion_id: str, concepto_codigo: str | None = None) -> list[dict]:
+    """Ajustes "+" ya registrados de una liquidación (todos, o solo los de
+    UN concepto si se pasa `concepto_codigo`) -- para el indicador
+    clickeable debajo de cada campo con ajustes en el Editor de
+    Liquidaciones. Más reciente primero. Columna de fecha real: `fecha`
+    (NO `created_at` -- confirmado leyendo filas reales de
+    `liquidaciones_ajustes_concepto` en producción)."""
+    sb = supabase_client.get_client()
+    q = sb.table(TABLA_LIQ_AJUSTES).select("*").eq("liquidacion_id", liquidacion_id)
+    if concepto_codigo:
+        q = q.eq("concepto_codigo", str(concepto_codigo))
+    return q.order("fecha", desc=True).execute().data or []
+
+
+def _ajuste_por_id(ajuste_id: str) -> dict | None:
+    sb = supabase_client.get_client()
+    filas = sb.table(TABLA_LIQ_AJUSTES).select("*").eq("id", ajuste_id).limit(1).execute().data or []
+    return filas[0] if filas else None
+
+
+def editar_ajuste(
+    ajuste_id: str, *, nuevo_monto: float, motivo: str = "", usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """Corrige el monto de un ajuste "+" YA REGISTRADO -- modelo de DELTA
+    COMPENSATORIO: aplica `nuevo_monto - monto_viejo` al concepto en
+    `liquidaciones_detalle` (para quedar consistente pase lo que pase con
+    el valor del concepto entre medio, ej. si alguien más lo tocó con otro
+    ajuste) y actualiza la fila del ajuste con el monto/motivo nuevos.
+    Bloquea si la liquidación ya está en estado 'pagado'."""
+    try:
+        nuevo_monto = round(float(nuevo_monto), 2)
+    except (TypeError, ValueError):
+        return False, "Ingrese un monto numérico."
+    ajuste = _ajuste_por_id(ajuste_id)
+    if ajuste is None:
+        return False, "No existe ese ajuste."
+    liquidacion_id = str(ajuste["liquidacion_id"])
+    concepto_codigo = str(ajuste["concepto_codigo"])
+    monto_viejo = float(ajuste.get("monto") or 0)
+    delta_compensatorio = round(nuevo_monto - monto_viejo, 2)
+
+    registro, conceptos = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    if registro.get("estado") == "pagado":
+        return False, "No se puede editar un ajuste de una liquidación ya marcada como pagada."
+
+    motivo = (motivo or "").strip()
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "editar_ajuste", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ_AJUSTES, target_key=ajuste_id,
+        antes={"monto": monto_viejo}, after={"monto": nuevo_monto, "motivo": motivo},
+    ):
+        sb = supabase_client.get_client()
+        if delta_compensatorio != 0:
+            _aplicar_delta_a_detalle(sb, liquidacion_id, concepto_codigo, delta_compensatorio, conceptos, usuario)
+        sb.table(TABLA_LIQ_AJUSTES).update({
+            "monto": nuevo_monto, "motivo": motivo or None,
+        }).eq("id", ajuste_id).execute()
+    return True, ""
+
+
+def eliminar_ajuste(ajuste_id: str, *, usuario: str, roles: set[str]) -> tuple[bool, str]:
+    """Elimina un ajuste "+" YA REGISTRADO -- aplica `delta = -monto` al
+    concepto en `liquidaciones_detalle` (mismo modelo de delta
+    compensatorio que `editar_ajuste`) y borra la fila del ajuste. Bloquea
+    si la liquidación ya está en estado 'pagado'."""
+    ajuste = _ajuste_por_id(ajuste_id)
+    if ajuste is None:
+        return False, "No existe ese ajuste."
+    liquidacion_id = str(ajuste["liquidacion_id"])
+    concepto_codigo = str(ajuste["concepto_codigo"])
+    monto = float(ajuste.get("monto") or 0)
+
+    registro, conceptos = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    if registro.get("estado") == "pagado":
+        return False, "No se puede eliminar un ajuste de una liquidación ya marcada como pagada."
+
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "eliminar_ajuste", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ_AJUSTES, target_key=ajuste_id,
+        antes={"monto": monto},
+    ):
+        sb = supabase_client.get_client()
+        if monto != 0:
+            _aplicar_delta_a_detalle(sb, liquidacion_id, concepto_codigo, -monto, conceptos, usuario)
+        sb.table(TABLA_LIQ_AJUSTES).delete().eq("id", ajuste_id).execute()
     return True, ""
 
 

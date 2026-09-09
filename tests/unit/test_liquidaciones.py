@@ -452,6 +452,64 @@ def test_incluir_sueldo_false_excluye_rol_del_mes_de_salida_no_el_sueldo_base(mo
     assert con.sueldo_base == 500.0  # sin afectar
 
 
+def test_default_multas_y_antic_otros_solo_si_el_real_da_cero(monkeypatch):
+    """"4. Valores por Defecto" del .pyw: REEMPLAZA (no suma) si el rubro
+    real del mes de salida da $0 -- si ya hay un valor real, no lo toca."""
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    _sin_supabase(monkeypatch)
+
+    def _movs(cod, anio, mes, fuente):
+        if (anio, mes) == (2026, 6):
+            return ([
+                {"clase": 100, "valor": 500.0, "dias": 30, "codigo": ""},
+                {"clase": 203, "valor": 20.0, "dias": None, "codigo": ""},  # MULTAS ya tiene valor real
+            ], "RPINGDES")
+        return ([], "RPINGDES")
+
+    monkeypatch.setattr(lq, "movimientos_mes", _movs)
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado(
+        "0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+        default_multas=30.0, default_antic_otros=25.0,
+    )
+    assert con.error == ""
+    assert con.campos["MULTAS"] == 20.0  # no lo pisa, ya tenía valor real
+    assert con.campos["ANTICIPOS_OTROS"] == 25.0  # este sí daba $0 -> default
+
+
+def test_default_multas_no_se_aplica_si_incluir_sueldo_false(monkeypatch):
+    """El .pyw no deja que un default se cuele justo en el mes que se
+    excluyó a propósito con incluir_sueldo=False."""
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    _sin_supabase(monkeypatch)
+    monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
+    cfg = lq.ConfigLiquidacion()
+
+    con = lq.procesar_empleado(
+        "0920116811", "2026-06-15", "RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+        incluir_sueldo=False, default_multas=30.0, default_antic_otros=25.0,
+    )
+    assert con.error == ""
+    assert con.campos["MULTAS"] == 0.0
+    assert con.campos["ANTICIPOS_OTROS"] == 0.0
+
+
+def test_procesar_lote_propaga_default_multas_y_antic_otros(monkeypatch):
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    _sin_supabase(monkeypatch)
+    monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
+    cfg = lq.ConfigLiquidacion()
+
+    resultados = lq.procesar_lote(
+        "0920116811, 15/06/2026, RENUNCIA VOLUNTARIA", lq.FUENTE_SUPABASE, cfg,
+        default_multas=30.0, default_antic_otros=25.0,
+    )
+    assert len(resultados) == 1 and resultados[0].error == ""
+    assert resultados[0].campos["MULTAS"] == 30.0
+    assert resultados[0].campos["ANTICIPOS_OTROS"] == 25.0
+
+
 def test_usar_ingresos_reales_desahucio_usa_promedio_del_ultimo_periodo(monkeypatch):
     """Verificado contra Generador_Liquidaciones_INSEVIG.pyw (comentario
     "CÁLCULO DE DESAHUCIO"): con usar_ingresos_reales_desahucio=True, la base
@@ -991,6 +1049,93 @@ def test_ajustar_concepto_concepto_desconocido():
 def test_ajustar_concepto_no_toca_pagada(monkeypatch):
     monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "pagado"}, []))
     ok, err = lq.ajustar_concepto("L1", "MULTAS", 5.0, motivo="x", usuario="ana", roles=set())
+    assert not ok and "pagada" in err
+
+
+def test_listar_ajustes_concepto_ordena_por_fecha_real(monkeypatch):
+    # Columna real confirmada en producción: 'fecha', no 'created_at'.
+    filas = [{"id": "A1", "concepto_codigo": "MULTAS", "monto": 10.0, "fecha": "2026-08-01"},
+             {"id": "A2", "concepto_codigo": "ANTICIPOS_OTROS", "monto": 5.0, "fecha": "2026-08-02"}]
+    capturado = {}
+
+    class _Q:
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, campo, valor):
+            capturado.setdefault("eq", []).append((campo, valor))
+            return self
+
+        def order(self, campo, desc=False):
+            capturado["order"] = (campo, desc)
+            return self
+
+        def execute(self):
+            return _FakeExec(filas)
+
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: type("C", (), {"table": lambda self, n: _Q()})())
+    assert lq.listar_ajustes_concepto("L1") == filas
+    assert capturado["order"] == ("fecha", True)
+    assert ("liquidacion_id", "L1") in capturado["eq"]
+
+
+def test_editar_ajuste_aplica_delta_compensatorio(monkeypatch, app_db):
+    monkeypatch.setattr(
+        lq, "_ajuste_por_id",
+        lambda _id: {"id": "A1", "liquidacion_id": "L1", "concepto_codigo": "MULTAS", "monto": 10.0},
+    )
+    registro = {"id": "L1", "estado": "generada"}
+    conceptos = [{"concepto_codigo": "MULTAS", "concepto_tipo": "descuento", "valor_total": 30.0}]
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    # Monto guardado era 10, el valor actual del concepto es 30 (ya sufrió
+    # otros cambios) -- corregir el ajuste a 15 debe sumar el delta
+    # compensatorio (15-10=5) sobre el valor ACTUAL (30->35), no reemplazar.
+    ok, err = lq.editar_ajuste("A1", nuevo_monto=15.0, motivo="corregido", usuario="ana", roles=set())
+    assert ok and err == ""
+    detalle_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_DETALLE and op == "update")
+    assert detalle_upd == {"valor_total": 35.0}
+    ajuste_upd = next(pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_AJUSTES and op == "update")
+    assert ajuste_upd == {"monto": 15.0, "motivo": "corregido"}
+
+
+def test_editar_ajuste_no_toca_pagada(monkeypatch):
+    monkeypatch.setattr(lq, "_ajuste_por_id",
+                         lambda _id: {"id": "A1", "liquidacion_id": "L1", "concepto_codigo": "MULTAS", "monto": 10.0})
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "pagado"}, []))
+    ok, err = lq.editar_ajuste("A1", nuevo_monto=15.0, usuario="ana", roles=set())
+    assert not ok and "pagada" in err
+
+
+def test_editar_ajuste_inexistente(monkeypatch):
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClientPorTabla({}))
+    ok, err = lq.editar_ajuste("NO_EXISTE", nuevo_monto=1.0, usuario="ana", roles=set())
+    assert not ok and "No existe" in err
+
+
+def test_eliminar_ajuste_resta_el_monto_y_borra_la_fila(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "_ajuste_por_id",
+                         lambda _id: {"id": "A1", "liquidacion_id": "L1", "concepto_codigo": "MULTAS", "monto": 10.0})
+    registro = {"id": "L1", "estado": "generada"}
+    conceptos = [{"concepto_codigo": "MULTAS", "concepto_tipo": "descuento", "valor_total": 10.0}]
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, err = lq.eliminar_ajuste("A1", usuario="ana", roles=set())
+    assert ok and err == ""
+    # 10 (valor actual) - 10 (monto del ajuste) = 0 -> se borra el concepto.
+    assert any(t == lq.TABLA_LIQ_DETALLE and op == "delete" for (t, op, _pl) in cliente.log)
+    assert any(t == lq.TABLA_LIQ_AJUSTES and op == "delete" for (t, op, _pl) in cliente.log)
+
+
+def test_eliminar_ajuste_no_toca_pagada(monkeypatch):
+    monkeypatch.setattr(lq, "_ajuste_por_id",
+                         lambda _id: {"id": "A1", "liquidacion_id": "L1", "concepto_codigo": "MULTAS", "monto": 10.0})
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "pagado"}, []))
+    ok, err = lq.eliminar_ajuste("A1", usuario="ana", roles=set())
     assert not ok and "pagada" in err
 
 
