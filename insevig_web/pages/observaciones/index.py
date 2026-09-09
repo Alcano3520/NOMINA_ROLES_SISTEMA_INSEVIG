@@ -15,32 +15,37 @@ def _nueva_observacion() -> rx.Component:
         AuthState.permisos_flat.contains("observaciones:crear"),
         card(
             rx.vstack(
-                rx.heading("Añadir observación", size="3"),
-                rx.hstack(
+                rx.heading("Añadir observación", size="4"),
+                rx.vstack(
+                    rx.text("Período", size="1", weight="bold", color_scheme="gray"),
                     rx.input(
                         value=ObservacionesState.nueva_periodo,
                         on_change=ObservacionesState.set_nueva_periodo,
                         placeholder="AAAA-MM (por defecto: mes actual)",
-                        width="240px",
+                        size="2", width="240px",
                     ),
-                    spacing="2",
+                    spacing="1", align="start",
                 ),
-                rx.text_area(
-                    value=ObservacionesState.nueva_texto,
-                    on_change=ObservacionesState.set_nueva_texto,
-                    placeholder="Texto de la observación (se guarda en el primer slot libre del mes)",
-                    rows="3",
-                    width="100%",
+                rx.vstack(
+                    rx.text("Texto", size="1", weight="bold", color_scheme="gray"),
+                    rx.text_area(
+                        value=ObservacionesState.nueva_texto,
+                        on_change=ObservacionesState.set_nueva_texto,
+                        placeholder="Se guarda en el primer campo libre del mes",
+                        rows="3", width="100%",
+                    ),
+                    spacing="1", width="100%",
                 ),
-                rx.hstack(
+                rx.divider(),
+                rx.flex(
                     primary_button("Guardar observación", on_click=ObservacionesState.guardar_nueva),
                     rx.cond(
                         ObservacionesState.nueva_msg != "",
                         rx.badge(ObservacionesState.nueva_msg),
                     ),
-                    spacing="2",
+                    gap="2", align="center", wrap="wrap",
                 ),
-                spacing="2",
+                spacing="4",
                 width="100%",
             ),
             width="100%",
@@ -51,8 +56,8 @@ def _nueva_observacion() -> rx.Component:
 def _dato(etq: str, valor: rx.Var) -> rx.Component:
     return rx.vstack(
         rx.text(etq, size="1", weight="bold", color_scheme="gray"),
-        rx.text(valor, size="1"),
-        spacing="0",
+        rx.text(valor, size="2"),
+        spacing="1",
     )
 
 
@@ -192,19 +197,17 @@ def index() -> rx.Component:
                 ObservacionesState.empleado_sel != "",
                 card(
                     rx.vstack(
-                        rx.hstack(
+                        rx.flex(
                             rx.heading(
-                                f"{ObservacionesState.empleado_sel} — {ObservacionesState.nombre_sel}", size="4"
+                                f"{ObservacionesState.empleado_sel} — {ObservacionesState.nombre_sel}",
+                                size="5", flex_grow="1", min_width="0",
                             ),
                             rx.button(
-                                "Reporte imprimible",
+                                rx.icon("printer", size=14), "Reporte imprimible",
                                 on_click=ObservacionesState.descargar_reporte,
-                                variant="soft",
-                                size="1",
+                                variant="soft", size="2", flex_shrink="0",
                             ),
-                            spacing="3",
-                            align="center",
-                            wrap="wrap",
+                            justify="between", align="center", gap="3", wrap="wrap", width="100%",
                         ),
                         rx.cond(
                             ObservacionesState.datos_emp.contains("cedula"),
@@ -219,12 +222,13 @@ def index() -> rx.Component:
                                     _dato("Estado", ObservacionesState.datos_emp["estado"]),
                                     _dato("Teléfono", ObservacionesState.datos_emp["telefono"]),
                                     columns=rx.breakpoints(initial="2", sm="4"),
-                                    spacing="2",
+                                    spacing="4",
                                     width="100%",
                                 ),
                                 border="1px solid var(--gray-5)",
-                                border_radius="8px",
-                                padding="10px 12px",
+                                border_radius="10px",
+                                padding="16px 18px",
+                                background="var(--gray-2)",
                                 width="100%",
                             ),
                         ),
