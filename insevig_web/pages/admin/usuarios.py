@@ -10,6 +10,13 @@ from insevig_web.states.admin_state import AdminState
 from insevig_web.states.auth_state import AuthState
 
 
+def _campo(label: str, control: rx.Component) -> rx.Component:
+    return rx.vstack(
+        rx.text(label, size="1", weight="bold", color_scheme="gray"),
+        control, spacing="1", width="100%",
+    )
+
+
 @rx.page(
     route="/admin/usuarios",
     title="INSEVIG — Usuarios",
@@ -21,19 +28,32 @@ def usuarios() -> rx.Component:
         rx.vstack(
             card(
                 rx.vstack(
-                    rx.heading("Nuevo usuario", size="3"),
+                    rx.heading("Nuevo usuario", size="4"),
                     rx.grid(
-                        rx.input(value=AdminState.nu_username, on_change=lambda v: AdminState.set_nu("username", v), placeholder="usuario"),
-                        rx.input(value=AdminState.nu_nombre, on_change=lambda v: AdminState.set_nu("nombre", v), placeholder="Nombre completo"),
-                        rx.input(value=AdminState.nu_clave, on_change=lambda v: AdminState.set_nu("clave", v), type="password", placeholder="contraseña"),
-                        rx.select(list(ROLES), default_value="consulta", on_change=lambda v: AdminState.set_nu("rol", v)),
+                        _campo("Usuario", rx.input(
+                            value=AdminState.nu_username,
+                            on_change=lambda v: AdminState.set_nu("username", v),
+                            placeholder="usuario", size="2", width="100%")),
+                        _campo("Nombre completo", rx.input(
+                            value=AdminState.nu_nombre,
+                            on_change=lambda v: AdminState.set_nu("nombre", v),
+                            placeholder="Nombre y apellido", size="2", width="100%")),
+                        _campo("Contraseña", rx.input(
+                            value=AdminState.nu_clave,
+                            on_change=lambda v: AdminState.set_nu("clave", v),
+                            type="password", placeholder="contraseña", size="2", width="100%")),
+                        _campo("Rol", rx.select(
+                            list(ROLES), default_value="consulta",
+                            on_change=lambda v: AdminState.set_nu("rol", v),
+                            size="2", width="100%")),
                         columns=rx.breakpoints(initial="1", sm="2", lg="4"),
-                        spacing="2",
+                        spacing="4",
                         width="100%",
                     ),
-                    primary_button("Crear", on_click=AdminState.crear_usuario),
+                    rx.divider(),
+                    primary_button("Crear usuario", on_click=AdminState.crear_usuario),
                     rx.cond(AdminState.msg != "", rx.callout(AdminState.msg, size="1")),
-                    spacing="3",
+                    spacing="4",
                     width="100%",
                 ),
                 width="100%",

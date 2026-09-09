@@ -10,7 +10,12 @@ from insevig_web.states.auth_state import AuthState
 
 
 def _fila(k: str, v: str) -> rx.Component:
-    return rx.hstack(rx.text(k, weight="bold", size="1", width="220px"), rx.text(v, size="1"), spacing="2")
+    return rx.flex(
+        rx.text(k, weight="bold", size="1", color_scheme="gray", width="220px", flex_shrink="0"),
+        rx.text(v, size="2", style={"wordBreak": "break-word"}),
+        gap="3", align="start", padding_y="6px",
+        border_bottom="1px solid var(--gray-4)", width="100%", wrap="wrap",
+    )
 
 
 @rx.page(route="/admin/config", title="INSEVIG — Configuración", on_load=AuthState.cargar_sesion)
@@ -37,7 +42,7 @@ def config() -> rx.Component:
                 _fila("IA proveedor", s.ia_provider),
                 _fila("Feature flags", ", ".join(sorted(s.flags)) or "(ninguno)"),
                 _fila("STORAGE_DIR", str(s.storage_dir)),
-                spacing="2",
+                spacing="0",
                 align="start",
                 width="100%",
             ),
@@ -45,7 +50,7 @@ def config() -> rx.Component:
         ),
         card(
             rx.vstack(
-                rx.heading("Actualizar el sistema", size="3"),
+                rx.heading("Actualizar el sistema", size="4"),
                 rx.text(
                     "Trae la última versión del código y reinicia el servicio en el "
                     "servidor. Equivale a correr 'Actualizar-INSEVIG.bat' en el NAS. "
