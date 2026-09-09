@@ -322,3 +322,70 @@ def test_migracion_sqlite_a_appdb(app_db, tmp_path):
 
     # --reemplazar deja solo lo del SQLite
     assert migrar(str(ruta), reemplazar=True) == 3
+
+
+def test_historial_display_reconstruye_filas_del_arbol(monkeypatch):
+    """Una fila INGRESO sintética por préstamo + una EGRESO por pago, ordenadas
+    por fecha, con saldo progresivo — como `buscar_prestamos` del .pyw."""
+    M = prestamos.MovimientoPrestamo
+    fake = [
+        M("2025-01-02", 300.0, "SALDO", "9", "RPINGDES", tipo="pendiente"),  # fecha de registro
+        M("2025-02-05", 100.0, "CUOTA FEB", "9", "RPHISTOR", tipo="pago"),
+        M("2025-03-05", 100.0, "CUOTA MAR", "9", "RPHISTOR", tipo="pago"),
+    ]
+    monkeypatch.setattr(prestamos, "historial_empleado", lambda c, f: fake)
+    monkeypatch.setattr(prestamos, "_datos_empleado_prestamos", lambda c, f: ("PEREZ JUAN", "0912345678"))
+
+    crudas, info = prestamos.historial_display("9", "sqlserver")
+    filas = prestamos.numerar_historial(crudas)
+
+    # 1 ingreso (100+100+300 = 500) + 2 egresos
+    assert [x.tipo for x in filas] == ["INGRESO", "EGRESO", "EGRESO"]
+    ingreso = filas[0]
+    assert ingreso.ingreso == 500.0 and ingreso.egreso == 0.0
+    assert ingreso.saldo == 500.0
+    assert "[H]" in ingreso.numero          # el grupo tiene movimientos históricos
+    assert filas[1].egreso == 100.0 and filas[1].saldo == 400.0
+    assert filas[2].saldo == 300.0          # queda el pendiente
+    assert filas[0].fecha_fmt == "02/01/2025"
+    assert info.nombre == "PEREZ JUAN"
+    assert info.cedula == "0912345678"
+    assert info.saldo_total == 300.0
+    assert info.historicos == 2
+
+    # numerar sobre un subconjunto recalcula # y saldo (igual que el .pyw)
+    solo_egresos = prestamos.filtrar_historial(crudas, tipo="EGRESO")
+    fe = prestamos.numerar_historial(solo_egresos)
+    assert [x.posicion for x in fe] == [1, 2]
+    assert fe[0].saldo == -100.0
+
+
+def test_historial_display_usa_desembolso_real_migrado(monkeypatch):
+    M = prestamos.MovimientoPrestamo
+    fake = [
+        M("2020-01-01", 1500.0, "PRESTAMO", "MIG_1", "MIGRADO", tipo="desembolso"),
+        M("2020-02-01", 300.0, "CUOTA", "MIG_1", "MIGRADO", tipo="pago"),
+    ]
+    monkeypatch.setattr(prestamos, "historial_empleado", lambda c, f: fake)
+    monkeypatch.setattr(prestamos, "_datos_empleado_prestamos", lambda c, f: ("", ""))
+    crudas, _ = prestamos.historial_display("1", "sqlserver")
+    filas = prestamos.numerar_historial(crudas)
+    assert filas[0].tipo == "INGRESO" and filas[0].ingreso == 1500.0
+    assert filas[0].historico is True
+    assert filas[1].tipo == "EGRESO" and filas[1].egreso == 300.0
+    assert filas[1].saldo == 1200.0
+
+
+def test_filtrar_historial_por_origen_y_fecha():
+    crudas = [
+        {"fecha": "2025-01-10", "tipo": "INGRESO", "valor": 500.0, "numero": "9",
+         "observacion": "PRESTAMO", "origen": "RPINGDES", "historico": False},
+        {"fecha": "2025-02-10", "tipo": "EGRESO", "valor": 100.0, "numero": "9",
+         "observacion": "CUOTA", "origen": "RPHISTOR", "historico": True},
+    ]
+    f = prestamos.filtrar_historial
+    assert len(f(crudas, origen="SISTEMA")) == 1
+    assert len(f(crudas, origen="HISTORICO")) == 1
+    assert len(f(crudas, desde="2025-02-01")) == 1
+    assert len(f(crudas, tipo="INGRESO")) == 1
+    assert len(f(crudas, texto="cuota")) == 1

@@ -64,16 +64,17 @@ class PrestamosState(rx.State):
     nombre_sel: str = ""
 
     # historial del empleado seleccionado
-    movimientos: list[dict] = []
-    resumen: list[dict] = []  # agrupado por NUMERO de préstamo
+    movimientos: list[dict] = []          # movimientos crudos (para IA / export)
+    hist_crudas: list[dict] = []          # filas del árbol antes de numerar
+    hist_info: dict[str, str] = {}        # nombre / cédula / saldo / históricos / total
     saldo_empleado: float = 0.0
     cargando_hist: bool = False
-    filtro_desde: str = ""  # YYYY-MM-DD
+    filtro_desde: str = ""  # DD/MM/AAAA o YYYY-MM-DD
     filtro_hasta: str = ""
-    filtro_tipo: str = ""    # "" | ingreso | egreso
-    filtro_origen: str = ""  # "" | RPINGDES | RPHISTOR | MIGRADO
+    filtro_tipo: str = ""    # "" | INGRESO | EGRESO   (como el combo Tipo del .pyw)
+    filtro_origen: str = ""  # "" | SISTEMA | HISTORICO (como el combo Origen del .pyw)
     filtro_numero: str = ""
-    filtro_texto: str = ""
+    filtro_texto: str = ""    # observación
     filtro_monto_min: str = ""
     filtro_monto_max: str = ""
     exportar_job: int = 0
@@ -97,13 +98,17 @@ class PrestamosState(rx.State):
             except ValueError:
                 return None
 
+        def _iso(s: str) -> str:
+            f = _a_fecha(s)
+            return f.isoformat() if f else ""
+
         return {
             "tipo": self.filtro_tipo,
             "origen": self.filtro_origen,
             "numero": self.filtro_numero,
             "texto": self.filtro_texto,
-            "desde": self.filtro_desde,
-            "hasta": self.filtro_hasta,
+            "desde": _iso(self.filtro_desde),
+            "hasta": _iso(self.filtro_hasta),
             "monto_min": _num(self.filtro_monto_min),
             "monto_max": _num(self.filtro_monto_max),
         }
@@ -118,25 +123,37 @@ class PrestamosState(rx.State):
         )
 
     @rx.var
-    def movimientos_filtrados(self) -> list[dict]:
-        if not self.hay_filtros:
-            return self.movimientos
-        return prestamos.filtrar_movimientos(list(self.movimientos), **self._filtros_kwargs())
+    def filas_historial(self) -> list[dict]:
+        """Filas del árbol (# / FECHA / INGRESO / EGRESO / NÚMERO / OBSERV / TIPO /
+        SALDO) — filtradas y numeradas, igual que `mostrar_movimientos_en_tree`."""
+        crudas = list(self.hist_crudas)
+        if self.hay_filtros:
+            crudas = prestamos.filtrar_historial(crudas, **self._filtros_kwargs())
+        return [asdict(f) for f in prestamos.numerar_historial(crudas)]
 
     @rx.var
-    def total_filtrado(self) -> float:
-        """Suma de los movimientos visibles (informativa)."""
-        return round(sum(m["valor"] for m in self.movimientos_filtrados), 2)
+    def hist_mostrando(self) -> str:
+        vis = len(self.filas_historial)
+        tot = len(self.hist_crudas)
+        txt = f"Mostrando {vis} de {tot} registros"
+        return txt + (" (FILTRADO)" if vis != tot else "")
 
     @rx.var
-    def pagado_filtrado(self) -> float:
-        return round(sum(m["valor"] for m in self.movimientos_filtrados if m["tipo"] == "pago"), 2)
-
-    @rx.var
-    def conteo_filtrado(self) -> str:
-        vis = sum(1 for m in self.movimientos_filtrados if not m["es_cuadre"])
-        tot = sum(1 for m in self.movimientos if not m["es_cuadre"])
-        return f"{vis} de {tot}" + (" (filtrado)" if vis != tot else "")
+    def info_empleado_txt(self) -> str:
+        """Banda 'Información del Empleado' del .pyw."""
+        i = self.hist_info
+        if not i:
+            return ""
+        partes = [
+            f"\U0001f464 {i.get('nombre', '')}",
+            f"\U0001f194 {i.get('cedula', '')}",
+            f"\U0001f4b0 SALDO: {i.get('saldo', '')}",
+        ]
+        if i.get("historicos") not in (None, "", "0"):
+            partes.append(f"\U0001f4c1 HISTÓRICOS: {i.get('historicos')}")
+        if i.get("total") not in (None, "", "0"):
+            partes.append(f"\U0001f4ca TOTAL: {i.get('total')}")
+        return "   •   ".join(partes)
 
     # narrativa IA (Job)
     narrativa: str = ""
@@ -180,6 +197,7 @@ class PrestamosState(rx.State):
     panel_saldos: list[dict] = []
     panel_filtro: str = ""
     panel_cargando: bool = False
+    panel_solo_activos: bool = True   # checkbox "Act." del panel
 
     @rx.event
     async def cargar_panel_saldos(self):
@@ -190,7 +208,11 @@ class PrestamosState(rx.State):
         fuente = await self._fuente()
         filas = await asyncio.to_thread(prestamos.saldos, fuente)
         self.panel_saldos = [
-            {"empleado": s.empleado, "nombre": s.apellidos_nombres, "saldo": round(s.saldo, 2)}
+            {
+                "empleado": s.empleado, "nombre": s.apellidos_nombres,
+                "cedula": s.cedula, "saldo": round(s.saldo, 2),
+                "situacion": s.situacion,
+            }
             for s in filas
             if s.saldo > 0.01
         ]
@@ -200,10 +222,16 @@ class PrestamosState(rx.State):
     def set_panel_filtro(self, v: str):
         self.panel_filtro = v
 
+    @rx.event
+    def toggle_panel_activos(self, v: bool):
+        self.panel_solo_activos = bool(v)
+
     @rx.var
     def panel_saldos_filtrado(self) -> list[dict]:
         q = self.panel_filtro.strip().lower()
         filas = self.panel_saldos
+        if self.panel_solo_activos and any(f.get("situacion") for f in filas):
+            filas = [f for f in filas if f.get("situacion") == "ACT"]
         if q:
             filas = [
                 f for f in filas
@@ -222,16 +250,24 @@ class PrestamosState(rx.State):
         self.empleado_sel = empleado
         self.nombre_sel = nombre
         self.movimientos = []
+        self.hist_crudas = []
+        self.hist_info = {}
         self.narrativa = ""
         self.cargando_hist = True
         yield
         fuente = await self._fuente()
         movs = await asyncio.to_thread(prestamos.historial_empleado, empleado, fuente)
+        crudas, info = await asyncio.to_thread(prestamos.historial_display, empleado, fuente)
         self.movimientos = [asdict(m) for m in movs]
-        self.resumen = [asdict(g) for g in prestamos.agrupar_por_numero(movs)]
-        self.saldo_empleado = round(
-            sum(m["valor"] for m in self.movimientos if m["tipo"] == "pendiente"), 2
-        )
+        self.hist_crudas = crudas
+        self.hist_info = {
+            "nombre": info.nombre or nombre,
+            "cedula": info.cedula,
+            "saldo": f"{info.saldo_total:,.2f}",
+            "historicos": str(info.historicos),
+            "total": str(info.total),
+        }
+        self.saldo_empleado = round(info.saldo_total, 2)
         self.cargando_hist = False
 
     # detalle de un MOVIMIENTO individual (clic en la fila del historial) — como
@@ -239,14 +275,22 @@ class PrestamosState(rx.State):
     mov_detalle: dict[str, str] = {}
 
     @rx.event
-    def ver_mov_detalle(self, mov: dict):
+    def ver_mov_detalle(self, fila: dict):
+        """Detalle de la fila (como el diálogo 'DETALLE DEL {INGRESO|EGRESO}')."""
+        ing = float(fila.get("ingreso", 0) or 0)
+        egr = float(fila.get("egreso", 0) or 0)
         self.mov_detalle = {
-            "fecha": str(mov.get("fecha", "")),
-            "numero": str(mov.get("numero", "")),
-            "valor": f"{float(mov.get('valor', 0) or 0):,.2f}",
-            "tipo": str(mov.get("tipo", "")),
-            "origen": str(mov.get("origen", "")),
-            "concepto": str(mov.get("concepto", "") or "Sin observaciones registradas"),
+            "fecha": str(fila.get("fecha", "")),
+            "numero": str(fila.get("numero", "")).replace(" [H]", ""),
+            "posicion": str(fila.get("posicion", "")),
+            "valor": f"{(ing or egr):,.2f}",
+            "saldo": f"{float(fila.get('saldo', 0) or 0):,.2f}",
+            "tipo": str(fila.get("tipo", "")),
+            "origen": (
+                "Histórico (SQLite)" if fila.get("historico")
+                else "Sistema Actual (SQL Server)"
+            ),
+            "concepto": str(fila.get("observacion", "") or "Sin observaciones registradas"),
         }
 
     @rx.event
@@ -257,44 +301,19 @@ class PrestamosState(rx.State):
     def mov_detalle_abierto(self) -> bool:
         return bool(self.mov_detalle)
 
-    # detalle de un préstamo (doble clic en la fila del resumen)
-    detalle_movs: list[dict] = []
-    detalle_titulo: str = ""
-
-    @rx.event
-    def ver_detalle_prestamo(self, numero: str):
-        movs = [prestamos.MovimientoPrestamo(**m) for m in self.movimientos]
-        d = prestamos.movimientos_de_numero(movs, numero)
-        self.detalle_movs = [asdict(m) for m in d]
-        self.detalle_titulo = f"Préstamo N° {numero} — {len(d)} movimientos"
-
-    @rx.event
-    def cerrar_detalle(self):
-        self.detalle_movs = []
-        self.detalle_titulo = ""
-
     @rx.event
     async def exportar_empleado(self):
         if not self.empleado_sel:
             return rx.toast.error("Selecciona un empleado.")
         fuente = await self._fuente()
         cod, nombre = self.empleado_sel, self.nombre_sel
-        filtros = self._filtros_kwargs() if self.hay_filtros else None
 
         def _fn(ctx):
-            from dataclasses import asdict as _asdict
-
             from core import storage
             from core.excel.prestamos_builders import historial_xlsx
 
             ctx.progreso(0, 1, "Generando Excel…")
             movs = prestamos.historial_empleado(cod, fuente)
-            if filtros:
-                claves = {
-                    (m["fecha"], round(m["valor"], 2), m["numero"], m["origen"])
-                    for m in prestamos.filtrar_movimientos([_asdict(m) for m in movs], **filtros)
-                }
-                movs = [m for m in movs if (m.fecha, round(m.valor, 2), m.numero, m.origen) in claves]
             data = historial_xlsx(cod, nombre, movs)
             ruta = storage.guardar(ctx.job_id, f"PRESTAMOS_{cod}.xlsx", data)
             ctx.set_resultado(str(ruta))

@@ -47,6 +47,7 @@ class SaldoPrestamo:
     apellidos_nombres: str
     cedula: str
     saldo: float
+    situacion: str = ""   # RPEMPLEA.SITUACION ('ACT' = activo) — para el filtro "Act."
 
 
 @dataclass
@@ -76,11 +77,12 @@ def _saldos_sqlserver() -> list[SaldoPrestamo]:
         f"""SELECT i.EMPLEADO,
                    RTRIM(e.APELLIDOS) + ' ' + RTRIM(e.NOMBRES) AS NOMBRE,
                    e.CEDULA,
+                   ISNULL(e.SITUACION, '') AS SITUACION,
                    ISNULL(SUM(i.VALOR), 0) AS SALDO
             FROM [insevig].[dbo].[RPINGDES] i
             LEFT JOIN [insevig].[dbo].[RPEMPLEA] e ON e.EMPLEADO = i.EMPLEADO
             WHERE i.CLASE = {CLASE_PRESTAMO} AND {flt.replace('CODEMP', 'i.CODEMP').replace('CODSUC', 'i.CODSUC')}
-            GROUP BY i.EMPLEADO, RTRIM(e.APELLIDOS) + ' ' + RTRIM(e.NOMBRES), e.CEDULA
+            GROUP BY i.EMPLEADO, RTRIM(e.APELLIDOS) + ' ' + RTRIM(e.NOMBRES), e.CEDULA, ISNULL(e.SITUACION, '')
             HAVING ISNULL(SUM(i.VALOR), 0) <> 0
             ORDER BY SALDO DESC"""
     )
@@ -90,6 +92,7 @@ def _saldos_sqlserver() -> list[SaldoPrestamo]:
             apellidos_nombres=(r.get("NOMBRE") or "").strip(),
             cedula=normalizar_cedula(r.get("CEDULA")),
             saldo=round(a_float(r.get("SALDO")), 2),
+            situacion=str(r.get("SITUACION") or "").strip().upper(),
         )
         for r in filas
     ]
@@ -111,7 +114,8 @@ def _saldos_supabase() -> list[SaldoPrestamo]:
     emps = {
         str(x["empleado"]).strip(): x
         for x in (
-            sb.table("rpemplea").select("empleado,apellidos,nombres,cedula").eq("codemp", "10").execute().data
+            sb.table("rpemplea").select("empleado,apellidos,nombres,cedula,situacion")
+            .eq("codemp", "10").execute().data
             or []
         )
     }
@@ -121,7 +125,10 @@ def _saldos_supabase() -> list[SaldoPrestamo]:
             continue
         e = emps.get(cod, {})
         nombre = f"{(e.get('apellidos') or '').strip()} {(e.get('nombres') or '').strip()}".strip()
-        out.append(SaldoPrestamo(cod, nombre, normalizar_cedula(e.get("cedula")), round(saldo, 2)))
+        out.append(SaldoPrestamo(
+            cod, nombre, normalizar_cedula(e.get("cedula")), round(saldo, 2),
+            str(e.get("situacion") or "").strip().upper(),
+        ))
     out.sort(key=lambda s: s.saldo, reverse=True)
     return out
 
@@ -352,3 +359,200 @@ def filtrar_movimientos(
         return True
 
     return [m for m in movs if _ok(m)]
+
+
+# ── Filas del historial tal como las pinta el árbol del `.pyw` ───────────────
+#
+# El árbol de `HISTORIAL_PRESTAMOS_10.pyw` NO muestra los movimientos crudos:
+# reconstruye, por cada NÚMERO de préstamo, una fila INGRESO sintética (el
+# desembolso) y una fila EGRESO por cada descuento de nómina; después ordena
+# todo por fecha y calcula un SALDO progresivo (+ingreso / -egreso). Esto porta
+# esa lógica (`buscar_prestamos` + `mostrar_movimientos_en_tree`).
+
+
+@dataclass
+class FilaHistorial:
+    posicion: int          # columna "#" (1-based, sobre las filas visibles)
+    fecha: str             # ISO YYYY-MM-DD (ordenable)
+    fecha_fmt: str         # DD/MM/AAAA para mostrar (como `formatear_fecha`)
+    ingreso: float         # columna INGRESO ($); 0.0 si la fila es egreso
+    egreso: float          # columna EGRESO ($); 0.0 si la fila es ingreso
+    numero: str            # NÚMERO, con sufijo " [H]" si es histórico
+    observacion: str       # observación completa
+    tipo: str              # "INGRESO" | "EGRESO"
+    saldo: float           # SALDO progresivo tras esta fila
+    historico: bool        # viene del histórico (RPHISTOR / migrado)
+    origen: str            # RPINGDES | RPHISTOR | MIGRADO
+
+
+@dataclass
+class InfoPrestamosEmpleado:
+    nombre: str
+    cedula: str
+    saldo_total: float     # suma de lo pendiente en RPINGDES
+    historicos: int        # nº de movimientos que vienen del histórico
+    total: int             # nº de filas mostradas
+
+
+def _datos_empleado_prestamos(codigo: str, fuente: str) -> tuple[str, str]:
+    """(nombre, cédula) de RPEMPLEA — como `obtener_datos_empleado()` del `.pyw`."""
+    if fuente == FUENTE_SUPABASE:
+        sb = supabase_client.get_client()
+        r = (
+            sb.table("rpemplea").select("apellidos,nombres,cedula")
+            .eq("codemp", "10").eq("empleado", str(codigo)).limit(1).execute()
+        )
+        row = (r.data or [{}])[0]
+        nombre = f"{(row.get('apellidos') or '').strip()} {(row.get('nombres') or '').strip()}".strip()
+        return nombre, normalizar_cedula(row.get("cedula"))
+    flt = get_settings().sqlserver_filter
+    filas = sqlserver.filas(
+        f"""SELECT RTRIM(APELLIDOS) + ' ' + RTRIM(NOMBRES) AS NOMBRE, CEDULA
+            FROM [insevig].[dbo].[RPEMPLEA]
+            WHERE {flt} AND [EMPLEADO] = ?""",
+        (str(codigo),),
+    )
+    if not filas:
+        return "", ""
+    return (filas[0].get("NOMBRE") or "").strip(), normalizar_cedula(filas[0].get("CEDULA"))
+
+
+_ORIGEN_HIST = ("RPHISTOR", "MIGRADO")
+
+
+def historial_display(codigo: str, fuente: str) -> tuple[list[dict], InfoPrestamosEmpleado]:
+    """Filas crudas (sin numerar) del historial + info del empleado.
+
+    Cada fila: ``{fecha, tipo, valor, numero, observacion, origen, historico}``.
+    Pasar por `numerar_historial()` (y opcionalmente `filtrar_historial()`) para
+    obtener las `FilaHistorial` finales con `#` y `saldo` progresivo.
+    """
+    movs = historial_empleado(codigo, fuente)
+    nombre, cedula = _datos_empleado_prestamos(codigo, fuente)
+
+    # egresos marcados como cuadre → si un INGRESO sintético coincide en monto,
+    # se oculta (igual que el `.pyw`, que salta las filas ES_CUADRE)
+    valores_cuadre = {round(m.valor, 2) for m in movs if m.es_cuadre and m.tipo == "pago"}
+
+    grupos: dict[str, list[MovimientoPrestamo]] = {}
+    for m in movs:
+        grupos.setdefault(m.numero or "(sin nº)", []).append(m)
+
+    crudas: list[dict] = []
+    for num, ms in grupos.items():
+        pagos = [x for x in ms if x.tipo == "pago" and not x.es_cuadre]
+        pendientes = [x for x in ms if x.tipo == "pendiente"]
+        desembolsos = [x for x in ms if x.tipo == "desembolso"]
+        historico_grupo = any(x.origen in _ORIGEN_HIST for x in ms)
+
+        if desembolsos:
+            for d in desembolsos:
+                crudas.append({
+                    "fecha": d.fecha, "tipo": "INGRESO", "valor": round(d.valor, 2),
+                    "numero": num, "observacion": d.concepto, "origen": d.origen,
+                    "historico": True,
+                })
+        else:
+            saldo_num = round(sum(x.valor for x in pendientes), 2)
+            total_pagado = round(sum(x.valor for x in pagos), 2)
+            valor_prestamo = round(total_pagado + saldo_num, 2)
+            if valor_prestamo > 0 and valor_prestamo not in valores_cuadre:
+                fechas = sorted(x.fecha for x in (pendientes or ms) if x.fecha)
+                obs = next((x.concepto for x in [*pendientes, *pagos] if x.concepto), "")
+                crudas.append({
+                    "fecha": fechas[0] if fechas else "",
+                    "tipo": "INGRESO", "valor": valor_prestamo, "numero": num,
+                    "observacion": obs,
+                    "origen": "RPHISTOR" if historico_grupo else "RPINGDES",
+                    "historico": historico_grupo,
+                })
+
+        for p in pagos:
+            crudas.append({
+                "fecha": p.fecha, "tipo": "EGRESO", "valor": round(p.valor, 2),
+                "numero": num, "observacion": p.concepto, "origen": p.origen,
+                "historico": p.origen in _ORIGEN_HIST,
+            })
+
+    # ingreso antes que egreso a igualdad de fecha (para un saldo progresivo sensato)
+    crudas.sort(key=lambda d: (d["fecha"] or "9999", 0 if d["tipo"] == "INGRESO" else 1))
+
+    info = InfoPrestamosEmpleado(
+        nombre=nombre, cedula=cedula,
+        saldo_total=round(sum(x.valor for x in movs if x.tipo == "pendiente"), 2),
+        historicos=sum(1 for x in movs if x.origen in _ORIGEN_HIST),
+        total=len(crudas),
+    )
+    return crudas, info
+
+
+def filtrar_historial(
+    crudas: list[dict],
+    *,
+    tipo: str = "",       # "" | "INGRESO" | "EGRESO"
+    origen: str = "",     # "" | "SISTEMA" | "HISTORICO"
+    numero: str = "",
+    texto: str = "",
+    desde: str = "",      # ISO YYYY-MM-DD
+    hasta: str = "",
+    monto_min: float | None = None,
+    monto_max: float | None = None,
+) -> list[dict]:
+    """Filtra las filas crudas con los criterios de `aplicar_filtros()` del `.pyw`."""
+    tp, org = tipo.strip().upper(), origen.strip().upper()
+    num, txt = numero.strip(), texto.strip().lower()
+
+    def _ok(d: dict) -> bool:
+        if tp and d["tipo"] != tp:
+            return False
+        if org == "SISTEMA" and d["historico"]:
+            return False
+        if org == "HISTORICO" and not d["historico"]:
+            return False
+        if num and num not in str(d["numero"]):
+            return False
+        if txt and txt not in str(d.get("observacion", "")).lower():
+            return False
+        f = str(d.get("fecha", ""))[:10]
+        if desde and f < desde:
+            return False
+        if hasta and f > hasta:
+            return False
+        v = abs(a_float(d.get("valor")))
+        if monto_min is not None and v < monto_min:
+            return False
+        if monto_max is not None and v > monto_max:  # noqa: SIM103
+            return False
+        return True
+
+    return [d for d in crudas if _ok(d)]
+
+
+def numerar_historial(crudas: list[dict]) -> list[FilaHistorial]:
+    """Añade `#` y SALDO progresivo (como `mostrar_movimientos_en_tree`).
+
+    El saldo se recalcula sobre las filas que se pasan: si vienen ya filtradas,
+    `#` y SALDO reflejan el subconjunto — mismo comportamiento que el `.pyw`.
+    """
+    out: list[FilaHistorial] = []
+    saldo = 0.0
+    for i, d in enumerate(crudas, 1):
+        val = round(a_float(d.get("valor")), 2)
+        if d["tipo"] == "INGRESO":
+            saldo = round(saldo + val, 2)
+            ingreso, egreso = val, 0.0
+        else:
+            saldo = round(saldo - val, 2)
+            ingreso, egreso = 0.0, val
+        fecha = str(d.get("fecha", ""))
+        iso = fecha[:10]
+        fecha_fmt = f"{iso[8:10]}/{iso[5:7]}/{iso[0:4]}" if len(iso) == 10 else fecha
+        out.append(FilaHistorial(
+            posicion=i, fecha=fecha, fecha_fmt=fecha_fmt,
+            ingreso=ingreso, egreso=egreso,
+            numero=str(d["numero"]) + (" [H]" if d.get("historico") else ""),
+            observacion=str(d.get("observacion", "") or ""),
+            tipo=d["tipo"], saldo=saldo,
+            historico=bool(d.get("historico")), origen=str(d.get("origen", "")),
+        ))
+    return out
