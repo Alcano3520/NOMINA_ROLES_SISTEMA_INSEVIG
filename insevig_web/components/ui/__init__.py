@@ -67,28 +67,18 @@ def stat_card(titulo: str, descripcion: str, valor: str, icono: str) -> rx.Compo
 
 
 # ── Tabla de datos compacta (estilo ERP / Excel) ────────────────────────────
+# La densidad y la cuadrícula las pone `assets/theme.css` para TODAS las
+# `.rt-Table*`; estos helpers son solo azúcar para armarlas rápido.
 
 def data_table(cabeceras: list[str], filas: rx.Component, **box_props) -> rx.Component:
-    """`rx.table` con cuadrícula clara y filas compactas (estilo ERP). `filas`
-    es el resultado de un `rx.foreach(...)` que produce `rx.table.row(...)`."""
+    """`rx.table` con la cuadrícula/densidad del sistema. `filas` es el
+    resultado de un `rx.foreach(...)` que produce `rx.table.row(...)`."""
     box_props.setdefault("width", "100%")
     return rx.box(
         rx.table.root(
             rx.table.header(
                 rx.table.row(
-                    *[
-                        rx.table.column_header_cell(
-                            c, style={
-                                "background": "var(--gray-2)",
-                                "fontWeight": "700",
-                                "fontSize": "12px",
-                                "padding": "8px 12px",
-                                "borderBottom": "1px solid var(--gray-5)",
-                                "whiteSpace": "nowrap",
-                            },
-                        )
-                        for c in cabeceras
-                    ],
+                    *[rx.table.column_header_cell(c) for c in cabeceras],
                 )
             ),
             rx.table.body(filas),
@@ -97,19 +87,13 @@ def data_table(cabeceras: list[str], filas: rx.Component, **box_props) -> rx.Com
             width="100%",
         ),
         overflow_x="auto",
-        border="1px solid var(--gray-5)", border_radius="8px",
         box_shadow=theme.SHADOW_SM,
-        background="var(--color-panel-solid)",
+        border_radius="8px",
         **box_props,
     )
 
 
 def data_cell(*children, **props) -> rx.Component:
-    props.setdefault("style", {}).update({
-        "padding": "6px 12px",
-        "fontSize": "13px",
-        "borderBottom": "1px solid var(--gray-4)",
-    })
     return rx.table.cell(*children, **props)
 
 

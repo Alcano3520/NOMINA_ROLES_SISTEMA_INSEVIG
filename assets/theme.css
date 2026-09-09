@@ -75,3 +75,37 @@
 
 /* Botones sólidos: texto siempre blanco (el acento azul corporativo es oscuro). */
 .rt-Button.rt-variant-solid { color: #fff; }
+
+/* ── Tablas: densidad ERP + cuadrícula clara (aplica a TODAS las tablas) ── */
+.rt-TableRoot .rt-TableRootTable {
+  border: 1px solid var(--gray-5);
+  border-radius: 8px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+.rt-TableRoot .rt-TableCell,
+.rt-TableRoot .rt-TableColumnHeaderCell,
+.rt-TableRoot .rt-TableRowHeaderCell {
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: none;
+  border-bottom: 1px solid var(--gray-4);
+}
+.rt-TableRoot .rt-TableColumnHeaderCell {
+  background: var(--gray-2);
+  font-weight: 700;
+  font-size: 11.5px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  color: var(--gray-11);
+  border-bottom: 1px solid var(--gray-5);
+  white-space: nowrap;
+}
+.rt-TableRoot .rt-TableBody .rt-TableRow:last-child .rt-TableCell {
+  border-bottom: 0;
+}
+.rt-TableRoot .rt-TableBody .rt-TableRow:hover {
+  background: var(--gray-2);
+}
