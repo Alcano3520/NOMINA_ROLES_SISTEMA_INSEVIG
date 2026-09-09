@@ -20,13 +20,15 @@ _SELECT = {
 def _fila(e: rx.Var) -> rx.Component:
     seleccionado = _S.edit_empleado == e["empleado"]
     return rx.table.row(
-        data_cell(rx.text("#" + e["empleado"].to_string(), size="1", weight="bold",
-                          color_scheme="gray")),
-        data_cell(rx.text(e["apellidos_nombres"], weight="medium")),
-        data_cell(e["cedula"]),
-        data_cell(rx.text(e["cargo"], color_scheme="gray")),
+        data_cell(rx.text(e["empleado"], size="1", weight="bold", color_scheme="gray"),
+                  style={"width": "1%", "whiteSpace": "nowrap"}),
+        data_cell(rx.text(e["apellidos_nombres"], weight="medium",
+                          style={"whiteSpace": "nowrap", "overflow": "hidden",
+                                 "textOverflow": "ellipsis", "maxWidth": "16rem"})),
+        data_cell(e["cedula"], style={"width": "1%", "whiteSpace": "nowrap"}),
         data_cell(rx.badge(e["estado"], size="1",
-                           color_scheme=rx.cond(e["estado"] == "ACT", "green", "gray"))),
+                           color_scheme=rx.cond(e["estado"] == "ACT", "green", "gray")),
+                  style={"width": "1%"}),
         on_click=lambda: _S.abrir_editor(e["empleado"]),
         style={"cursor": "pointer"},
         background=rx.cond(seleccionado, "var(--blue-3)", "transparent"),
@@ -83,7 +85,7 @@ def _lista() -> rx.Component:
                 rx.center(rx.spinner(), padding="1.5rem", width="100%"),
                 rx.box(
                     data_table(
-                        ["Código", "Empleado", "Cédula", "Cargo", "Estado"],
+                        ["Código", "Empleado", "Cédula", "Estado"],
                         rx.foreach(_S.grid_filtrado, _fila),
                     ),
                     max_height="62vh", overflow_y="auto", width="100%",
