@@ -23,7 +23,7 @@ def _fila(e: rx.Var) -> rx.Component:
     return rx.box(
         rx.flex(
             rx.center(
-                rx.text(e["apellidos_nombres"].to_string()[0], weight="bold", size="3"),
+                rx.text(e["apellidos_nombres"].to(str)[0], weight="bold", size="3"),
                 width="40px", height="40px", border_radius="9999px", flex_shrink="0",
                 background=rx.cond(seleccionado, "rgba(255,255,255,.22)", "var(--blue-3)"),
                 color=rx.cond(seleccionado, "white", "var(--blue-11)"),
