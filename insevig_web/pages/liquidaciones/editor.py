@@ -11,12 +11,19 @@ from insevig_web.components.ui import card, page_heading, scroll_x
 from insevig_web.pages.liquidaciones._nav import subnav
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.liquidaciones_editor_state import (
+    CHIPS_ESTADO,
     ESTADOS,
     SEC_BENEFICIOS,
     SEC_DESCUENTOS,
     SEC_REMUNERACION,
     LiquidacionesEditorState,
 )
+
+_HORAS_KEYS = {
+    "SOBT_25": ("horas_25_cant", "horas_25_vh"),
+    "SOBT_50": ("horas_50_cant", "horas_50_vh"),
+    "SOBT_100": ("horas_100_cant", "horas_100_vh"),
+}
 
 _S = LiquidacionesEditorState
 
@@ -28,7 +35,11 @@ def _item_lista(f) -> rx.Component:
         rx.hstack(
             rx.vstack(
                 rx.text(f["nombre"], size="1", weight="bold"),
-                rx.text(f'{f["fecha_salida"]} · {f["estado"]}', size="1", color_scheme="gray"),
+                rx.hstack(
+                    rx.text(f["fecha_salida"], size="1", color_scheme="gray"),
+                    rx.badge(f["estado_label"], color_scheme=f["estado_color"], size="1"),
+                    spacing="1", align="center",
+                ),
                 spacing="0", align="start",
             ),
             rx.spacer(),
@@ -42,26 +53,39 @@ def _item_lista(f) -> rx.Component:
     )
 
 
+def _chip(valor: str, etiqueta: str) -> rx.Component:
+    return rx.button(
+        etiqueta, size="1",
+        variant=rx.cond(_S.ed_estado == valor, "solid", "soft"),
+        color_scheme=rx.cond(_S.ed_estado == valor, "blue", "gray"),
+        on_click=lambda: _S.set_ed_estado(valor),
+    )
+
+
 def _lista() -> rx.Component:
     return card(
         rx.vstack(
-            rx.heading("Editor de Liquidaciones", size="3"),
+            rx.hstack(
+                rx.heading("Editor de Liquidaciones", size="3"),
+                rx.spacer(),
+                rx.badge(_S.ed_conteo, color_scheme="gray"),
+                width="100%", align="center",
+            ),
             rx.hstack(
                 rx.input(value=_S.ed_texto, on_change=_S.set_ed_texto,
                          placeholder="cédula o nombre…", size="1", width="100%"),
                 rx.button("Buscar", on_click=_S.cargar_lista, size="1"),
                 spacing="1", width="100%",
             ),
-            rx.hstack(
-                rx.select(["Todos", *ESTADOS], placeholder="Estado", size="1",
-                          on_change=_S.set_ed_estado),
-                spacing="1",
+            rx.grid(
+                *[_chip(v, e) for v, e in CHIPS_ESTADO],
+                columns="3", spacing="1", width="100%",
             ),
             rx.cond(
                 _S.ed_cargando_lista,
                 rx.center(rx.spinner(), padding="1rem"),
                 rx.vstack(
-                    rx.foreach(_S.ed_lista, _item_lista),
+                    rx.foreach(_S.ed_lista_ext, _item_lista),
                     spacing="1", width="100%", max_height="60vh", overflow_y="auto",
                 ),
             ),
@@ -74,16 +98,28 @@ def _lista() -> rx.Component:
 # ── Panel derecho: formulario ────────────────────────────────────────────────
 
 def _campo_concepto(cod: str, label: str) -> rx.Component:
-    return rx.hstack(
-        rx.text(label, size="1", width="16em", flex_shrink="0"),
-        rx.input(
-            value=_S.ed_campos[cod], on_change=lambda v: _S.set_ed_campo(cod, v),
-            size="1", width="120px", type="number",
-        ),
-        rx.button("+", size="1", variant="soft", on_click=lambda: _S.abrir_ajuste(cod),
-                  title="Ajuste incremental con motivo"),
-        spacing="2", align="center",
+    etiqueta = rx.text(label, size="1", width="16em", flex_shrink="0")
+    total = rx.input(
+        value=_S.ed_campos[cod], on_change=lambda v: _S.set_ed_campo(cod, v),
+        size="1", width="120px", type="number",
     )
+    mas = rx.button("+", size="1", variant="soft", on_click=lambda: _S.abrir_ajuste(cod),
+                    title="Ajuste incremental con motivo")
+    if cod in _HORAS_KEYS:
+        kc, kv = _HORAS_KEYS[cod]
+        return rx.hstack(
+            etiqueta,
+            rx.vstack(rx.text("cant.", size="1", color_scheme="gray"),
+                      rx.input(value=_S.ed_datos[kc], size="1", width="70px", read_only=True),
+                      spacing="0"),
+            rx.vstack(rx.text("$/hora", size="1", color_scheme="gray"),
+                      rx.input(value=_S.ed_datos[kv], size="1", width="80px", read_only=True),
+                      spacing="0"),
+            rx.vstack(rx.text("total", size="1", color_scheme="gray"), total, spacing="0"),
+            mas,
+            spacing="2", align="end",
+        )
+    return rx.hstack(etiqueta, total, mas, spacing="2", align="center")
 
 
 def _seccion(titulo: str, campos: list) -> rx.Component:
@@ -161,7 +197,7 @@ def _formulario() -> rx.Component:
                     _dato("Sección", "seccion"),
                     _dato("Fecha de ingreso", "fecha_ingreso", tipo="date"),
                     _dato("Fecha de salida", "fecha_salida", tipo="date"),
-                    _dato("Motivo", "motivo"),
+                    _dato("Motivo", "motivo", opciones=_S.ed_motivo_opciones),
                     _dato("Estado", "estado", opciones=ESTADOS),
                     columns=rx.breakpoints(initial="1", sm="2", lg="3"), spacing="2", width="100%",
                 ),
@@ -180,6 +216,7 @@ def _formulario() -> rx.Component:
                     rx.button("Guardar cambios", on_click=_S.guardar, size="2",
                               disabled=_S.ed_fecha_desalineada),
                     rx.button("Generar PDF", on_click=_S.generar_pdf, size="2", variant="soft"),
+                    rx.button("Generar Excel", on_click=_S.generar_excel, size="2", variant="soft"),
                     rx.cond(
                         AuthState.es_admin,
                         rx.alert_dialog.root(

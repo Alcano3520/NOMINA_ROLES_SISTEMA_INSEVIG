@@ -56,7 +56,36 @@ _INGRESOS = {c for c, _ in SEC_REMUNERACION} | {c for c, _ in SEC_BENEFICIOS}
 _DESCUENTOS = {c for c, _ in SEC_DESCUENTOS}
 _TODOS = [*SEC_REMUNERACION, *SEC_BENEFICIOS, *SEC_DESCUENTOS]
 
+# Horas extra: se editan con desglose (cantidad · valor/hora · total), no un
+# solo monto — "para ver el insumo del cálculo" (spec del `.pyw`).
+CODIGOS_HORAS = ("SOBT_25", "SOBT_50", "SOBT_100")
+_HORAS_PREFIJO = {"SOBT_25": "horas_25", "SOBT_50": "horas_50", "SOBT_100": "horas_100"}
+
 ESTADOS = list(repo.ESTADOS_LIQUIDACION)
+
+# Combo de motivo de salida — paridad con `MOTIVOS_SALIDA` del `.pyw`.
+MOTIVOS_SALIDA = [
+    "RENUNCIA VOLUNTARIA", "DESPIDO INTEMPESTIVO", "VISTO BUENO",
+    "CONTRATO A PRUEBA", "TÉRMINO DE CONTRATO", "CONSIGNACIÓN",
+    "MUTUO ACUERDO", "JUBILACIÓN", "MUERTE", "OTRO",
+]
+
+# estado real -> (label a mostrar, color) — `estado_db_a_label` del `.pyw`.
+ESTADO_LABEL: dict[str, str] = {
+    "borrador": "Borrador", "generada": "Generada", "aprobado": "Autorizada",
+    "registrado_mrl": "Registrada en MRL", "cheque_listo": "Cheque listo",
+    "pagado": "Pagada", "consignada": "Consignada", "legalizada_mrl": "Legalizada MRL",
+    "impreso": "Impresa", "archivado": "Archivada", "cancelado": "Cancelado",
+}
+ESTADO_COLOR: dict[str, str] = {
+    "borrador": "gray", "generada": "blue", "aprobado": "amber",
+    "registrado_mrl": "purple", "cheque_listo": "amber", "pagado": "green",
+    "consignada": "amber", "legalizada_mrl": "green", "impreso": "gray",
+    "archivado": "gray", "cancelado": "red",
+}
+# Chips del panel izquierdo: 2 filas de 3 (como el `.pyw` en panel angosto).
+CHIPS_ESTADO = [("", "Todos"), ("borrador", "Borrador"), ("generada", "Generada"),
+                ("aprobado", "Autorizada"), ("pagado", "Pagada"), ("cancelado", "Cancelado")]
 
 
 def _f(txt: object) -> float:
@@ -80,6 +109,25 @@ class LiquidacionesEditorState(rx.State):
     @rx.event
     def set_ed_estado(self, v: str):
         self.ed_estado = "" if v in ("", "Todos") else v
+        return LiquidacionesEditorState.cargar_lista
+
+    @rx.var
+    def ed_conteo(self) -> str:
+        n = len(self.ed_lista)
+        return f"{n} liquidación(es)" + (" (filtrado)" if self.ed_estado or self.ed_texto else "")
+
+    def _label_estado(self, estado: str) -> str:
+        return ESTADO_LABEL.get(estado, estado or "")
+
+    @rx.var
+    def ed_lista_ext(self) -> list[dict]:
+        """La lista con el label y color de estado ya resueltos (para los ítems)."""
+        out = []
+        for f in self.ed_lista:
+            e = str(f.get("estado") or "")
+            out.append({**f, "estado_label": ESTADO_LABEL.get(e, e),
+                        "estado_color": ESTADO_COLOR.get(e, "gray")})
+        return out
 
     @rx.event
     async def cargar_lista(self):
@@ -112,6 +160,9 @@ class LiquidacionesEditorState(rx.State):
         if registro is None:
             self.ed_msg = "No se encontró esa liquidación."
             return
+        def _num(k: str) -> str:
+            return str(round(float(registro.get(k) or 0), 2))
+
         self.ed_datos = {
             "cedula": str(registro.get("empleado_cedula") or ""),
             "nombre": f"{registro.get('empleado_apellidos', '')} "
@@ -122,6 +173,10 @@ class LiquidacionesEditorState(rx.State):
             "fecha_salida": str(registro.get("fecha_salida") or ""),
             "motivo": str(registro.get("motivo") or ""),
             "estado": str(registro.get("estado") or ""),
+            # insumo del cálculo de horas (solo lectura, para ver de dónde sale el total)
+            "horas_25_cant": _num("horas_25_cantidad"), "horas_25_vh": _num("horas_25_valor_hora"),
+            "horas_50_cant": _num("horas_50_cantidad"), "horas_50_vh": _num("horas_50_valor_hora"),
+            "horas_100_cant": _num("horas_100_cantidad"), "horas_100_vh": _num("horas_100_valor_hora"),
         }
         por_cod = {str(c["concepto_codigo"]): round(float(c.get("valor_total") or 0), 2)
                    for c in conceptos}
@@ -156,6 +211,12 @@ class LiquidacionesEditorState(rx.State):
     @rx.var
     def ed_total_liquido(self) -> float:
         return round(self.ed_total_ingresos - self.ed_total_descuentos, 2)
+
+    @rx.var
+    def ed_motivo_opciones(self) -> list[str]:
+        """MOTIVOS_SALIDA + el valor actual si viene de datos viejos y no está."""
+        m = str(self.ed_datos.get("motivo", "")).strip()
+        return [m, *MOTIVOS_SALIDA] if m and m not in MOTIVOS_SALIDA else list(MOTIVOS_SALIDA)
 
     @rx.var
     def ed_fecha_desalineada(self) -> bool:
@@ -296,4 +357,17 @@ class LiquidacionesEditorState(rx.State):
         return rx.download(
             data=liquidacion_pdf(liq, es_simulacion=False),
             filename=f"liquidacion_{liq.empleado}_{liq.fecha_salida}.pdf",
+        )
+
+    @rx.event
+    def generar_excel(self):
+        registro, conceptos = repo.obtener_liquidacion(self.ed_id)
+        if registro is None:
+            return rx.toast.error("No se encontró esa liquidación.")
+        from core.excel.liquidaciones_builders import liquidaciones_xlsx
+
+        liq = repo.reconstruir_liquidacion(registro, conceptos)
+        return rx.download(
+            data=liquidaciones_xlsx([liq]),
+            filename=f"liquidacion_{liq.empleado}_{liq.fecha_salida}.xlsx",
         )
