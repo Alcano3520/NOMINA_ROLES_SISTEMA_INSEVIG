@@ -1760,13 +1760,41 @@ _TIPO_POR_CODIGO: dict[str, str] = {cod: tipo for cod, _n, tipo, _c in _CONCEPTO
 _NOMBRE_POR_CODIGO: dict[str, str] = {cod: nom for cod, nom, _t, _c in _CONCEPTOS_DETALLE}
 
 
+# BUG REAL corregido (2026-09-09, encontrado por el otro chat probando
+# editar_ajuste/eliminar_ajuste sobre la cédula 954814380 -- el total pasó
+# de $3.50 a $184.24, una diferencia de $180.75 EXACTA al valor de
+# DECIMA_CUARTA_ANTERIOR de esa liquidación): `_totales_desde_valores`
+# sumaba TODOS los conceptos tipo "ingreso" presentes en
+# liquidaciones_detalle, incluido el décimo ANTERIOR
+# (DEC_TERCERA_ANT/DEC_CUARTA_ANT) -- que es un concepto de referencia/
+# informativo, nunca debe sumarse al total (ver memoria de este proyecto:
+# "decimo_anterior_no_pagado_no_debe_aparecer" -- si no se incluye en el
+# total, no debe ni mostrarse como tal, pero MENOS AÚN sumarse).
+# `procesar_empleado` ya lo excluye correctamente vía
+# `incluir_dec13_anterior`/`incluir_dec14_anterior` (ver su docstring) --
+# pero esta función, al RECALCULAR el total desde los conceptos ya
+# guardados (`editar_valores_liquidacion`,
+# `ajustar_concepto`/`editar_ajuste`/`eliminar_ajuste`), no tenía ese mismo
+# cuidado: cualquier liquidación con un décimo anterior guardado como
+# referencia (viene de un import de Excel histórico, o de un
+# `procesar_empleado` con `incluir_dec13/14_anterior=True`) que después se
+# edita por CUALQUIER concepto quedaba con el total inflado de más.
+_CODIGOS_SOLO_REFERENCIA = frozenset({"DEC_TERCERA_ANT", "DEC_CUARTA_ANT"})
+
+
 def _totales_desde_valores(valores: dict[str, float]) -> dict[str, float]:
     """Recalcula los totales y columnas derivadas de `liquidaciones` a partir de
-    `{concepto_codigo: valor}`. Mismas fórmulas que `_mapear_registro`."""
+    `{concepto_codigo: valor}`. Mismas fórmulas que `_mapear_registro`.
+    El décimo ANTERIOR (`_CODIGOS_SOLO_REFERENCIA`) se excluye de
+    `total_ingresos`/`total_liquido` -- ver corrección arriba -- pero se
+    sigue reportando en `decimo_tercero`/`decimo_cuarto` como referencia."""
     def _s(*cods: str) -> float:
         return round(sum(valores.get(x, 0.0) for x in cods), 2)
 
-    total_ing = round(sum(v for k, v in valores.items() if _TIPO_POR_CODIGO.get(k) == "ingreso"), 2)
+    total_ing = round(sum(
+        v for k, v in valores.items()
+        if _TIPO_POR_CODIGO.get(k) == "ingreso" and k not in _CODIGOS_SOLO_REFERENCIA
+    ), 2)
     total_dsc = round(sum(v for k, v in valores.items() if _TIPO_POR_CODIGO.get(k) == "descuento"), 2)
     return {
         "total_ingresos": total_ing,

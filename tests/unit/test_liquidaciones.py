@@ -741,12 +741,32 @@ def test_totales_desde_valores_recalcula_ingresos_descuentos_y_derivados():
         "SUELDO": 500.0, "VACACIONES": 100.0, "DEC_TERCERA_ANT": 40.0, "DEC_TERCERA_ACT": 45.0,
         "IESS": 60.0, "PREST_COMPANIA": 30.0, "MULTAS": 10.0,
     })
-    assert tot["total_ingresos"] == 685.0        # 500 + 100 + 40 + 45
+    # DEC_TERCERA_ANT (décimo ANTERIOR) NO se suma al total -- es un
+    # concepto de referencia (bug real corregido 2026-09-09, ver
+    # _CODIGOS_SOLO_REFERENCIA): 500 + 100 + 45 (sin el ANT=40).
+    assert tot["total_ingresos"] == 645.0
     assert tot["total_descuentos"] == 100.0      # 60 + 30 + 10
-    assert tot["total_liquido"] == 585.0
-    assert tot["decimo_tercero"] == 85.0
+    assert tot["total_liquido"] == 545.0
+    assert tot["decimo_tercero"] == 85.0         # este campo de referencia SÍ suma anterior+actual
     assert tot["prestamos"] == 30.0 and tot["multas"] == 10.0
     assert tot["otros_descuentos"] == 60.0       # IESS
+
+
+def test_totales_desde_valores_excluye_decimo_cuarto_anterior_negativo():
+    """Regresión del caso real MATICUREMA ANCHUNDIA (cédula 954814380):
+    un DECIMA_CUARTA_ANTERIOR muy negativo (-180.75, dato de origen, ver
+    diferencia documentada en liquidaciones_import.py) NO debe arrastrar
+    el total hacia abajo -- es puramente de referencia."""
+    tot = lq._totales_desde_valores({
+        "SUELDO": 178.68, "SOBT_25": 1.02, "SOBT_50": 60.91, "FONDO_RESERVA": 20.04,
+        "VACACIONES": 10.03, "DEC_TERCERA_ACT": 20.05,
+        "DEC_CUARTA_ANT": -180.75, "DEC_CUARTA_ACT": 14.73,
+        "IESS": 22.74, "ANTICIPOS_OTROS": 25.0, "ANTICIPOS_SURTIDOS": 32.5,
+        "ANTICIPOS_OTROS_L": 10.97, "MULTAS": 30.0,
+    })
+    assert tot["total_ingresos"] == 305.46  # sin el ANT=-180.75
+    assert tot["total_descuentos"] == 121.21
+    assert tot["total_liquido"] == 184.25  # == "TOTAL VALORES A LIQUIDAR" del Excel origen (184.24, redondeo)
 
 
 class _FakeRecTable:
