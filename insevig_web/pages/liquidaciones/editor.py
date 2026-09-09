@@ -183,46 +183,32 @@ def _indicador_ajustes(cod: str) -> rx.Component:
 def _campo_concepto(cod: str, label: str) -> rx.Component:
     total = rx.input(
         value=_S.ed_campos[cod], on_change=lambda v: _S.set_ed_campo(cod, v),
-        size="2", width="120px", type="number", text_align="right",
+        size="2", width="150px", type="number",
     )
     mas = rx.button(
         rx.icon("plus", size=14), size="1", variant="ghost",
         on_click=lambda: _S.abrir_ajuste(cod),
-        title="Ajuste incremental con motivo",
+        title="Ajuste incremental con motivo", flex_shrink="0",
     )
-    etiqueta = rx.text(label, size="2", flex_grow="1", min_width="0")
 
     if cod in _HORAS_KEYS:
         kc, kv = _HORAS_KEYS[cod]
-        controles = rx.flex(
-            rx.vstack(
-                rx.text("cant.", size="1", color_scheme="gray"),
-                rx.input(value=_S.ed_datos[kc], size="1", width="64px", read_only=True,
-                         variant="soft", text_align="right"),
-                spacing="1", align="center",
+        etiqueta = rx.vstack(
+            rx.text(label, size="2"),
+            rx.text(
+                _S.ed_datos[kc] + " h  ×  $" + _S.ed_datos[kv] + " /hora",
+                size="1", color_scheme="gray",
             ),
-            rx.vstack(
-                rx.text("$/hora", size="1", color_scheme="gray"),
-                rx.input(value=_S.ed_datos[kv], size="1", width="76px", read_only=True,
-                         variant="soft", text_align="right"),
-                spacing="1", align="center",
-            ),
-            rx.vstack(
-                rx.text("total", size="1", color_scheme="gray"),
-                total,
-                spacing="1", align="center",
-            ),
-            mas,
-            gap="2", align="end", flex_shrink="0",
+            spacing="0", align="start", flex_grow="1", min_width="0",
         )
     else:
-        controles = rx.flex(total, mas, gap="2", align="center", flex_shrink="0")
+        etiqueta = rx.text(label, size="2", flex_grow="1", min_width="0")
 
     return rx.vstack(
         rx.flex(
-            etiqueta, controles,
-            justify="between", align="center", gap="3", width="100%",
-            padding="6px 8px", border_radius="6px",
+            etiqueta, total, mas,
+            align="center", gap="3", width="100%",
+            padding="5px 8px", border_radius="6px",
             _hover={"background": "var(--gray-3)"},
         ),
         _indicador_ajustes(cod),
@@ -313,7 +299,7 @@ def _totales() -> rx.Component:
 
 def _cabecera() -> rx.Component:
     return rx.flex(
-        rx.heading(_S.ed_datos["nombre"], size="6", flex_grow="1", min_width="0"),
+        rx.heading(_S.ed_datos["nombre"], size="5", flex_grow="1", min_width="0"),
         rx.flex(
             rx.button(
                 rx.icon("refresh-cw", size=15), "Recalcular liquidación",
