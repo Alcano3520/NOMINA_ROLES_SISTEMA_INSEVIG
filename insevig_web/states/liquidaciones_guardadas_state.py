@@ -552,14 +552,18 @@ class LiquidacionesGuardadasState(rx.State):
         yield rx.download(data=data, filename="bot_mrl_liquidaciones.xlsx")
 
     @rx.event
-    def generar_pdf(self, liquidacion_id: str):
-        registro, conceptos = repo.obtener_liquidacion(liquidacion_id)
-        if registro is None:
-            return rx.toast.error("No se encontró esa liquidación.")
-        from core.pdf.liquidacion_individual import liquidacion_pdf
+    async def generar_pdf(self, liquidacion_id: str):
+        def _build():
+            from core.pdf.liquidacion_individual import liquidacion_pdf
 
-        liq = repo.reconstruir_liquidacion(registro, conceptos)
-        data = liquidacion_pdf(liq, es_simulacion=False)
-        return rx.download(
-            data=data, filename=f"liquidacion_{liq.empleado}_{liq.fecha_salida}.pdf"
-        )
+            registro, conceptos = repo.obtener_liquidacion(liquidacion_id)
+            if registro is None:
+                return None
+            liq = repo.reconstruir_liquidacion(registro, conceptos)
+            return liq.empleado, liq.fecha_salida, liquidacion_pdf(liq, es_simulacion=False)
+
+        res = await asyncio.to_thread(_build)
+        if res is None:
+            return rx.toast.error("No se encontró esa liquidación.")
+        emp, fsal, data = res
+        return rx.download(data=data, filename=f"liquidacion_{emp}_{fsal}.pdf")

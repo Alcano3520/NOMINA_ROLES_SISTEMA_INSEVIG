@@ -217,17 +217,30 @@ class EmpleadosState(rx.State):
     def set_grid_filtro_vivo(self, v: str):
         self.grid_filtro_vivo = v
 
+    _GRID_TOPE = 200  # filas renderizadas como máximo (evita saturar el DOM)
+
     @rx.var
     def grid_filtrado(self) -> list[dict]:
         t = self.grid_filtro_vivo.strip().lower()
-        if not t:
-            return self.grid
-        return [
+        base = self.grid if not t else [
             e for e in self.grid
             if t in e["empleado"].lower()
             or t in e["apellidos_nombres"].lower()
             or t in e["cedula"].lower()
         ]
+        return base[: self._GRID_TOPE]
+
+    @rx.var
+    def grid_conteo(self) -> str:
+        t = self.grid_filtro_vivo.strip().lower()
+        n = len(self.grid) if not t else sum(
+            1 for e in self.grid
+            if t in e["empleado"].lower()
+            or t in e["apellidos_nombres"].lower()
+            or t in e["cedula"].lower()
+        )
+        vis = min(n, self._GRID_TOPE)
+        return f"{vis} de {n}" if n > vis else str(n)
 
     @rx.event
     async def set_grid_estado(self, v: str):

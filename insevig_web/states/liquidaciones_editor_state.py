@@ -459,27 +459,39 @@ class LiquidacionesEditorState(rx.State):
             await self.cargar_lista()
 
     @rx.event
-    def generar_pdf(self):
-        registro, conceptos = repo.obtener_liquidacion(self.ed_id)
-        if registro is None:
-            return rx.toast.error("No se encontró esa liquidación.")
-        from core.pdf.liquidacion_individual import liquidacion_pdf
+    async def generar_pdf(self):
+        lid = self.ed_id
 
-        liq = repo.reconstruir_liquidacion(registro, conceptos)
-        return rx.download(
-            data=liquidacion_pdf(liq, es_simulacion=False),
-            filename=f"liquidacion_{liq.empleado}_{liq.fecha_salida}.pdf",
-        )
+        def _build():
+            from core.pdf.liquidacion_individual import liquidacion_pdf
+
+            registro, conceptos = repo.obtener_liquidacion(lid)
+            if registro is None:
+                return None
+            liq = repo.reconstruir_liquidacion(registro, conceptos)
+            return liq.empleado, liq.fecha_salida, liquidacion_pdf(liq, es_simulacion=False)
+
+        res = await asyncio.to_thread(_build)
+        if res is None:
+            return rx.toast.error("No se encontró esa liquidación.")
+        emp, fsal, data = res
+        return rx.download(data=data, filename=f"liquidacion_{emp}_{fsal}.pdf")
 
     @rx.event
-    def generar_excel(self):
-        registro, conceptos = repo.obtener_liquidacion(self.ed_id)
-        if registro is None:
-            return rx.toast.error("No se encontró esa liquidación.")
-        from core.excel.liquidaciones_builders import liquidaciones_xlsx
+    async def generar_excel(self):
+        lid = self.ed_id
 
-        liq = repo.reconstruir_liquidacion(registro, conceptos)
-        return rx.download(
-            data=liquidaciones_xlsx([liq]),
-            filename=f"liquidacion_{liq.empleado}_{liq.fecha_salida}.xlsx",
-        )
+        def _build():
+            from core.excel.liquidaciones_builders import liquidaciones_xlsx
+
+            registro, conceptos = repo.obtener_liquidacion(lid)
+            if registro is None:
+                return None
+            liq = repo.reconstruir_liquidacion(registro, conceptos)
+            return liq.empleado, liq.fecha_salida, liquidaciones_xlsx([liq])
+
+        res = await asyncio.to_thread(_build)
+        if res is None:
+            return rx.toast.error("No se encontró esa liquidación.")
+        emp, fsal, data = res
+        return rx.download(data=data, filename=f"liquidacion_{emp}_{fsal}.xlsx")

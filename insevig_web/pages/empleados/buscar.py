@@ -48,10 +48,13 @@ def _lista() -> rx.Component:
     return card(
         rx.vstack(
             rx.flex(
-                rx.input(
-                    value=_S.grid_texto, on_change=_S.set_grid_texto,
-                    placeholder="Buscar por código, cédula o nombre…",
-                    size="2", flex_grow="1", min_width="0",
+                rx.debounce_input(
+                    rx.input(
+                        value=_S.grid_texto, on_change=_S.set_grid_texto,
+                        placeholder="Buscar por código, cédula o nombre…",
+                        size="2", flex_grow="1", min_width="0",
+                    ),
+                    debounce_timeout=350,
                 ),
                 rx.button(rx.icon("search", size=15), on_click=_S.buscar_grid, size="2"),
                 rx.cond(
@@ -68,12 +71,14 @@ def _lista() -> rx.Component:
                     rx.el.option("Todos", value="TODOS"),
                     value=_S.grid_estado, on_change=_S.set_grid_estado, style=_SELECT,
                 ),
-                rx.input(
-                    value=_S.grid_filtro_vivo, on_change=_S.set_grid_filtro_vivo,
-                    placeholder="Filtrar la lista…", size="2", flex_grow="1", min_width="0",
+                rx.debounce_input(
+                    rx.input(
+                        value=_S.grid_filtro_vivo, on_change=_S.set_grid_filtro_vivo,
+                        placeholder="Filtrar la lista…", size="2", flex_grow="1", min_width="0",
+                    ),
+                    debounce_timeout=250,
                 ),
-                rx.text(_S.grid_filtrado.length().to_string(), size="1",
-                        color_scheme="gray", white_space="nowrap"),
+                rx.text(_S.grid_conteo, size="1", color_scheme="gray", white_space="nowrap"),
                 _arrow("chevrons-left", 0, "primero"),
                 _arrow("chevron-left", -1),
                 _arrow("chevron-right", 1),
