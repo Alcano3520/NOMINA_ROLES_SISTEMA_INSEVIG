@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, scroll_x
 from insevig_web.pages.liquidaciones._nav import subnav
@@ -548,7 +547,7 @@ def guardadas() -> rx.Component:
                 rx.center(rx.spinner(), padding="1rem"),
                 scroll_x(rx.table.root(
                     rx.table.header(rx.table.row(*[
-                        rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                        rx.table.column_header_cell(c)
                         for c in ("", "Cédula", "Nombres", "Lote", "Estado", "Fecha salida",
                                   "Registro", "Total", "Info de pago", "")
                     ])),

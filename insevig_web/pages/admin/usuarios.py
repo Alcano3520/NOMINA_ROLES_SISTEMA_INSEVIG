@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.auth import ROLES
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
@@ -63,7 +62,7 @@ def usuarios() -> rx.Component:
                     rx.table.header(
                         rx.table.row(
                             *[
-                                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                rx.table.column_header_cell(c)
                                 for c in ("Usuario", "Nombre", "Roles", "Activo", "Último acceso", "")
                             ]
                         )

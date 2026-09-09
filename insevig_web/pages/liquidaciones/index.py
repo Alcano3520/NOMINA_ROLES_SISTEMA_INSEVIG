@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x, stat_card
@@ -153,7 +152,7 @@ def _tabla_masivo() -> rx.Component:
             rx.table.root(
                 rx.table.header(
                     rx.table.row(*[
-                        rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                        rx.table.column_header_cell(c)
                         for c in ("Empleado", "Nombre", "Motivo", "Días", "Ingresos", "Descuentos", "A recibir", "Error", "")
                     ])
                 ),
@@ -309,7 +308,7 @@ def _panel_preview_individual() -> rx.Component:
             scroll_x(
                 rx.table.root(
                     rx.table.header(rx.table.row(*[
-                        rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                        rx.table.column_header_cell(c)
                         for c in ("Concepto", "Tipo", "Valor")
                     ])),
                     rx.table.body(

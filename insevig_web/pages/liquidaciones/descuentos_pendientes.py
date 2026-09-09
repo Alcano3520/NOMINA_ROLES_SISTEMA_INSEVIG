@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
 from insevig_web.pages.liquidaciones._nav import subnav
@@ -97,7 +96,7 @@ def descuentos_pendientes() -> rx.Component:
                 scroll_x(
                     rx.table.root(
                         rx.table.header(rx.table.row(*[
-                            rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                            rx.table.column_header_cell(c)
                             for c in ("", "Cédula", "Nombre", "Monto", "Motivo", "Fecha", "Estado")
                         ])),
                         rx.table.body(

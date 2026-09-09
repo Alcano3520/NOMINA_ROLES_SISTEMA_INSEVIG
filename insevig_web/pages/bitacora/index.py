@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
 from insevig_web.states.auth_state import AuthState
@@ -160,7 +159,7 @@ def _tab_agenda() -> rx.Component:
                         rx.table.row(
                             *[
                                 rx.table.column_header_cell(
-                                    lbl, style={"background": theme.PRIMARY, "color": "white"}
+                                    lbl
                                 )
                                 for _k, lbl in [*_COLS, ("", "")]
                             ]
@@ -276,7 +275,7 @@ def _tab_atencion() -> rx.Component:
                                 rx.table.row(
                                     *[
                                         rx.table.column_header_cell(
-                                            c, style={"background": theme.PRIMARY, "color": "white"}
+                                            c
                                         )
                                         for c in ("Atendió", "Empleado", "Cédula", "Motivo",
                                                   "Fecha", "Hora", "Observación", "")
@@ -362,7 +361,7 @@ def _tab_reportes() -> rx.Component:
                             rx.table.row(
                                 *[
                                     rx.table.column_header_cell(
-                                        c, style={"background": theme.PRIMARY, "color": "white"}
+                                        c
                                     )
                                     for c in ("Fecha", "Acción", "Usuario", "Detalle")
                                 ]

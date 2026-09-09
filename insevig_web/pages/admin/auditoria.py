@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, scroll_x
 from insevig_web.registry import MODULES
@@ -71,7 +70,7 @@ def auditoria() -> rx.Component:
                 rx.table.header(
                     rx.table.row(
                         *[
-                            rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                            rx.table.column_header_cell(c)
                             for c in ("Fecha", "Usuario", "Módulo", "Acción", "Objetivo", "Estado")
                         ]
                     )

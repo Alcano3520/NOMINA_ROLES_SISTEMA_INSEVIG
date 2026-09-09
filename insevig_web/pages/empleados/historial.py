@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.employee_search import employee_search
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, scroll_x, stat_card
@@ -27,7 +26,7 @@ def _historial_multi() -> rx.Component:
                     rx.table.root(
                         rx.table.header(
                             rx.table.row(*[
-                                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                rx.table.column_header_cell(c)
                                 for c in ("Período", "Días", "Ingresos", "Egresos", "Neto", "")
                             ])
                         ),
@@ -61,8 +60,8 @@ def _historial_multi() -> rx.Component:
                         rx.table.root(
                             rx.table.header(
                                 rx.table.row(
-                                    rx.table.column_header_cell("Concepto", style={"background": theme.PRIMARY, "color": "white"}),
-                                    rx.table.column_header_cell("Valor", style={"background": theme.PRIMARY, "color": "white"}),
+                                    rx.table.column_header_cell("Concepto"),
+                                    rx.table.column_header_cell("Valor"),
                                 )
                             ),
                             rx.table.body(
@@ -159,10 +158,10 @@ def historial() -> rx.Component:
                                             rx.table.header(
                                                 rx.table.row(
                                                     rx.table.column_header_cell(
-                                                        "Concepto", style={"background": theme.PRIMARY, "color": "white"}
+                                                        "Concepto"
                                                     ),
                                                     rx.table.column_header_cell(
-                                                        "Valor", style={"background": theme.PRIMARY, "color": "white"}
+                                                        "Valor"
                                                     ),
                                                 )
                                             ),

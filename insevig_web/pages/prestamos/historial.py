@@ -70,7 +70,7 @@ def _tabla_movimientos() -> rx.Component:
             rx.table.header(
                 rx.table.row(
                     *[
-                        rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                        rx.table.column_header_cell(c)
                         for c in ("#", "FECHA", "INGRESO ($)", "EGRESO ($)", "NÚMERO",
                                   "OBSERVACIONES", "TIPO", "SALDO ($)")
                     ]

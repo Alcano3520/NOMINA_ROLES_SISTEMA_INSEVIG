@@ -3,7 +3,6 @@ from __future__ import annotations
 import reflex as rx
 
 from core.repos.registrador import TIPOS_TRANSACCION
-from insevig_web import theme
 from insevig_web.components.job_progress import job_progress
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
@@ -47,8 +46,8 @@ def _buscador_empleado() -> rx.Component:
                         lambda e: rx.box(
                             rx.text(f"{e['empleado']} — {e['apellidos_nombres']} ({e['cedula']})", size="1"),
                             on_click=lambda: _S.elegir_emp(e["empleado"], e["apellidos_nombres"]),
-                            padding="4px 6px", cursor="pointer", border_radius="4px",
-                            _hover={"background": "var(--accent-3)"},
+                            padding="8px 10px", cursor="pointer", border_radius="6px",
+                            _hover={"background": "var(--gray-3)"},
                         ),
                     ),
                     spacing="1", width="100%", max_height="180px", overflow_y="auto",
@@ -68,7 +67,7 @@ def _tabla(cols: list[str], filas: rx.Var, fila_fn) -> rx.Component:
     return scroll_x(
         rx.table.root(
             rx.table.header(rx.table.row(*[
-                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                rx.table.column_header_cell(c)
                 for c in cols
             ])),
             rx.table.body(rx.foreach(filas, fila_fn)),
@@ -85,7 +84,7 @@ def _panel_movimientos_emp() -> rx.Component:
         (_S.emp_sel != "") & (_S.emp_movimientos.length() > 0),
         card(
             rx.vstack(
-                rx.heading("Movimientos vigentes de " + _S.emp_nombre, size="2"),
+                rx.heading("Movimientos vigentes de " + _S.emp_nombre, size="3"),
                 _tabla(
                     ["N°", "Tipo", "Fecha", "Valor", "Cuotas"],
                     _S.emp_movimientos,
@@ -110,7 +109,7 @@ def _panel_proyeccion() -> rx.Component:
         card(
             rx.vstack(
                 rx.hstack(
-                    rx.heading("Carga programada del empleado", size="2"),
+                    rx.heading("Carga programada del empleado", size="3"),
                     rx.spacer(),
                     rx.button("Actualizar", on_click=_S.refrescar_proyeccion, size="1", variant="ghost"),
                     width="100%",
@@ -184,7 +183,7 @@ def _tab_prestamo() -> rx.Component:
                         scroll_x(
                             rx.table.root(
                                 rx.table.header(rx.table.row(*[
-                                    rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                    rx.table.column_header_cell(c)
                                     for c in ("Cuota", "Vence", "Valor")
                                 ])),
                                 rx.table.body(
@@ -244,7 +243,7 @@ def _tab_prestamo() -> rx.Component:
                     ),
                 ),
                 _msg(),
-                spacing="3", width="100%",
+                spacing="2", width="100%",
             ),
             width="100%",
         ),
@@ -273,7 +272,7 @@ def _grilla(cabeceras, filas_var, fila_fn) -> rx.Component:
     return scroll_x(
         rx.table.root(
             rx.table.header(rx.table.row(*[
-                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                rx.table.column_header_cell(c)
                 for c in [*cabeceras, ""]
             ])),
             rx.table.body(rx.foreach(filas_var, fila_fn)),
@@ -376,7 +375,7 @@ def _tab_masiva() -> rx.Component:
                     ),
                 ),
                 _msg(),
-                spacing="3", width="100%",
+                spacing="2", width="100%",
             ),
             width="100%",
         ),
@@ -429,7 +428,7 @@ def _tab_consulta() -> rx.Component:
                 rx.cond(
                     _S.detalle_cuotas.length() > 0,
                     rx.vstack(
-                        rx.heading(_S.detalle_titulo, size="2"),
+                        rx.heading(_S.detalle_titulo, size="3"),
                         _tabla(
                             ["Cuota", "Vence", "Valor", "Asentada"],
                             _S.detalle_cuotas,
@@ -456,7 +455,7 @@ def _tab_consulta() -> rx.Component:
                     ),
                 ),
                 _msg(),
-                spacing="3", width="100%",
+                spacing="2", width="100%",
             ),
             width="100%",
         ),
@@ -527,7 +526,7 @@ def _consulta_detallada() -> rx.Component:
                     scroll_x(
                         rx.table.root(
                             rx.table.header(rx.table.row(*[
-                                rx.table.column_header_cell(c, style={"background": theme.PRIMARY, "color": "white"})
+                                rx.table.column_header_cell(c)
                                 for c in ("N°", "Empleado", "Tipo", "Seq", "Vence", "Valor", "Estado", "")
                             ])),
                             rx.table.body(
@@ -614,7 +613,7 @@ def _tab_individual() -> rx.Component:
                 ),
                 rx.cond(_S.ind_preview != "", rx.callout(_S.ind_preview, size="1")),
                 _msg(),
-                spacing="3", width="100%",
+                spacing="2", width="100%",
             ),
             width="100%",
         ),
@@ -887,7 +886,7 @@ def _tab_biess() -> rx.Component:
                     ),
                 ),
                 _msg(),
-                spacing="3", width="100%",
+                spacing="2", width="100%",
             ),
             width="100%",
         ),
