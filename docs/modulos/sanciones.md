@@ -1,9 +1,18 @@
 # Módulo: sanciones (Procesamiento de Sanciones RRHH)
 
-> **C3 (decidido):** `sanciones` es **backend puro**. Frontend = app Flutter
-> `sistema_sanciones_insevig/`. NO se añade `"sanciones"` a `MODULES`/`MODULOS`,
-> NO hay páginas Reflex ni `sanciones_state.py`. Solo `core/repos/sanciones.py` +
-> `core/sanciones/` + builders. Ver `docs/modulos/CAMBIOS_CONTRATO_SANCIONES.md`.
+> **C3 (hecho, 2026-09-09):** `sanciones` es **backend puro**. Frontend = app
+> Flutter `sistema_sanciones_insevig/`. NO se añade `"sanciones"` a
+> `MODULES`/`MODULOS`, NO hay páginas Reflex ni `sanciones_state.py`.
+>
+> Portado (commit `6b630d7`): `core/sanciones/{catalogos,validadores,imagenes}.py`
+> (verbatim) + `core/repos/sanciones.py` (trasplante de `nucleo_modular/sanciones.py`
+> + enriquecimiento de `empleados.py`, adaptado de `requests`/PostgREST a
+> `supabase-py`; cliente inyectable; cédula normalizada en la frontera; auditoría
+> SQLite → `core.audit.registrar_evento`). `core/db/supabase_client.get_client_sanciones()`.
+> 15 tests con cliente falso. **NO portado** (sin consumidor todavía):
+> `reportes.py` (Excel/PDF de sanciones), `usuarios_rrhh` (los usuarios de la app
+> van en el módulo `carga_usuarios`), `local_db.py` (reemplazado por `core.audit`).
+> El worker de sync (Ola 4) no existe aún; estas funciones son su base.
 
 > Estado en el repo Reflex: **NO existe** y, por la **regla #7 del prompt
 > maestro**, `core/repos/sanciones.py` es **solo backend** (para un futuro

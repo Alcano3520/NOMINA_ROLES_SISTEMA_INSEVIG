@@ -1,10 +1,17 @@
 # Módulo: carga_usuarios (Creador Masivo de Usuarios — Supabase Auth)
 
-> Estado en el repo Reflex: **NO existe.** Decisión de producto pendiente:
-> ¿módulo web o utilidad suelta de admin? Opera sobre **Supabase Auth**
-> (`auth/v1/admin/users` + tabla `profiles`) del proyecto **sanciones**
-> (`syxzopyevfuwymmltbwn`), es decir crea/gestiona los **logins de supervisores
-> de la app Flutter**, NO empleados de nómina ni usuarios `usuarios_rrhh`.
+> **Estado (2026-09-09): PORTADO como módulo web (C6).** El usuario confirmó que
+> el proyecto Supabase de sanciones (`syxzopyevfuwymmltbwn`) **sigue vivo** tras la
+> migración. Commit `986e5e7`: `core/repos/usuarios_auth.py` (trasplante de
+> `nucleo_modular/carga_usuarios.py`, Auth Admin API vía SDK + `profiles`, cliente
+> inyectable, SERVICE key solo server-side) + 4 páginas
+> `/carga-usuarios/{individual,listado,reset,masivo}` + `carga_usuarios_state.py` +
+> alta en `registry`/`MODULOS`/`auth` (solo `admin` por defecto) + sidebar "Sistema".
+> **Contraseñas generadas:** se muestran una vez en la tabla de resultados para
+> copiar (`rx.set_clipboard`); **NO** se escriben a archivo ni a la BD (el legado
+> las volcaba a un `.txt`). `core.audit` registra quién creó/reseteó, no el secreto.
+> 11 tests con cliente falso. Opera sobre **Supabase Auth** del proyecto de
+> sanciones — logins de supervisores de la app Flutter, NO empleados de nómina.
 
 ## Qué hace (para el usuario)
 

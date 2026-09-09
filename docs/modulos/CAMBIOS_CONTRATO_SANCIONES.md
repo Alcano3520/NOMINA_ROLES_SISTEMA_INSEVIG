@@ -1,8 +1,12 @@
 # Cambios de contrato — migración sanciones/faltas (C1–C6)
 
-> Estado: **PROPUESTA — pendiente de OK del usuario.** No se mergea nada de aquí
-> sin aprobación explícita (regla de `PROMPT_IMPLEMENTAR_TODO_NOMINA.md` §2 y §9.2
-> + `docs/CONTRATOS.md` → "Cómo se pide un cambio de contrato").
+> Estado: **C1–C6 APLICADOS y aprobados por el usuario (2026-09-09).**
+> Commits: `c2d5dd8` (C1+C3+C5), `d28b5f9` (C4), `047ee6e` (C2 alta módulo faltas),
+> `6b630d7` (sanciones backend), `986e5e7` (C6 alta módulo carga_usuarios).
+> El usuario confirmó que el proyecto Supabase de sanciones **sigue vivo** → C6 activo.
+> Mecanismo de entrega de contraseñas generadas: se muestran una vez en la UI para
+> copiar, **no se descargan a archivo ni se guardan** (el legado las volcaba a un
+> `.txt` — no replicado); la auditoría registra quién creó/reseteó, no el secreto.
 >
 > Todos los cambios se aplican **juntos, en un solo commit**, con sus consumidores
 > y tests. HEAD al preparar esto: `623a000`.
