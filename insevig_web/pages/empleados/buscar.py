@@ -22,24 +22,31 @@ def _fila(e: rx.Var) -> rx.Component:
     seleccionado = _S.edit_empleado == e["empleado"]
     return rx.box(
         rx.flex(
-            rx.badge(e["empleado"], color_scheme="gray", size="1", flex_shrink="0"),
+            rx.center(
+                rx.text(e["apellidos_nombres"].to_string()[0], weight="bold", size="3"),
+                width="40px", height="40px", border_radius="9999px", flex_shrink="0",
+                background=rx.cond(seleccionado, "rgba(255,255,255,.22)", "var(--blue-3)"),
+                color=rx.cond(seleccionado, "white", "var(--blue-11)"),
+            ),
             rx.vstack(
-                rx.text(e["apellidos_nombres"], size="2", weight="bold"),
+                rx.text(e["apellidos_nombres"], size="3", weight="bold"),
                 rx.text(
-                    f"{e['cedula']}  ·  {e['cargo']}  ·  {e['estado']}",
-                    size="1", color_scheme="gray",
+                    f"#{e['empleado']}  ·  {e['cedula']}  ·  {e['estado']}",
+                    size="1",
+                    color=rx.cond(seleccionado, "rgba(255,255,255,.8)", "var(--gray-10)"),
                 ),
-                spacing="0", align="start", min_width="0", flex_grow="1",
+                spacing="1", align="start", min_width="0", flex_grow="1",
             ),
             gap="3", align="center", width="100%",
         ),
         on_click=lambda: _S.abrir_editor(e["empleado"]),
-        padding="10px 12px",
-        border_radius="8px",
+        padding="12px 14px",
+        border_radius="12px",
         cursor="pointer",
-        border_left=rx.cond(seleccionado, f"3px solid {theme.PRIMARY}", "3px solid transparent"),
-        background=rx.cond(seleccionado, "var(--blue-3)", "transparent"),
-        _hover={"background": rx.cond(seleccionado, "var(--blue-3)", "var(--gray-3)")},
+        color=rx.cond(seleccionado, "white", "inherit"),
+        background=rx.cond(seleccionado, theme.PRIMARY, "transparent"),
+        box_shadow=rx.cond(seleccionado, theme.SHADOW_SM, "none"),
+        _hover={"background": rx.cond(seleccionado, theme.PRIMARY, "var(--gray-3)")},
         transition="background 120ms ease",
         width="100%",
     )

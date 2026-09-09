@@ -25,9 +25,14 @@ theme = rx.theme(
     color_mode="light",
     accent_color="blue",
     gray_color="slate",
-    radius="medium",
+    radius="large",
     scaling="100%",
+    panel_background="solid",
 )
+
+# Sombras del sistema de diseño (elevación de tarjetas / paneles).
+SHADOW_SM = "0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.08)"
+SHADOW_MD = "0 2px 4px rgba(15,23,42,.06), 0 4px 12px rgba(15,23,42,.10)"
 
 # El estilo global (fondo claro, modo claro forzado, superficies Radix) vive en
 # `assets/theme.css`: da control fino sobre las clases .rt-* de Radix y evita el
