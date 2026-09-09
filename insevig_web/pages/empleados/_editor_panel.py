@@ -291,7 +291,7 @@ def _tab_secciones(tab: str) -> rx.Component:
 def _vc_campo(nombre: str) -> rx.Component:
     return rx.hstack(
         rx.text(_label(nombre) + ":", size="1", weight="bold", width="12em", flex_shrink="0"),
-        rx.text(_S.edit_campos[nombre].to_string(), size="1"),
+        rx.text(_S.edit_campos[nombre].to(str), size="1"),
         spacing="2", align="start", width="100%",
     )
 

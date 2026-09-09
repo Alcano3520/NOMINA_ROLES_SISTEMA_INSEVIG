@@ -61,7 +61,7 @@ def _accion_fila(f) -> rx.Component:
 
 
 def _fila(f) -> rx.Component:
-    color = f["color_etiqueta"].to_string()
+    color = f["color_etiqueta"].to(str)
     neg = f["total_liquido"].to(float) < 0
     return rx.table.row(
         rx.table.cell(rx.checkbox(

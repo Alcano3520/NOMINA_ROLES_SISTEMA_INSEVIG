@@ -197,13 +197,13 @@ def _panel_individual() -> rx.Component:
             rx.hstack(
                 rx.vstack(
                     rx.text("Fecha de salida:", size="2", weight="bold"),
-                    rx.input(value=_S.ind_fecha, on_change=_S.set_ind_fecha, placeholder="dd/mm/aaaa", width="140px"),
+                    rx.input(value=_S.ind_fecha, on_change=_S.set_ind_fecha, type="date", width="160px"),
                     spacing="1", align_items="start",
                 ),
                 rx.vstack(
                     rx.text("Fecha de ingreso:", size="2", weight="bold"),
                     rx.input(value=_S.ind_fecha_ingreso, on_change=_S.set_ind_fecha_ingreso,
-                             placeholder="opcional — si difiere del sistema", width="220px"),
+                             type="date", width="160px"),
                     spacing="1", align_items="start",
                 ),
                 rx.vstack(

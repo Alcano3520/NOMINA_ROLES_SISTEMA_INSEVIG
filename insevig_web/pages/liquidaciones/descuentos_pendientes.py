@@ -35,7 +35,7 @@ def _form() -> rx.Component:
                 rx.input(value=_S.f_monto, on_change=lambda v: _S.set_campo("monto", v),
                          placeholder="Monto", width="110px", **_INP),
                 rx.input(value=_S.f_fecha, on_change=lambda v: _S.set_campo("fecha", v),
-                         placeholder="Fecha dd-mm-aaaa (opcional)", width="200px", **_INP),
+                         type="date", width="180px", **_INP),
                 spacing="2", wrap="wrap",
             ),
             rx.hstack(
