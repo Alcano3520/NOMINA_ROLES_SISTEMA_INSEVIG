@@ -177,7 +177,7 @@ def _panel_individual() -> rx.Component:
         rx.vstack(
             rx.text("2. Datos del Empleado y Fecha de Salida", weight="bold", size="3"),
             rx.hstack(
-                rx.text("Buscar por:", size="2"),
+                rx.text("Buscar por", size="1", weight="bold", color_scheme="gray"),
                 rx.el.select(
                     rx.el.option("Cédula", value="cedula"),
                     rx.el.option("Código", value="codigo"),
@@ -196,24 +196,24 @@ def _panel_individual() -> rx.Component:
             ),
             rx.hstack(
                 rx.vstack(
-                    rx.text("Fecha de salida:", size="2", weight="bold"),
+                    rx.text("Fecha de salida", size="1", weight="bold", color_scheme="gray"),
                     rx.input(value=_S.ind_fecha, on_change=_S.set_ind_fecha, type="date", width="160px"),
                     spacing="1", align_items="start",
                 ),
                 rx.vstack(
-                    rx.text("Fecha de ingreso:", size="2", weight="bold"),
+                    rx.text("Fecha de ingreso", size="1", weight="bold", color_scheme="gray"),
                     rx.input(value=_S.ind_fecha_ingreso, on_change=_S.set_ind_fecha_ingreso,
                              type="date", width="160px"),
                     spacing="1", align_items="start",
                 ),
                 rx.vstack(
-                    rx.text("Indemnización por despido:", size="2", weight="bold"),
+                    rx.text("Indemnización por despido", size="1", weight="bold", color_scheme="gray"),
                     rx.input(value=_S.ind_indemnizacion, on_change=_S.set_ind_indemnizacion,
                              placeholder="manual — 0 si no aplica", width="180px"),
                     spacing="1", align_items="start",
                 ),
                 rx.vstack(
-                    rx.text("Motivo de salida:", size="2", weight="bold"),
+                    rx.text("Motivo de salida", size="1", weight="bold", color_scheme="gray"),
                     rx.hstack(
                         rx.input(value=_S.ind_motivo, on_change=_S.set_ind_motivo,
                                   placeholder="escriba o elija abajo", width="220px"),
@@ -226,7 +226,7 @@ def _panel_individual() -> rx.Component:
                     ),
                     spacing="1", align_items="start",
                 ),
-                spacing="4", wrap="wrap",
+                spacing="2", wrap="wrap",
             ),
             rx.cond(_S.ind_msg != "", rx.callout(_S.ind_msg, size="1", color_scheme="red")),
             rx.cond(
