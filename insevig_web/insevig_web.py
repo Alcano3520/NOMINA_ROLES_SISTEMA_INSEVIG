@@ -11,7 +11,17 @@ import reflex as rx
 from insevig_web import models  # noqa: F401  (registra tablas en SQLModel.metadata)
 from insevig_web.theme import global_style
 
-app = rx.App(style=global_style, stylesheets=["/theme.css"])
+# `darkreader-lock`: la app tiene su propio modo claro/oscuro (botón sol/luna).
+# Esta meta le dice a la extensión Dark Reader que NO reprocese la página — si
+# no, aplasta las superficies y los acentos del diseño con su gris plano.
+app = rx.App(
+    style=global_style,
+    stylesheets=["/theme.css"],
+    head_components=[
+        rx.el.meta(name="darkreader-lock"),
+        rx.el.meta(name="color-scheme", content="light dark"),
+    ],
+)
 
 # Dev (SQLite): crea las tablas que falten. En prod (Postgres) manda alembic.
 try:
