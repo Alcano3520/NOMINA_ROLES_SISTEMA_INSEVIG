@@ -16,8 +16,8 @@ from insevig_web.states.auth_state import AuthState
     on_load=[AuthState.cargar_sesion, AdminState.cargar_auditoria],
 )
 def auditoria() -> rx.Component:
-    _sel_style = {"padding": "6px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
-                  "background": "#fff"}
+    _sel_style = {"padding": "7px 8px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
+                  "background": "var(--color-panel-solid)", "color": "var(--gray-12)", "fontSize": "14px"}
     return pagina(
         page_heading(
             "Auditoría",

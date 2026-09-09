@@ -11,8 +11,8 @@ from insevig_web.states.auth_state import AuthState
 from insevig_web.states.liquidaciones_state import MOTIVOS_SALIDA, LiquidacionesState
 
 _SEL = {
-    "padding": "6px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
-    "background": "#fff", "color": "#1f2937",
+    "padding": "7px 8px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
+    "background": "var(--color-panel-solid)", "color": "var(--gray-12)", "fontSize": "14px",
 }
 _S = LiquidacionesState
 
