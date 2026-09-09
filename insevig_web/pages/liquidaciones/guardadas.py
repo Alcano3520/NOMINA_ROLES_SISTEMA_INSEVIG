@@ -73,17 +73,20 @@ def _fila(f) -> rx.Component:
         rx.table.cell(f["codigo_lote"]),
         rx.table.cell(_badge_estado(f["estado"])),
         rx.table.cell(f["fecha_salida"]),
-        rx.table.cell(f["created_at"].to_string().split("T")[0]),
+        rx.table.cell(f["created_at"].to(str).split("T")[0]),
         rx.table.cell(
             rx.text("$" + f["total_liquido"].to_string(),
                     color=rx.cond(neg, "var(--red-11)", "inherit"),
                     weight=rx.cond(neg, "bold", "regular")),
         ),
         rx.table.cell(rx.text(
-            rx.cond(f["forma_pago"].to_string() == "", "", f["forma_pago"].to_string())
+            rx.cond(
+                (f["forma_pago"].to(str) == "") | (f["forma_pago"].to(str) == "null"),
+                "", f["forma_pago"].to(str),
+            )
             + rx.cond(
-                (f["comprobante_pago"].to_string() != "") & (f["comprobante_pago"].to_string() != "null"),
-                " · " + f["comprobante_pago"].to_string(), "",
+                (f["comprobante_pago"].to(str) != "") & (f["comprobante_pago"].to(str) != "null"),
+                " · " + f["comprobante_pago"].to(str), "",
             ),
             size="1",
         )),
@@ -248,7 +251,7 @@ def _detalle() -> rx.Component:
                             _S.historial.length() > 0,
                             rx.vstack(
                                 rx.foreach(_S.historial, lambda h: rx.text(
-                                    f'{h["created_at"].to_string().split("T")[0]}  —  {h["estado"]}'
+                                    f'{h["created_at"].to(str).split("T")[0]}  —  {h["estado"]}'
                                     f'  ·  {h["usuario"]}',
                                     size="1",
                                 )),
