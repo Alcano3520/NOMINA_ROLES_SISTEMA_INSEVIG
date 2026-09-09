@@ -34,7 +34,7 @@ _S = LiquidacionesEditorState
 # Tokens locales de esta pantalla (colores del sistema Radix, no nuevos).
 _SURFACE = "var(--gray-2)"
 _LINE = "1px solid var(--gray-5)"
-_RADIUS = "10px"
+_RADIUS = "8px"
 
 
 # ── Panel izquierdo: lista ───────────────────────────────────────────────────
@@ -110,7 +110,7 @@ def _lista() -> rx.Component:
                     padding_right="4px",
                 ),
             ),
-            spacing="4", width="100%", align="start",
+            spacing="3", width="100%", align="start",
         ),
         width="100%",
     )
@@ -228,7 +228,7 @@ def _seccion(titulo: str, campos: list, *, acento: str) -> rx.Component:
             *[_campo_concepto(cod, lbl) for cod, lbl in campos],
             spacing="1", width="100%",
         ),
-        padding="14px 16px",
+        padding="12px",
         border=_LINE,
         border_left=f"3px solid var(--{acento}-8)",
         border_radius=_RADIUS,
@@ -399,9 +399,9 @@ def _formulario() -> rx.Component:
                         _dato("Motivo", "motivo", opciones=_S.ed_motivo_opciones),
                         _dato("Estado", "estado", opciones=ESTADOS),
                         columns=rx.breakpoints(initial="1", sm="2", lg="3"),
-                        spacing="4", width="100%",
+                        spacing="2", width="100%",
                     ),
-                    padding="14px 16px", border=_LINE, border_radius=_RADIUS,
+                    padding="12px", border=_LINE, border_radius=_RADIUS,
                     background=_SURFACE, width="100%",
                 ),
                 _seccion("CONCEPTOS DE REMUNERACIÓN", SEC_REMUNERACION, acento="grass"),
@@ -410,7 +410,7 @@ def _formulario() -> rx.Component:
                 _totales(),
                 _barra_acciones(),
                 _dialogo_ajuste(),
-                spacing="5", width="100%",
+                spacing="3", width="100%",
             ),
             width="100%",
         ),
@@ -432,7 +432,7 @@ def editor() -> rx.Component:
             _lista(),
             _formulario(),
             columns=rx.breakpoints(initial="1", lg="340px minmax(0, 1fr)"),
-            spacing="4", width="100%", align="start",
+            spacing="3", width="100%", align="start",
         ),
         requiere=("liquidaciones", "ver"),
     )

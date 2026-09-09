@@ -12,8 +12,8 @@ from insevig_web import theme
 
 
 def page_heading(titulo: str, subtitulo: str = "") -> rx.Component:
-    """Encabezado de página: barra de acento + título grande + subtítulo, con
-    divisor inferior para separar del contenido."""
+    """Encabezado de página: barra de acento + título + subtítulo, con divisor
+    inferior. Compacto (densidad ERP)."""
     return rx.box(
         rx.hstack(
             rx.box(
@@ -21,29 +21,29 @@ def page_heading(titulo: str, subtitulo: str = "") -> rx.Component:
                 background=theme.PRIMARY, flex_shrink="0",
             ),
             rx.vstack(
-                rx.heading(titulo, size=rx.breakpoints(initial="6", md="8"), weight="bold"),
-                rx.cond(subtitulo != "", rx.text(subtitulo, color_scheme="gray", size="3")),
+                rx.heading(titulo, size=rx.breakpoints(initial="5", md="7"), weight="bold"),
+                rx.cond(subtitulo != "", rx.text(subtitulo, color_scheme="gray", size="2")),
                 spacing="1", align_items="start",
             ),
             spacing="3", align="stretch", width="100%",
         ),
         border_bottom="1px solid var(--gray-4)",
-        padding_bottom="1rem",
-        margin_bottom="1.5rem",
+        padding_bottom="0.6rem",
+        margin_bottom="0.9rem",
         width="100%",
     )
 
 
 def card(*children, **props) -> rx.Component:
-    """Tarjeta con elevación real (borde fino + sombra suave) para que se
-    separe del fondo. Acepta los mismos overrides que `rx.card`."""
+    """Tarjeta con elevación real (borde fino + sombra suave). Acepta los
+    mismos overrides que `rx.card`."""
     base = {
         "border": "1px solid var(--gray-4)",
         "box_shadow": theme.SHADOW_SM,
         "background": "var(--color-panel-solid)",
     }
     base.update(props)
-    return rx.card(*children, size=rx.breakpoints(initial="2", md="3"), **base)
+    return rx.card(*children, size=rx.breakpoints(initial="1", md="2"), **base)
 
 
 def stat_card(titulo: str, descripcion: str, valor: str, icono: str) -> rx.Component:
@@ -51,19 +51,66 @@ def stat_card(titulo: str, descripcion: str, valor: str, icono: str) -> rx.Compo
         rx.vstack(
             rx.hstack(
                 rx.center(
-                    rx.icon(icono, size=20, color="white"),
-                    background=theme.PRIMARY, border_radius="10px",
-                    width="36px", height="36px", flex_shrink="0",
+                    rx.icon(icono, size=18, color="white"),
+                    background=theme.PRIMARY, border_radius="8px",
+                    width="30px", height="30px", flex_shrink="0",
                 ),
                 rx.text(titulo, size="2", weight="bold", color_scheme="gray"),
-                spacing="3", align="center", width="100%",
+                spacing="2", align="center", width="100%",
             ),
-            rx.heading(valor, size="8", weight="bold", color="var(--blue-11)"),
-            rx.text(descripcion, color_scheme="gray", size="2"),
-            spacing="2", align="start", width="100%",
+            rx.heading(valor, size="7", weight="bold", color="var(--blue-11)"),
+            rx.text(descripcion, color_scheme="gray", size="1"),
+            spacing="1", align="start", width="100%",
         ),
         width="100%",
     )
+
+
+# ── Tabla de datos compacta (estilo ERP / Excel) ────────────────────────────
+
+def data_table(cabeceras: list[str], filas: rx.Component, **box_props) -> rx.Component:
+    """`rx.table` con cuadrícula clara y filas compactas (estilo ERP). `filas`
+    es el resultado de un `rx.foreach(...)` que produce `rx.table.row(...)`."""
+    box_props.setdefault("width", "100%")
+    return rx.box(
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    *[
+                        rx.table.column_header_cell(
+                            c, style={
+                                "background": "var(--gray-2)",
+                                "fontWeight": "700",
+                                "fontSize": "12px",
+                                "padding": "8px 12px",
+                                "borderBottom": "1px solid var(--gray-5)",
+                                "whiteSpace": "nowrap",
+                            },
+                        )
+                        for c in cabeceras
+                    ],
+                )
+            ),
+            rx.table.body(filas),
+            variant="surface",
+            size="1",
+            width="100%",
+        ),
+        overflow_x="auto",
+        border="1px solid var(--gray-5)", border_radius="8px",
+        box_shadow=theme.SHADOW_SM,
+        background="var(--color-panel-solid)",
+        **box_props,
+    )
+
+
+def data_cell(*children, **props) -> rx.Component:
+    props.setdefault("style", {}).update({
+        "padding": "6px 12px",
+        "fontSize": "13px",
+        "borderBottom": "1px solid var(--gray-4)",
+    })
+    return rx.table.cell(*children, **props)
 
 
 def primary_button(texto: str, **props) -> rx.Component:

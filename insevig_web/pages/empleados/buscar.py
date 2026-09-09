@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import card, page_heading
+from insevig_web.components.ui import card, data_cell, data_table, page_heading
 from insevig_web.pages.empleados._editor_panel import editor_panel
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
@@ -12,49 +11,32 @@ from insevig_web.states.empleados_state import EmpleadosState
 _S = EmpleadosState
 
 _SELECT = {
-    "padding": "7px 8px", "borderRadius": "6px",
+    "padding": "6px 8px", "borderRadius": "6px",
     "border": "1px solid var(--gray-6)", "background": "var(--color-panel-solid)",
-    "color": "var(--gray-12)", "fontSize": "14px",
+    "color": "var(--gray-12)", "fontSize": "13px",
 }
 
 
 def _fila(e: rx.Var) -> rx.Component:
     seleccionado = _S.edit_empleado == e["empleado"]
-    return rx.box(
-        rx.flex(
-            rx.center(
-                rx.text(e["apellidos_nombres"].to(str)[0], weight="bold", size="3"),
-                width="40px", height="40px", border_radius="9999px", flex_shrink="0",
-                background=rx.cond(seleccionado, "rgba(255,255,255,.22)", "var(--blue-3)"),
-                color=rx.cond(seleccionado, "white", "var(--blue-11)"),
-            ),
-            rx.vstack(
-                rx.text(e["apellidos_nombres"], size="3", weight="bold"),
-                rx.text(
-                    f"#{e['empleado']}  ·  {e['cedula']}  ·  {e['estado']}",
-                    size="1",
-                    color=rx.cond(seleccionado, "rgba(255,255,255,.8)", "var(--gray-10)"),
-                ),
-                spacing="1", align="start", min_width="0", flex_grow="1",
-            ),
-            gap="3", align="center", width="100%",
-        ),
+    return rx.table.row(
+        data_cell(rx.text("#" + e["empleado"].to_string(), size="1", weight="bold",
+                          color_scheme="gray")),
+        data_cell(rx.text(e["apellidos_nombres"], weight="medium")),
+        data_cell(e["cedula"]),
+        data_cell(rx.text(e["cargo"], color_scheme="gray")),
+        data_cell(rx.badge(e["estado"], size="1",
+                           color_scheme=rx.cond(e["estado"] == "ACT", "green", "gray"))),
         on_click=lambda: _S.abrir_editor(e["empleado"]),
-        padding="12px 14px",
-        border_radius="12px",
-        cursor="pointer",
-        color=rx.cond(seleccionado, "white", "inherit"),
-        background=rx.cond(seleccionado, theme.PRIMARY, "transparent"),
-        box_shadow=rx.cond(seleccionado, theme.SHADOW_SM, "none"),
-        _hover={"background": rx.cond(seleccionado, theme.PRIMARY, "var(--gray-3)")},
-        transition="background 120ms ease",
-        width="100%",
+        style={"cursor": "pointer"},
+        background=rx.cond(seleccionado, "var(--blue-3)", "transparent"),
+        _hover={"background": rx.cond(seleccionado, "var(--blue-3)", "var(--gray-2)")},
     )
 
 
 def _arrow(icono: str, delta: int, extremo: str = "") -> rx.Component:
     return rx.button(
-        rx.icon(icono, size=15),
+        rx.icon(icono, size=14),
         on_click=lambda: _S.ir_a_indice(delta, extremo),
         variant="soft", size="1",
     )
@@ -88,29 +70,26 @@ def _lista() -> rx.Component:
                     value=_S.grid_filtro_vivo, on_change=_S.set_grid_filtro_vivo,
                     placeholder="Filtrar la lista…", size="2", flex_grow="1", min_width="0",
                 ),
-                gap="2", align="center", width="100%", wrap="wrap",
-            ),
-            rx.flex(
-                rx.text(_S.grid_filtrado.length().to_string() + " empleados",
-                        size="1", color_scheme="gray"),
-                rx.spacer(),
+                rx.text(_S.grid_filtrado.length().to_string(), size="1",
+                        color_scheme="gray", white_space="nowrap"),
                 _arrow("chevrons-left", 0, "primero"),
                 _arrow("chevron-left", -1),
                 _arrow("chevron-right", 1),
                 _arrow("chevrons-right", 0, "ultimo"),
-                gap="1", align="center", width="100%",
+                gap="2", align="center", width="100%", wrap="wrap",
             ),
-            rx.divider(),
             rx.cond(
                 _S.grid_cargando,
-                rx.center(rx.spinner(), padding="2rem", width="100%"),
-                rx.vstack(
-                    rx.foreach(_S.grid_filtrado, _fila),
-                    spacing="1", width="100%", max_height="60vh", overflow_y="auto",
-                    padding_right="4px",
+                rx.center(rx.spinner(), padding="1.5rem", width="100%"),
+                rx.box(
+                    data_table(
+                        ["Código", "Empleado", "Cédula", "Cargo", "Estado"],
+                        rx.foreach(_S.grid_filtrado, _fila),
+                    ),
+                    max_height="62vh", overflow_y="auto", width="100%",
                 ),
             ),
-            spacing="3", width="100%", align="start",
+            spacing="2", width="100%", align="start",
         ),
         width="100%",
     )
@@ -127,8 +106,8 @@ def buscar() -> rx.Component:
         rx.grid(
             _lista(),
             card(editor_panel(), width="100%"),
-            columns=rx.breakpoints(initial="1", lg="minmax(340px, 400px) minmax(0, 1fr)"),
-            spacing="4", width="100%", align_items="start",
+            columns=rx.breakpoints(initial="1", lg="minmax(360px, 460px) minmax(0, 1fr)"),
+            spacing="3", width="100%", align_items="start",
         ),
         requiere=("empleados", "ver"),
     )

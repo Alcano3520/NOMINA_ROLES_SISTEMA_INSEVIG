@@ -224,7 +224,7 @@ def _foto_y_documentos() -> rx.Component:
                 flex_grow="1",
                 min_width="0",
             ),
-            spacing="4",
+            spacing="3",
             align="start",
             width="100%",
             wrap="wrap",
@@ -259,21 +259,21 @@ def _subseccion(titulo: str, campos: tuple[str, ...]) -> rx.Component:
     extra = [_fdr_checkbox()] if titulo == "Parámetros de nómina" else []
     return rx.box(
         rx.hstack(
-            rx.box(width="8px", height="8px", border_radius="9999px",
+            rx.box(width="7px", height="7px", border_radius="9999px",
                    background="var(--blue-9)", flex_shrink="0"),
-            rx.text(titulo.upper(), size="2", weight="bold", letter_spacing="0.04em"),
-            spacing="2", align="center", margin_bottom="10px",
+            rx.text(titulo.upper(), size="1", weight="bold", letter_spacing="0.05em"),
+            spacing="2", align="center", margin_bottom="8px",
         ),
         rx.grid(
             *[_campo(c) for c in campos],
             *extra,
             columns=rx.breakpoints(initial="1", sm="2", lg="3"),
-            spacing="4",
+            spacing="2",
             width="100%",
         ),
         border="1px solid var(--gray-5)",
-        border_radius="10px",
-        padding="16px 18px",
+        border_radius="8px",
+        padding="12px",
         width="100%",
         background="var(--gray-2)",
     )
@@ -282,9 +282,9 @@ def _subseccion(titulo: str, campos: tuple[str, ...]) -> rx.Component:
 def _tab_secciones(tab: str) -> rx.Component:
     return rx.vstack(
         *[_subseccion(tit, campos) for tit, campos in SECCIONES[tab]],
-        spacing="4",
+        spacing="2",
         width="100%",
-        padding_y="4",
+        padding_y="2",
     )
 
 
@@ -583,7 +583,7 @@ def editor_panel() -> rx.Component:
                         width="100%",
                     ),
                 ),
-                spacing="4",
+                spacing="3",
                 width="100%",
             ),
         ),
