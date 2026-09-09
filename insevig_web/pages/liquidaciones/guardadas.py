@@ -23,7 +23,8 @@ from insevig_web.states.liquidaciones_guardadas_state import (
 
 _S = LiquidacionesGuardadasState
 _SEL = {
-    "padding": "6px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
+    "padding": "6px 8px", "borderRadius": "6px", "border": "1px solid var(--gray-6)",
+    "background": "var(--color-panel-solid)", "color": "var(--gray-12)", "fontSize": "13px",
 }
 _ESTADO_COLOR = (
     ("generada", "blue"), ("aprobado", "cyan"), ("registrado_mrl", "cyan"),
@@ -148,27 +149,27 @@ def _detalle() -> rx.Component:
         _S.detalle_id != "",
         card(
             rx.vstack(
-                rx.hstack(
+                rx.flex(
                     rx.vstack(
                         rx.heading(
                             f'{_S.detalle["empleado_apellidos"]} {_S.detalle["empleado_nombres"]}',
-                            size="4",
+                            size="5",
                         ),
                         rx.text(
                             f'{_S.detalle["empleado_cedula"]}  ·  lote '
                             f'{_S.detalle["codigo_lote"]}  ·  salida {_S.detalle["fecha_salida"]}',
                             size="1", color_scheme="gray",
                         ),
-                        spacing="0", align="start",
+                        spacing="1", align="start", flex_grow="1", min_width="0",
                     ),
-                    rx.spacer(),
                     rx.vstack(
                         rx.heading(f'${_S.detalle["total_liquido"]}', size="6"),
                         _badge_estado(_S.detalle["estado"]),
-                        spacing="1", align="end",
+                        spacing="1", align="end", flex_shrink="0",
                     ),
-                    rx.button("Cerrar", on_click=_S.cerrar_detalle, variant="soft", size="1"),
-                    width="100%", align="start",
+                    rx.button(rx.icon("x", size=14), on_click=_S.cerrar_detalle,
+                              variant="soft", size="1", color_scheme="gray"),
+                    justify="between", align="start", gap="3", width="100%", wrap="wrap",
                 ),
                 rx.cond(_S.detalle_msg != "", rx.callout(_S.detalle_msg, color_scheme="red", size="1")),
                 rx.cond(
@@ -555,7 +556,7 @@ def guardadas() -> rx.Component:
                     variant="surface", size="1", width="100%",
                 )),
             ),
-            spacing="4", width="100%",
+            spacing="3", width="100%",
         ),
         requiere=("liquidaciones", "ver"),
     )
