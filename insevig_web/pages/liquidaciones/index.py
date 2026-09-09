@@ -59,6 +59,31 @@ def _selector_formato() -> rx.Component:
     )
 
 
+def _valores_por_defecto() -> rx.Component:
+    return card(
+        rx.vstack(
+            rx.text("4. Valores por Defecto (se aplican si el rubro es 0)",
+                    weight="bold", size="3", color_scheme="amber"),
+            rx.hstack(
+                rx.text("Multas:", size="2"),
+                rx.input(value=_S.def_multas, on_change=_S.set_def_multas,
+                         type="number", size="2", width="90px"),
+                rx.text("Antic. Otros:", size="2"),
+                rx.input(value=_S.def_antic_otros, on_change=_S.set_def_antic_otros,
+                         type="number", size="2", width="90px"),
+                spacing="3", align="center", wrap="wrap",
+            ),
+            rx.text(
+                "Si el empleado tiene 0 en estos rubros, se pone el valor indicado. "
+                "Poné 0 en ambos para no aplicar ningún valor por defecto.",
+                size="1", color_scheme="gray",
+            ),
+            spacing="2", width="100%",
+        ),
+        width="100%",
+    )
+
+
 def _panel_masivo() -> rx.Component:
     return card(
         rx.vstack(
@@ -332,6 +357,7 @@ def index() -> rx.Component:
             _resumen(),
             _selector_formato(),
             rx.cond(_S.formato == "MASIVO", _panel_masivo(), _panel_individual()),
+            _valores_por_defecto(),
             rx.cond(_S.formato == "MASIVO", _tabla_masivo()),
             rx.cond(
                 _S.job > 0,

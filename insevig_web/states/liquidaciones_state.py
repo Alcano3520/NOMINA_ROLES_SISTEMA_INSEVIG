@@ -56,6 +56,27 @@ class LiquidacionesState(rx.State):
     # un solo empleado con vista previa) — paridad con el selector del `.pyw`.
     formato: str = "MASIVO"
 
+    # "4. Valores por Defecto (se aplican si el rubro es 0)" del `.pyw`.
+    # Si el empleado tiene 0 en multas / anticipos otros, se pone este valor.
+    def_multas: str = "30"
+    def_antic_otros: str = "25"
+
+    @rx.event
+    def set_def_multas(self, v: str):
+        self.def_multas = v
+
+    @rx.event
+    def set_def_antic_otros(self, v: str):
+        self.def_antic_otros = v
+
+    def _defaults(self) -> tuple[float, float]:
+        def _n(s: str) -> float:
+            try:
+                return round(float(str(s).replace(",", ".").strip() or 0), 2)
+            except ValueError:
+                return 0.0
+        return _n(self.def_multas), _n(self.def_antic_otros)
+
     # "RESUMEN DE LIQUIDACIONES GUARDADAS" (4 tarjetas por estado).
     resumen: dict[str, int] = {}
 
@@ -238,6 +259,8 @@ class LiquidacionesState(rx.State):
                 self.ind_msg = "Periodo para calcular horas: use AAAA-MM."
                 return
 
+        dm, da = self._defaults()
+
         def _run():
             return repo.procesar_empleado(
                 cedula, fecha, motivo, fuente, cfg, fecha_ing,
@@ -246,6 +269,7 @@ class LiquidacionesState(rx.State):
                 usar_valores_reales_mes_actual=usar_reales,
                 incluir_dec13_anterior=dec13, incluir_dec14_anterior=dec14,
                 incluir_sueldo=incl_sueldo, usar_ingresos_reales_desahucio=des_reales,
+                default_multas=dm, default_antic_otros=da,
             )
 
         liq = await asyncio.to_thread(_run)
@@ -321,9 +345,10 @@ class LiquidacionesState(rx.State):
         from core.parametros import config_liquidacion
         cfg = config_liquidacion(self.region)
         texto = self.entrada
+        dm, da = self._defaults()
 
         def _run():
-            return repo.procesar_lote(texto, fuente, cfg)
+            return repo.procesar_lote(texto, fuente, cfg, default_multas=dm, default_antic_otros=da)
 
         liqs = await asyncio.to_thread(_run)
         self._liqs = liqs
@@ -394,6 +419,7 @@ class LiquidacionesState(rx.State):
             return rx.toast.error("Sin permiso.")
         fuente = await self._fuente()
         texto, region, usuario = self.entrada, self.region, auth.username
+        dm, da = self._defaults()
 
         def _fn(ctx):
             from core import storage
@@ -402,7 +428,7 @@ class LiquidacionesState(rx.State):
             ctx.progreso(0, 1, "Calculando liquidaciones…")
             from core.parametros import config_liquidacion
             cfg = config_liquidacion(region)
-            liqs = repo.procesar_lote(texto, fuente, cfg)
+            liqs = repo.procesar_lote(texto, fuente, cfg, default_multas=dm, default_antic_otros=da)
             data = liquidaciones_xlsx(liqs)
             ruta = storage.guardar(ctx.job_id, "LIQUIDACIONES.xlsx", data)
             ctx.set_resultado(str(ruta))
