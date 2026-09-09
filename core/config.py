@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     # ── Supabase (solo lectura) ──────────────────────────────────────────────
     supabase_url: str = ""
     supabase_key: str = ""
+    # service key del proyecto de nómina/empleados (buzcapcwmksasrtjofae).
+    # SOLO server-side (core/). Vacío = flujos que la requieren, deshabilitados.
+    supabase_service_key: str = ""
+
+    # ── Supabase — proyecto SANCIONES (syxzopyevfuwymmltbwn) ─────────────────
+    # Backend puro (core/repos/sanciones.py). Sin estas vars, las funciones de
+    # red reciben 401 al ejecutarse; el import nunca falla.
+    supabase_sanciones_url: str = ""
+    supabase_sanciones_anon_key: str = ""
+    supabase_sanciones_service_key: str = ""  # SOLO server-side
 
     # ── Postgres de la app ───────────────────────────────────────────────────
     app_db_url: str = "sqlite:///./var/insevig_app.db"
