@@ -26,7 +26,7 @@ _SECCIONES: list[tuple[str, tuple[str, ...]]] = [
     ("Personal", ("empleados", "observaciones", "faltas", "vacaciones", "prestamos")),
     ("Nómina", ("roles", "reportes", "registrador")),
     ("Liquidaciones", ("liquidaciones", "bitacora")),
-    ("Sistema", ("admin",)),
+    ("Sistema", ("admin", "carga_usuarios")),
 ]
 
 

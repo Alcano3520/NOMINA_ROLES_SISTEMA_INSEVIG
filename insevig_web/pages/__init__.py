@@ -17,6 +17,7 @@ from insevig_web.pages import (  # noqa: F401, I001
     envio,
     registrador,
     faltas,
+    carga_usuarios,
     admin,
     bitacora,
     liquidaciones,

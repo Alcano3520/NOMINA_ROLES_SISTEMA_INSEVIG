@@ -88,6 +88,13 @@ MODULES: list[ModuleSpec] = [
         [NavItem("Gozadas y pagadas", "/vacaciones", "ver")],
     ),
     ModuleSpec(
+        "carga_usuarios", "Usuarios de la app (sanciones)", "user-plus",
+        [NavItem("Usuario individual", "/carga-usuarios/individual", "crear"),
+         NavItem("Ver usuarios", "/carga-usuarios/listado"),
+         NavItem("Resetear contraseñas", "/carga-usuarios/reset", "editar"),
+         NavItem("Carga masiva", "/carga-usuarios/masivo", "cargar_masivo")],
+    ),
+    ModuleSpec(
         "admin", "Administración", "settings",
         [NavItem("Usuarios", "/admin/usuarios"),
          NavItem("Roles y permisos", "/admin/roles"),
