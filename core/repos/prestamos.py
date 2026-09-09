@@ -73,19 +73,29 @@ def saldos(fuente: str) -> list[SaldoPrestamo]:
 
 def _saldos_sqlserver() -> list[SaldoPrestamo]:
     flt = get_settings().sqlserver_filter
-    filas = sqlserver.filas(
-        f"""SELECT i.EMPLEADO,
-                   RTRIM(e.APELLIDOS) + ' ' + RTRIM(e.NOMBRES) AS NOMBRE,
-                   e.CEDULA,
-                   ISNULL(e.SITUACION, '') AS SITUACION,
-                   ISNULL(SUM(i.VALOR), 0) AS SALDO
-            FROM [insevig].[dbo].[RPINGDES] i
-            LEFT JOIN [insevig].[dbo].[RPEMPLEA] e ON e.EMPLEADO = i.EMPLEADO
-            WHERE i.CLASE = {CLASE_PRESTAMO} AND {flt.replace('CODEMP', 'i.CODEMP').replace('CODSUC', 'i.CODSUC')}
-            GROUP BY i.EMPLEADO, RTRIM(e.APELLIDOS) + ' ' + RTRIM(e.NOMBRES), e.CEDULA, ISNULL(e.SITUACION, '')
-            HAVING ISNULL(SUM(i.VALOR), 0) <> 0
-            ORDER BY SALDO DESC"""
-    )
+    wf = flt.replace("CODEMP", "i.CODEMP").replace("CODSUC", "i.CODSUC")
+    # RPEMPLEA.SITUACION no existe en todos los servidores (el .pyw también hace
+    # este fallback). Se intenta con la columna y, si falla, se repite sin ella.
+    sit_sel, sit_grp = "ISNULL(e.SITUACION, '') AS SITUACION,", ", ISNULL(e.SITUACION, '')"
+    for sel, grp in ((sit_sel, sit_grp), ("", "")):
+        try:
+            filas = sqlserver.filas(
+                f"""SELECT i.EMPLEADO,
+                           RTRIM(e.APELLIDOS) + ' ' + RTRIM(e.NOMBRES) AS NOMBRE,
+                           e.CEDULA,
+                           {sel}
+                           ISNULL(SUM(i.VALOR), 0) AS SALDO
+                    FROM [insevig].[dbo].[RPINGDES] i
+                    LEFT JOIN [insevig].[dbo].[RPEMPLEA] e ON e.EMPLEADO = i.EMPLEADO
+                    WHERE i.CLASE = {CLASE_PRESTAMO} AND {wf}
+                    GROUP BY i.EMPLEADO, RTRIM(e.APELLIDOS) + ' ' + RTRIM(e.NOMBRES), e.CEDULA{grp}
+                    HAVING ISNULL(SUM(i.VALOR), 0) <> 0
+                    ORDER BY SALDO DESC"""
+            )
+            break
+        except Exception:  # noqa: BLE001  — columna SITUACION ausente
+            if not sel:
+                raise
     return [
         SaldoPrestamo(
             empleado=str(r["EMPLEADO"]).strip(),
@@ -111,14 +121,19 @@ def _saldos_supabase() -> list[SaldoPrestamo]:
     for row in r.data or []:
         cod = str(row["empleado"]).strip()
         por_emp[cod] = por_emp.get(cod, 0.0) + a_float(row.get("valor"))
-    emps = {
-        str(x["empleado"]).strip(): x
-        for x in (
+    try:
+        emp_rows = (
             sb.table("rpemplea").select("empleado,apellidos,nombres,cedula,situacion")
             .eq("codemp", "10").execute().data
             or []
         )
-    }
+    except Exception:  # noqa: BLE001  — la columna situacion puede no estar en el espejo
+        emp_rows = (
+            sb.table("rpemplea").select("empleado,apellidos,nombres,cedula")
+            .eq("codemp", "10").execute().data
+            or []
+        )
+    emps = {str(x["empleado"]).strip(): x for x in emp_rows}
     out = []
     for cod, saldo in por_emp.items():
         if round(saldo, 2) == 0:
