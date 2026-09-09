@@ -12,9 +12,16 @@ _S = EmpleadosState
 _COLS = ("Código", "Apellidos", "Nombres", "Cédula", "Cargo", "Departamento", "Sueldo", "Teléfono", "Email", "Estado")
 
 
+_SELECT = {
+    "padding": "7px 8px", "borderRadius": "6px", "width": "100%",
+    "border": "1px solid var(--gray-6)", "background": "var(--color-panel-solid)",
+    "color": "var(--gray-12)", "fontSize": "14px",
+}
+
+
 def _crit(etq: str, campo: str, placeholder: str = "") -> rx.Component:
     return rx.vstack(
-        rx.text(etq, size="1", weight="bold"),
+        rx.text(etq, size="1", weight="bold", color_scheme="gray"),
         rx.input(
             value=getattr(_S, f"av_{campo}"),
             on_change=lambda v: _S.set_av(campo, v),
@@ -38,7 +45,7 @@ def avanzada() -> rx.Component:
                         _crit("Nombres", "nombres", "parcial"),
                         _crit("Cédula", "cedula", "exacta"),
                         rx.vstack(
-                            rx.text("Estado", size="1", weight="bold"),
+                            rx.text("Estado", size="1", weight="bold", color_scheme="gray"),
                             rx.el.select(
                                 rx.el.option("Todos", value=""),
                                 rx.el.option("Activo", value="ACTIVO"),
@@ -46,15 +53,14 @@ def avanzada() -> rx.Component:
                                 rx.el.option("Suspendido", value="SUSPENDIDO"),
                                 value=_S.av_estado,
                                 on_change=lambda v: _S.set_av("estado", v),
-                                style={"padding": "6px", "borderRadius": "6px",
-                                       "border": "1px solid var(--gray-6)", "background": "#fff"},
+                                style=_SELECT,
                             ),
                             spacing="1",
                         ),
                         _crit("Departamento", "depto", "código"),
                         _crit("Cargo", "cargo", "código"),
                         columns=rx.breakpoints(initial="1", sm="2", lg="3"),
-                        spacing="3",
+                        spacing="4",
                         width="100%",
                     ),
                     rx.hstack(

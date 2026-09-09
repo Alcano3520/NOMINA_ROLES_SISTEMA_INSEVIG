@@ -24,8 +24,9 @@ from insevig_web.states.empleados_state import EmpleadosState
 _S = EmpleadosState
 
 _SELECT_STYLE = {
-    "width": "100%", "padding": "6px", "borderRadius": "6px",
-    "border": "1px solid var(--gray-6)", "background": "#ffffff", "color": "#1f2937",
+    "width": "100%", "padding": "7px 8px", "borderRadius": "6px",
+    "border": "1px solid var(--gray-6)", "background": "var(--color-panel-solid)",
+    "color": "var(--gray-12)", "fontSize": "14px",
 }
 
 
@@ -47,7 +48,7 @@ def _campo(nombre: str) -> rx.Component:
                 on_change=lambda _v: _S.toggle_campo(nombre),
                 disabled=_bloqueado(),
             ),
-            rx.text(_label(nombre), size="1"),
+            rx.text(_label(nombre), size="2"),
             spacing="2",
             align="center",
             width="100%",
@@ -91,7 +92,7 @@ def _campo(nombre: str) -> rx.Component:
             disabled=_bloqueado(),
         )
     return rx.vstack(
-        rx.text(_label(nombre), size="1", weight="bold"),
+        rx.text(_label(nombre), size="1", weight="bold", color_scheme="gray"),
         control,
         spacing="1",
         width="100%",
@@ -200,26 +201,28 @@ def _foto_y_documentos() -> rx.Component:
                 align="center",
             ),
             rx.vstack(
-                rx.text("Documentos", weight="bold", size="2"),
+                rx.text("Documentos", weight="bold", size="3"),
                 rx.text("Se generan con los datos de la ficha.", size="1", color_scheme="gray"),
                 rx.grid(
                     *[
                         rx.button(
-                            etq,
+                            rx.icon("file-text", size=14), etq,
                             on_click=lambda tipo=tipo: _S.generar_documento(tipo),
-                            variant="soft",
-                            size="1",
+                            variant="soft", size="2", justify="start",
                         )
                         for tipo, etq in docs
                     ],
-                    rx.button("Imprimir ficha", on_click=_S.imprimir_ficha, variant="soft", size="1"),
-                    columns="2",
+                    rx.button(rx.icon("printer", size=14), "Imprimir ficha",
+                              on_click=_S.imprimir_ficha, variant="soft", size="2", justify="start"),
+                    columns=rx.breakpoints(initial="1", sm="2"),
                     spacing="2",
                     width="100%",
                 ),
-                spacing="1",
+                spacing="2",
                 align="start",
                 width="100%",
+                flex_grow="1",
+                min_width="0",
             ),
             spacing="4",
             align="start",
@@ -255,29 +258,33 @@ def _subseccion(titulo: str, campos: tuple[str, ...]) -> rx.Component:
     """Un recuadro con título (como los LabelFrame del sistema anterior)."""
     extra = [_fdr_checkbox()] if titulo == "Parámetros de nómina" else []
     return rx.box(
-        rx.text(titulo.upper(), size="1", weight="bold", color_scheme="blue", letter_spacing="0.04em"),
-        rx.divider(margin_y="6px"),
+        rx.hstack(
+            rx.box(width="8px", height="8px", border_radius="9999px",
+                   background="var(--blue-9)", flex_shrink="0"),
+            rx.text(titulo.upper(), size="2", weight="bold", letter_spacing="0.04em"),
+            spacing="2", align="center", margin_bottom="10px",
+        ),
         rx.grid(
             *[_campo(c) for c in campos],
             *extra,
             columns=rx.breakpoints(initial="1", sm="2", lg="3"),
-            spacing="3",
+            spacing="4",
             width="100%",
         ),
         border="1px solid var(--gray-5)",
-        border_radius="8px",
-        padding="12px 14px",
+        border_radius="10px",
+        padding="16px 18px",
         width="100%",
-        background="var(--gray-1)",
+        background="var(--gray-2)",
     )
 
 
 def _tab_secciones(tab: str) -> rx.Component:
     return rx.vstack(
         *[_subseccion(tit, campos) for tit, campos in SECCIONES[tab]],
-        spacing="3",
+        spacing="4",
         width="100%",
-        padding_y="3",
+        padding_y="4",
     )
 
 
@@ -399,33 +406,36 @@ def editor_panel() -> rx.Component:
             _S.cargando_editor,
             rx.center(rx.spinner(size="3"), padding="3rem", width="100%"),
             rx.vstack(
-                rx.hstack(
+                rx.flex(
                     rx.heading(
                         rx.cond(_S.es_nuevo, "Nuevo empleado", _S.nombre_editor),
-                        size="4",
+                        size="5", flex_grow="1", min_width="0",
                     ),
-                    rx.spacer(),
-                    rx.cond(
-                        _S.es_nuevo,
-                        rx.fragment(),
+                    rx.flex(
                         rx.cond(
-                            AuthState.permisos_flat.contains("empleados:editar"),
-                            rx.button(
-                                rx.cond(_S.modo_edicion, "Bloquear", "Modificar"),
-                                on_click=_S.toggle_modo_edicion,
-                                color_scheme=rx.cond(_S.modo_edicion, "amber", "blue"),
-                                size="2",
+                            _S.es_nuevo,
+                            rx.fragment(),
+                            rx.cond(
+                                AuthState.permisos_flat.contains("empleados:editar"),
+                                rx.button(
+                                    rx.icon(rx.cond(_S.modo_edicion, "lock", "pencil"), size=14),
+                                    rx.cond(_S.modo_edicion, "Bloquear", "Modificar"),
+                                    on_click=_S.toggle_modo_edicion,
+                                    color_scheme=rx.cond(_S.modo_edicion, "amber", "blue"),
+                                    size="2",
+                                ),
                             ),
                         ),
+                        rx.cond(
+                            ~_S.es_nuevo,
+                            rx.button("Vista completa", on_click=_S.abrir_vista_completa,
+                                      variant="soft", size="2"),
+                        ),
+                        rx.button(rx.icon("x", size=15), on_click=_S.cerrar_editor,
+                                  variant="soft", size="2", color_scheme="gray"),
+                        gap="2", align="center", flex_shrink="0", wrap="wrap",
                     ),
-                    rx.cond(
-                        ~_S.es_nuevo,
-                        rx.button("Vista completa", on_click=_S.abrir_vista_completa,
-                                  variant="soft", size="2"),
-                    ),
-                    rx.button("Cerrar", on_click=_S.cerrar_editor, variant="soft", size="2"),
-                    width="100%",
-                    align="center",
+                    justify="between", align="center", gap="3", width="100%", wrap="wrap",
                 ),
                 _vista_completa(),
                 rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
@@ -573,13 +583,18 @@ def editor_panel() -> rx.Component:
                         width="100%",
                     ),
                 ),
-                spacing="3",
+                spacing="4",
                 width="100%",
             ),
         ),
         rx.center(
-            rx.text("Selecciona un empleado de la lista para ver su ficha.", color_scheme="gray"),
-            padding="3rem",
-            width="100%",
+            rx.vstack(
+                rx.icon("user", size=40, color="var(--gray-8)"),
+                rx.heading("Ninguna ficha abierta", size="4", color_scheme="gray"),
+                rx.text("Elegí un empleado de la lista para ver y editar su ficha.",
+                        size="2", color_scheme="gray", text_align="center"),
+                spacing="3", align="center", max_width="24em",
+            ),
+            padding="3rem", width="100%", min_height="280px",
         ),
     )
