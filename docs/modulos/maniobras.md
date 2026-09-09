@@ -1,5 +1,17 @@
 # Módulo: maniobras (Registro de Maniobras / Multas)
 
+> **FASE -1 — VEREDICTO (2026-09-09): CERRADO SIN TRABAJO.**
+> `core/repos/registrador.py` ya cubre CLASE 110 (MANIOBRAS) y 203 (MULTAS):
+> están en `CLASES_SIMPLIFICADAS`; `insevig_web/states/registrador_state.py`
+> arma el combo de clases desde ahí y ofrece pegado de Excel (`bulk_pegar` →
+> `bulk_cargar_pegado` → `bulk_validar`) + registro en modo individual/agrupado
+> (`registrar_movimiento` / `registrar_movimiento_agrupado`) con numeración
+> `RPCONTRL WITH (UPDLOCK, HOLDLOCK)` + `audit_scope` + `dry_run`. La ruta es
+> `/registrador` (pestaña "Egresos / Ingresos"). **NO se crea `core/repos/
+> maniobras.py` ni un módulo nuevo.** Los bugs §9-14 del legado no aplican: el
+> `registrador` no los trae (INSERT+UPDATE bajo lock, numeración por código real).
+> Si en el uso aparece una función puntual que falte → issue contra `registrador`.
+
 > Estado en el repo Reflex: **YA PORTADO** (con otro origen). `core/repos/registrador.py`
 > — "puerto completo de `REGISTRAR_PRESTAMOS_UNIFICADO.pyw`" — cubre en su
 > pestaña 3 "Egresos / Ingresos" los tipos de `CLASES_SIMPLIFICADAS`, que

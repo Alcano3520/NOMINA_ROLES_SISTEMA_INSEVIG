@@ -105,12 +105,36 @@ RRHH registra en el sistema legado de nómina (SQL Server `insevig`):
   parece invertido (debería devolver/restar).
 - Rama `SUSPENSION` de `generar_observacion()` es código muerto.
 
+## Estado del trasplante (2026-09-09)
+
+| Pieza | Estado |
+|---|---|
+| `core/faltas/calculo.py` | ✅ trasplante verbatim + 23 tests (`tests/unit/test_faltas_calculo.py`) |
+| `core/repos/faltas.py` | ✅ lecturas + escrituras (RPHORTOT/RPEMPLEA) con `audit_scope` + `dry_run`; 9 tests |
+| `core/excel/faltas_builders.py` | ✅ `log_registro_xlsx` + `periodo_xlsx` (xlsxwriter) |
+| `insevig_web/states/faltas_state.py` | ✅ 4 sub-áreas |
+| `insevig_web/pages/faltas/{masivo,individual,periodo,restas}.py` | ✅ compilan (`test_todas_las_paginas_compilan`) |
+| Contratos C1 (RPHORTOT) + C2 (alta módulo) | ✅ aprobados y aplicados (`c2d5dd8`, `047ee6e`) |
+
+**Decisión sobre los 5 bugs (usuario, 2026-09-09):**
+- #1 SUSPENSION/SUSPENSIÓN — REPLICADO (`core/faltas/calculo.py`, `# LEGADO:`).
+- #2 días de suspensión `+1` — REPLICADO, confirmado correcto.
+- #3 descuento sin clamp en masivo — **CORREGIDO**: `clamp=True` siempre en
+  `core/repos/faltas.py::registrar`; nunca deja HOR25/50/100 negativo.
+- #4 LEVANTAMIENTO SUSPENSIÓN sumaba a TOTAUS — **CORREGIDO**: ahora resta.
+- #5 rama muerta de `generar_observacion` — REPLICADO (sin efecto).
+  Notificado a `sistema-sanciones-rrhh-34` para que agregue #3/#4 a
+  `nucleo_modular/README.md` allá (regla §8 del PROMPT).
+
 ## Criterio de "hecho"
 
-- [ ] Paridad con el legado para: 1 falta simple, 1 suspensión con descuento,
-      1 carga masiva de 10 filas, 1 corrida del cargador de restas.
-- [ ] Decisión explícita sobre cada bug de arriba (replicar o corregir con nota).
-- [ ] `RPHORTOT` aprobado como superficie de escritura (cambio de contrato).
-- [ ] `pytest tests/unit/test_faltas_*` verde; `ruff` + `mypy core` limpios.
-- [ ] 4 páginas compilan (`test_arquitectura`).
-- [ ] Revisado a 360 / 768 / 1280 px.
+- [x] Decisión explícita sobre cada bug (arriba).
+- [x] `RPHORTOT` aprobado como superficie de escritura (C1).
+- [x] `pytest tests/unit/test_faltas_*` verde (32); `ruff` + `mypy core` limpios.
+- [x] 4 páginas compilan (`test_arquitectura`).
+- [ ] Paridad end-to-end contra el `.pyw` (requiere SQL Server real): 1 falta
+      simple · 1 suspensión con descuento · 1 carga masiva 10 filas · 1 corrida
+      del cargador de restas. **Pendiente: probar en el NAS.**
+- [ ] Revisado a 360 / 768 / 1280 px. **Pendiente.**
+- [ ] Re-seed de permisos `faltas` en el deploy.
+- [ ] `tests/integration/test_faltas_sqlserver.py` (`@pytest.mark.integration`).
