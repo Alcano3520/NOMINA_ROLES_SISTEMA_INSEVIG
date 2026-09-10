@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Empezá por `docs/ESTADO_MIGRACION.md`** — estado vivo de la migración
+> Tkinter → Reflex (qué está hecho, qué falta, qué NO se toca, cómo no pisarse).
+> Para onboardear a otra persona/sesión: `docs/PROMPT_DESARROLLADOR.md`.
+
 ## Project Overview
 
 Integrated HR/Payroll desktop system for INSEVIG (Ecuador). A Tkinter login+dashboard (`Sistema_INSEVIG.pyw`) launches independent GUI modules, each of which can also run standalone. There is no build step for development — every `.pyw`/`.py` file runs directly with `python3`.
