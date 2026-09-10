@@ -1,18 +1,32 @@
 # Módulo: sanciones (Procesamiento de Sanciones RRHH)
 
-> **C3 (hecho, 2026-09-09):** `sanciones` es **backend puro**. Frontend = app
-> Flutter `sistema_sanciones_insevig/`. NO se añade `"sanciones"` a
-> `MODULES`/`MODULOS`, NO hay páginas Reflex ni `sanciones_state.py`.
+> **C3 REVISADO (2026-09-09): `sanciones` ES un módulo Reflex completo.**
+> El usuario aclaró que `sistema_sanciones_RRHH/main.py` (app de escritorio, 227 KB,
+> **activa y en desarrollo**) es la herramienta con la que **RRHH y gerencia
+> revisan / aprueban / rechazan / procesan los reportes de supervisores y
+> coordinadores**, + novedades de horario + estadísticas + reportes. Eso necesita
+> UI web (el objetivo de la migración es "no más .exe para RRHH"). La app Flutter
+> — el lado "el supervisor carga el reporte" — es otro asunto, para más adelante,
+> **fuera del alcance de esta migración**.
 >
-> Portado (commit `6b630d7`): `core/sanciones/{catalogos,validadores,imagenes}.py`
-> (verbatim) + `core/repos/sanciones.py` (trasplante de `nucleo_modular/sanciones.py`
-> + enriquecimiento de `empleados.py`, adaptado de `requests`/PostgREST a
-> `supabase-py`; cliente inyectable; cédula normalizada en la frontera; auditoría
-> SQLite → `core.audit.registrar_evento`). `core/db/supabase_client.get_client_sanciones()`.
-> 15 tests con cliente falso. **NO portado** (sin consumidor todavía):
-> `reportes.py` (Excel/PDF de sanciones), `usuarios_rrhh` (los usuarios de la app
-> van en el módulo `carga_usuarios`), `local_db.py` (reemplazado por `core.audit`).
-> El worker de sync (Ola 4) no existe aún; estas funciones son su base.
+> **Hecho:**
+> - `core/sanciones/{catalogos,validadores,imagenes,valores}.py`.
+> - `core/repos/sanciones.py`: buscar / pendientes (aprobación + proceso) / aprobar
+>   / rechazar / procesar (individual + masivo) / novedades / categorizar /
+>   `nombres_supervisores` (profiles, service key) / `estadisticas` (desde Supabase,
+>   reemplaza el SQLite del escritorio) / `exportar_excel` / `ficha_pdf`. Cliente
+>   Supabase inyectable, cédula en la frontera, auditoría → `core.audit`.
+> - `core/excel/sanciones_builders.py` (`sanciones_xlsx`), `core/pdf/sancion_ficha.py`.
+> - `core/db/supabase_client.get_client_sanciones(service=bool)`.
+> - `insevig_web/states/sanciones_state.py` + 5 páginas
+>   `/sanciones/{bandeja,historial,buscar,novedades,estadisticas}` + diálogo de ficha.
+> - `"sanciones"` en `registry`/`MODULOS`/`auth`/sidebar. Roles: `editor` =
+>   ver/exportar/editar (aprobar/rechazar/procesar), `consulta` = ver/exportar.
+> Commits `6b630d7` (base) + `1cb0820` (UI + reportes). 18 tests.
+>
+> **NO portado:** `usuarios_rrhh` (login propio del .exe — en la web se usa el auth
+> de nómina; la gestión de cuentas Auth de la app va en el módulo `carga_usuarios`);
+> el fallback SQLite de `local_db.py` (reemplazado por `core.audit`).
 
 > Estado en el repo Reflex: **NO existe** y, por la **regla #7 del prompt
 > maestro**, `core/repos/sanciones.py` es **solo backend** (para un futuro

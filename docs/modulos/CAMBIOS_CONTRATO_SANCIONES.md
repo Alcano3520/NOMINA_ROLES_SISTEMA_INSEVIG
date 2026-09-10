@@ -160,7 +160,14 @@ módulo, o el test rompe.
 
 ---
 
-## C3 — `"sanciones"` NO es un módulo Reflex
+> **C3 REVERTIDO (2026-09-09):** el usuario aclaró que `sistema_sanciones_RRHH/main.py`
+> (app de escritorio de RRHH/gerencia, activa) es lo que hay que llevar a la web —
+> revisar/aprobar/rechazar/procesar los reportes de supervisores y coordinadores.
+> **`sanciones` SÍ es un módulo Reflex completo** (registry + MODULOS + auth +
+> sidebar + 5 páginas + estado). Ver `docs/modulos/sanciones.md`. Lo de abajo queda
+> como registro de la decisión original y su reversión.
+
+## C3 — `"sanciones"` NO es un módulo Reflex  ~~(revertido, ver arriba)~~
 
 **Archivos:** `docs/CONTRATOS.md` (nota nueva) + `docs/modulos/sanciones.md`.
 
