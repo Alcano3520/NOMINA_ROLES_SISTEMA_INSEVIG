@@ -58,13 +58,12 @@ git clone https://github.com/Alcano3520/TOTAL_OBSERVACIONES_INSEVIG.git
 git clone https://github.com/Alcano3520/PRESTAMOS_HISTORIAL_INSEVIG.git
 ```
 
-Cuando toque anexar otra app de RRHH (envío de correos, lector de cédulas, IESS,
-parametrización, etc.), se clona su repo como carpeta hermana y se sigue el
-patrón de §6.
+Cuando toque anexar otra app de RRHH, se clona su repo como carpeta hermana y se
+sigue el patrón de §6. **El inventario completo de repos a anexar está en §8.**
 
 **NO clonar / NO tocar:** `rpa_bot_mrl`, `rpa-bot-mrl`, `ingresosMrl`
 (automatización MRL, es otro asunto), ni los proyectos no-RRHH del directorio
-(trading, inventario, facturación, etc.).
+(trading, inventario, facturación/SRI, GPS, etc. — ver §8).
 
 ---
 
@@ -210,7 +209,82 @@ es material de origen). Su `README.md` tiene la tabla de seguimiento.
 
 ---
 
-## 8. Contactos / infra
+## 8. Inventario de repos a anexar
+
+Todos son de `github.com/Alcano3520/`. **La columna "destino" es la mejor
+estimación por nombre/README — el usuario confirma cada una antes de arrancar.**
+El proceso para cada uno: FASE -1 (§6) → propuesta de contrato si toca congelado
+→ rebanada → tests → actualizar este archivo.
+
+### Ya anexados
+
+| Repo | Módulo(s) | Commits |
+|---|---|---|
+| `sistema_sanciones_RRHH` | sanciones · faltas · maniobras · carga_usuarios | `c2d5dd8`…`bbcf83f` |
+
+### Fuente de módulos que YA existen (falta FASE -1 para confirmar que no quedó nada)
+
+| Repo | Clone | Módulo destino |
+|---|---|---|
+| `GESTION_EMPLEADOS_INSEVIG` | `…/GESTION_EMPLEADOS_INSEVIG.git` | `empleados` (carga masiva, historial) |
+| `empleados_app` | `…/empleados_app.git` | `empleados` |
+| `EmpleadosSupabase` | `…/EmpleadosSupabase.git` ⚠️ el remote local tiene un token `gho_…` embebido — usar la URL limpia y **rotar ese token** | `empleados` (sync Supabase) |
+| `LIQUIDACIONES_SISTEMA_INSEVIG` | `…/liquidaciones-generator.git` | `liquidaciones` |
+| `VACACIONES_SISTEMA_INSEVIG` | `…/VACACIONES_SISTEMA_INSEVIG.git` | `vacaciones` |
+| `BITACORAS_AGENDA_EGRESOS_FORMATOS` | `…/Agenda_Liquidacion_Haberes_INSEVIG.git` | `bitacora` |
+| `NOMINA_SYSTEM_RRHH` | `…/NOMINA_SYSTEM_RRHH.git` | `empleados` / `roles` (variante) |
+| `sai-nomina-tkinter` (SAI) | `…/sai-nomina-tkinter.git` | sistema RRHH paralelo completo — **decidir con el usuario** si aporta algo o se descarta |
+
+### Nuevos (todavía sin módulo)
+
+| Repo | Clone | Destino probable |
+|---|---|---|
+| `gestion_rrhh_parametrizacion` | `…/gestion_rrhh_parametrizacion.git` | `admin` / parámetros (secciones de nómina) |
+| `programa_cambios` | `…/programa_cambios.git` | `sanciones` (cambios de turno/puesto) o módulo nuevo |
+| `sistema_reportes` | `…/sistema_reportes.git` | ⚠️ es **Flutter** (frontend) — probablemente fuera de alcance |
+| `novedades_insevig` | `…/novedades_insevig.git` | ⚠️ **Flutter** — fuera de alcance (ya cubierto por `sanciones/novedades`) |
+| `N04_AGENDA` (omni_task) | `…/N04_AGENDA.git` | ⚠️ **Flutter** — agenda; ¿fuera de alcance? |
+| `sistema_sanciones_insevig` | `…/sistema_sanciones_insevig.git` | ⚠️ **Flutter** de sanciones (lado supervisor) — fuera de alcance por ahora |
+| `generador_comprobantes` | `…/generador_comprobantes.git` | `vacaciones` / `liquidaciones` (comprobantes) |
+| `NOMBRADOR_EXTDATOSCARGAS` | `…/NOMBRADOR_EXTDATOSCARGAS.git` | herramienta: certificados de cargas familiares (utilidades) |
+| `Coincidencia_Difusa_Empleados` | `…/Coincidencia_Difusa_Empleados.git` | herramienta: match difuso de empleados |
+| `LECTOR_CEDULAS` | `…/LECTOR_CEDULAS.git` | herramienta: lector de cédulas → alta de empleado |
+| `IESS_SELENIUM` | `…/IESS_SELENIUM.git` | herramienta / job RPA IESS |
+| `MEMOS` | `…/MEMOS.git` | herramienta: memos / oficios |
+| `MENSAJES_WHAP` | `…/MENSAJES_WHAP.git` | herramienta: WhatsApp masivo |
+| `CAMBIO_VALOR_TXT` | `…/CAMBIO_VALOR_TXT.git` | herramienta chica |
+| `GestionGoogleSheets` | `…/GestionGoogleSheets.git` | herramienta: integración Google Sheets |
+| `SISTEMAS-RRHH-INVESTIGACION` | `…/SISTEMAS-RRHH-INVESTIGACION.git` | (repo vacío local — pedir contexto al usuario) |
+
+### Correo (varios → un módulo `correo` nuevo, o anexos de `roles/envio`)
+
+| Repo | Clone |
+|---|---|
+| `ENVIO_CORREOS_SANCIONES` | `…/ENVIO_CORREOS_SANCIONES.git` |
+| `ENVIO_CORREOS_ATEMPORALES` | `…/ENVIO_CORREOS_ATEMPORALES.git` |
+| `correo_jefe` | `…/correo_jefe.git` |
+| `Correos_server_empre` | (sin remote — falta pushear) |
+| `outlook_gestor` | `…/outlook_gestor.git` |
+| `RastreaGastos_mail` | `…/RastreaGastos_mail.git` (¿RRHH? confirmar) |
+
+### Excluidos (NO son RRHH — no anexar)
+
+`rpa_bot_mrl` · `ingresosMrl` (MRL, otro asunto) · trading (`binance-trader-master`,
+`freqtrade-develop`, `MoneyPrinter-main`, `TradingBotPro`, `TradingBotPro-v2`,
+`CRIPTO_NUEVA`, `INVESTIGACION_INVERCION`) · inventario/logística (`*inventario*`,
+`Inventory-Management-System-main`) · facturación/SRI (`facturacion_electronica*`,
+`ANALICIS_PDF_SRI`, `sri_extraccion_facturas`) · GPS (`gps_guardian`, `GPS_TRAKER`)
+· `NAVEGADOR_PEREIRA` (navegador Chromium) · misc (`abc_android`, `ANALICIS_PC`,
+`APP_CUENTAS_123`, `CMD_CLUDE`, `Descargar_DATOS_BACHILLER`, `facebook_lector`,
+`kali`, `OLLAMA`, `PAGINA_PUBLICACIONES`, `EnterpriseAIWorkspace`, `inicio_1`,
+`generador_comprobantes` si resulta no-RRHH, `GestionGoogleSheets` idem).
+
+> Si una clasificación está mal, corregila en este archivo — el usuario es la
+> autoridad sobre qué es RRHH.
+
+---
+
+## 9. Contactos / infra
 
 - GitHub: usuario `Alcano3520`, email `daniel3520@gmail.com`.
 - NAS: `192.168.2.181` (o Tailscale `100.98.34.99`), servicio NSSM `insevig-web`,
