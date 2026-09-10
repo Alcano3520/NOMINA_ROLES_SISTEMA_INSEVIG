@@ -26,12 +26,15 @@ _TIPOS = ["", "FALTA", "PERMISO", "ATRASO", "DORMIDO", "MALA URBANIDAD", "FALTA 
 
 def _fila(s: rx.Var) -> rx.Component:
     return rx.table.row(
+        data_cell(rx.code(s["id_corto"], size="1")),
+        data_cell(s["empleado_cod"].to_string()),
+        data_cell(s["empleado_cedula"]),
         data_cell(rx.link(s["empleado_nombre"], on_click=lambda: _S.ver_detalle(s["id"]),
                           cursor="pointer")),
-        data_cell(s["empleado_cedula"]),
         data_cell(s["tipo_sancion"]),
-        data_cell(s["fecha"]),
+        data_cell(s["fecha_fmt"]),
         data_cell(badge_estado(s["status"])),
+        data_cell(rx.text(s["supervisor_txt"], size="1")),
         data_cell(rx.text(s["observaciones"], size="1")),
     )
 
@@ -74,7 +77,8 @@ def buscar() -> rx.Component:
                             rx.text(_S.q_resultados.length().to_string() + " resultados", size="1",
                                     color_scheme="gray"),
                             data_table(
-                                ["Empleado", "Cédula", "Tipo", "Fecha", "Estado", "Observaciones"],
+                                ["ID", "Cód", "Cédula", "Nombre Empleado", "Tipo", "Fecha",
+                                 "Estado", "Supervisor/Creador", "Observaciones"],
                                 rx.foreach(_S.q_resultados, _fila),
                             ),
                             spacing="2", width="100%",

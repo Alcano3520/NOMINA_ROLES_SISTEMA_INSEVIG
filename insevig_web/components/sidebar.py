@@ -23,10 +23,10 @@ _ACTIVE_BAR = theme.SECONDARY          # barrita amarilla corporativa
 
 # Agrupación de módulos en secciones (por id de módulo).
 _SECCIONES: list[tuple[str, tuple[str, ...]]] = [
-    ("Personal", ("empleados", "observaciones", "faltas", "vacaciones", "prestamos")),
+    ("Personal", ("empleados", "observaciones", "vacaciones", "prestamos")),
     ("Nómina", ("roles", "reportes", "registrador")),
     ("Liquidaciones", ("liquidaciones", "bitacora")),
-    ("Sanciones", ("sanciones",)),
+    ("Sanciones · Maniobras · Faltas", ("sanciones", "maniobras", "faltas")),
     ("Sistema", ("admin", "carga_usuarios")),
 ]
 

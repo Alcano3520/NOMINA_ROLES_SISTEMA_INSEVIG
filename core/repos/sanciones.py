@@ -54,6 +54,62 @@ def _norm_salida(sancion: dict) -> dict:
     return sancion
 
 
+def fmt_fecha(v: object) -> str:
+    """YYYY-MM-DD / ISO -> DD/MM/YYYY (igual que `ContentArea._format_fecha` del .pyw)."""
+    s = str(v or "")
+    if not s or s == "None":
+        return ""
+    s = s.split("T")[0]
+    p = s.split("-")
+    return f"{p[2][:2]}/{p[1]}/{p[0]}" if len(p) == 3 else s
+
+
+def _display(sancion: dict) -> dict:
+    """Campos listos para mostrar en las tablas web (formato del .pyw)."""
+    sancion["id_corto"] = str(sancion.get("id") or "")[:8]
+    sancion["fecha_fmt"] = fmt_fecha(sancion.get("fecha"))
+    creado = str(sancion.get("created_at") or "")
+    sancion["hora"] = creado.split("T")[1][:5] if "T" in creado else ""
+    sancion["enviado_fmt"] = fmt_fecha(sancion.get("created_at"))
+    sancion["status_up"] = str(sancion.get("status") or "").upper()
+    sid = str(sancion.get("supervisor_id") or "")
+    sancion.setdefault("supervisor_txt", f"ID: {sid[:8]}" if sid else "Sin asignar")
+    return sancion
+
+
+def _resolver_supervisores(filas: list[dict], cliente_service: Any | None) -> None:
+    """Best-effort: pone `supervisor_txt` = nombre real (tabla profiles) cuando la
+    SERVICE key está configurada; si no, deja el fallback de `_display`.
+    """
+    ids = [str(f["supervisor_id"]) for f in filas if f.get("supervisor_id")]
+    if not ids:
+        return
+    try:
+        nombres = nombres_supervisores(ids, cliente_service=cliente_service)
+    except Exception as e:  # noqa: BLE001
+        log.info("supervisores no resueltos: %s", e)
+        return
+    for f in filas:
+        n = nombres.get(str(f.get("supervisor_id") or ""))
+        if n:
+            f["supervisor_txt"] = n
+
+
+def _proc_desde_comentario(sancion: dict) -> None:
+    """`procesado_por` / `fecha_procesamiento` desde `comentarios_rrhh`
+    ("Procesado para nomina - DD/MM/YYYY HH:MM - usuario"). Porta el fallback de
+    `local_db.enriquecer_con_datos_locales` (README §item). Muta el dict.
+    """
+    if sancion.get("procesado_por"):
+        return
+    com = str(sancion.get("comentarios_rrhh") or "")
+    if " - " in com:
+        partes = com.split(" - ")
+        if len(partes) >= 3:
+            sancion["procesado_por"] = partes[-1].strip()
+            sancion["fecha_procesamiento"] = partes[-2].strip()
+
+
 # ── enriquecimiento con la tabla `empleados` (proyecto de nómina) ───────────
 
 
@@ -113,7 +169,7 @@ def enriquecer_sanciones_lote(sanciones: list[dict], *, cliente_empleados: Any |
             emp = emap.get(int(s["empleado_cod"])) if s.get("empleado_cod") else None
             if emp:
                 _aplicar_empleado(s, emp)
-    return [_norm_salida(s) for s in sanciones]
+    return [_display(_norm_salida(s)) for s in sanciones]
 
 
 # ── lecturas de la tabla `sanciones` ───────────────────────────────────────
@@ -124,7 +180,7 @@ def obtener_sancion(sancion_id: str, *, cliente: Any | None = None) -> dict | No
     try:
         res = _cli(cliente).table(_TABLA).select("*").eq("id", sancion_id).execute()
         filas = res.data or []
-        return _norm_salida(dict(filas[0])) if filas else None
+        return _display(_norm_salida(dict(filas[0]))) if filas else None
     except Exception as e:  # noqa: BLE001
         log.error("obtener_sancion(%s): %s", sancion_id, e)
         return None
@@ -163,8 +219,12 @@ def buscar_sanciones(
         log.error("buscar_sanciones: %s", e)
         return []
     if enriquecer and filas:
-        return enriquecer_sanciones_lote(filas, cliente_empleados=cliente_empleados)
-    return [_norm_salida(f) for f in filas]
+        out = enriquecer_sanciones_lote(filas, cliente_empleados=cliente_empleados)
+        _resolver_supervisores(out, None)
+        for f in out:
+            _proc_desde_comentario(f)
+        return out
+    return [_display(_norm_salida(f)) for f in filas]
 
 
 def buscar_historial(texto_busqueda: str, limite: int = 200, tipo_sancion: str | None = None,
@@ -174,7 +234,8 @@ def buscar_historial(texto_busqueda: str, limite: int = 200, tipo_sancion: str |
 
 
 def obtener_sanciones_pendientes_aprobacion(*, cliente: Any | None = None,
-                                            cliente_empleados: Any | None = None) -> list[dict]:
+                                            cliente_empleados: Any | None = None,
+                                            cliente_service: Any | None = None) -> list[dict]:
     """`status=enviado` (esperando gerencia). Puerto de la función homónima."""
     try:
         filas = list(
@@ -184,11 +245,16 @@ def obtener_sanciones_pendientes_aprobacion(*, cliente: Any | None = None,
     except Exception as e:  # noqa: BLE001
         log.error("pendientes_aprobacion: %s", e)
         return []
-    return enriquecer_sanciones_lote(filas, cliente_empleados=cliente_empleados) if filas else []
+    if not filas:
+        return []
+    out = enriquecer_sanciones_lote(filas, cliente_empleados=cliente_empleados)
+    _resolver_supervisores(out, cliente_service)
+    return out
 
 
 def obtener_sanciones_pendientes(*, cliente: Any | None = None,
-                                 cliente_empleados: Any | None = None) -> list[dict]:
+                                 cliente_empleados: Any | None = None,
+                                 cliente_service: Any | None = None) -> list[dict]:
     """`status=aprobado` sin `comentarios_rrhh` (listas para RRHH)."""
     try:
         filas = list(
@@ -198,7 +264,11 @@ def obtener_sanciones_pendientes(*, cliente: Any | None = None,
     except Exception as e:  # noqa: BLE001
         log.error("pendientes: %s", e)
         return []
-    return enriquecer_sanciones_lote(filas, cliente_empleados=cliente_empleados) if filas else []
+    if not filas:
+        return []
+    out = enriquecer_sanciones_lote(filas, cliente_empleados=cliente_empleados)
+    _resolver_supervisores(out, cliente_service)
+    return out
 
 
 def obtener_procesadas_completas(page: int = 1, page_size: int | None = None,
@@ -217,6 +287,8 @@ def obtener_procesadas_completas(page: int = 1, page_size: int | None = None,
         return {"data": [], "page": page, "page_size": page_size, "count": 0, "has_more": False}
     if filas:
         filas = enriquecer_sanciones_lote(filas, cliente_empleados=cliente_empleados)
+        for f in filas:
+            _proc_desde_comentario(f)
     return {
         "data": filas, "page": page, "page_size": page_size,
         "count": len(filas), "has_more": len(filas) == page_size,
