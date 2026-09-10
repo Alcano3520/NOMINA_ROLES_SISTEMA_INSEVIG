@@ -19,16 +19,17 @@ def _sin_sqlserver(monkeypatch):
 
 
 def _sin_registro(monkeypatch):
-    monkeypatch.setattr(repo, "_registro_existente", lambda emp, fv: None)
+    monkeypatch.setattr(repo, "_registro_existente", lambda *a, **k: None)
 
 
 def _con_registro(monkeypatch, totaus, observ="previo"):
-    monkeypatch.setattr(repo, "_registro_existente", lambda emp, fv: {"TOTAUS": totaus, "OBSERV": observ})
+    monkeypatch.setattr(repo, "_registro_existente",
+                        lambda *a, **k: {"TOTAUS": totaus, "OBSERV": observ})
 
 
 def _horas(monkeypatch, h25=0, h50=0, h100=0):
     monkeypatch.setattr(repo, "horas_extra_empleado",
-                        lambda emp: {"HOR25": h25, "HOR50": h50, "HOR100": h100})
+                        lambda *a, **k: {"HOR25": h25, "HOR50": h50, "HOR100": h100})
 
 
 # ── falta simple ────────────────────────────────────────────────────────────

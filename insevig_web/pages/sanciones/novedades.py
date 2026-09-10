@@ -17,12 +17,14 @@ def _fila(n: rx.Var) -> rx.Component:
     nid = n["id"].to_string()
     return rx.table.row(
         data_cell(n["id"].to_string()),
+        data_cell(n["periodo"].to(str)),
         data_cell(rx.text(n["empleado_nombre"].to(str), size="1")),
-        data_cell(rx.text(n["detalle"].to(str), size="1")),
-        data_cell(n["created_at"].to(str)),
+        data_cell(rx.text(n["puesto_nuevo_nom"].to(str), size="1")),
+        data_cell(rx.text(n["motivo"].to(str), size="1")),
         data_cell(
             rx.hstack(
                 rx.input(
+                    default_value=n["observacion_rrhh"].to(str),
                     placeholder="Observación RRHH…", size="1", width="180px",
                     on_change=lambda v: _S.set_nov_obs(nid, v),
                 ),
@@ -57,7 +59,7 @@ def novedades() -> rx.Component:
                 _S.nov.length() > 0,
                 card(
                     data_table(
-                        ["#", "Empleado", "Detalle", "Creada", "Acción"],
+                        ["#", "Período", "Empleado", "Puesto nuevo", "Motivo", "Acción"],
                         rx.foreach(_S.nov, _fila),
                     ),
                     width="100%",

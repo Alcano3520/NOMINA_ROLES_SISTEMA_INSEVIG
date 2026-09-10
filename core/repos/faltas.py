@@ -30,7 +30,8 @@ from datetime import date
 
 from core.audit.writer import audit_scope
 from core.config import get_settings
-from core.db import sqlserver
+from core.db import sqlserver, supabase_client
+from core.db.health import FUENTE_SUPABASE, fuente_por_defecto
 from core.faltas import calculo as fc
 from core.utils import normalizar_cedula
 
@@ -82,55 +83,85 @@ class Vista:
     error: str = ""
 
 
-# ── helpers de lectura (SQL Server) ─────────────────────────────────────────
+# ── helpers de lectura (dual: SQL Server + Supabase) ────────────────────────
+#
+# El módulo legado `gestion_faltas.py` solo leía SQL Server. En la web las
+# lecturas respetan el selector de fuente (igual que `core/repos/observaciones.py`):
+# el espejo de Supabase tiene `rphortot` / `rphorhis` / `rpemplea` (proyecto
+# empleados-insevig). Las **escrituras** siguen yendo SOLO a SQL Server.
 
 
 def _filtro() -> str:
     return get_settings().sqlserver_filter  # "CODEMP='10' AND CODSUC='10'"
 
 
-def buscar_empleado(*, codigo: str = "", cedula: str = "") -> EmpleadoFalta | None:
+def _fuente(fuente: str) -> str:
+    return fuente or fuente_por_defecto()
+
+
+def _sb():
+    return supabase_client.get_client()
+
+
+def _emp_de_dict(r: dict, *, sb: bool) -> EmpleadoFalta:
+    g = (lambda k: r.get(k.lower())) if sb else (lambda k: r.get(k.upper()) if k.upper() in r else r.get(k))
+    return EmpleadoFalta(
+        empleado=str(g("empleado") or "").strip(),
+        apellidos=str(g("apellidos") or "").strip(),
+        nombres=str(g("nombres") or "").strip(),
+        cedula=normalizar_cedula(g("cedula")),
+        fecha_sal=str(g("fecha_sal") or "")[:10],
+        seccion=str(g("seccion") or "").strip(),
+    )
+
+
+def buscar_empleado(*, codigo: str = "", cedula: str = "", fuente: str = "") -> EmpleadoFalta | None:
     """RPEMPLEA por código o cédula. Puerto de `buscar_empleado_bd`."""
+    codigo, cedula = str(codigo).strip(), str(cedula).strip()
+    if not codigo and not cedula:
+        return None
+    if _fuente(fuente) == FUENTE_SUPABASE:
+        q = _sb().table("rpemplea").select(
+            "empleado,apellidos,nombres,cedula,fecha_sal,seccion"
+        ).eq("codemp", "10")
+        q = q.eq("empleado", codigo) if codigo else q.eq("cedula", normalizar_cedula(cedula).lstrip("0"))
+        filas = q.limit(1).execute().data or []
+        return _emp_de_dict(filas[0], sb=True) if filas else None
     flt = _filtro()
-    if codigo and str(codigo).strip():
+    if codigo:
         rows = sqlserver.filas(
             f"SELECT EMPLEADO, APELLIDOS, NOMBRES, CEDULA, FECHA_SAL, SECCION "
-            f"FROM dbo.RPEMPLEA WHERE {flt} AND EMPLEADO = ?",
-            (str(codigo).strip(),),
+            f"FROM dbo.RPEMPLEA WHERE {flt} AND EMPLEADO = ?", (codigo,),
         )
-    elif cedula and str(cedula).strip():
+    else:
         rows = sqlserver.filas(
             f"SELECT EMPLEADO, APELLIDOS, NOMBRES, CEDULA, FECHA_SAL, SECCION "
             f"FROM dbo.RPEMPLEA WHERE {flt} AND CAST(CEDULA AS VARCHAR) = ?",
             (normalizar_cedula(cedula).lstrip("0"),),
         )
-    else:
-        return None
-    if not rows:
-        return None
-    r = rows[0]
-    return EmpleadoFalta(
-        empleado=str(r.get("EMPLEADO") or "").strip(),
-        apellidos=str(r.get("APELLIDOS") or "").strip(),
-        nombres=str(r.get("NOMBRES") or "").strip(),
-        cedula=normalizar_cedula(r.get("CEDULA")),
-        fecha_sal=str(r.get("FECHA_SAL") or "")[:10],
-        seccion=str(r.get("SECCION") or "").strip(),
-    )
+    return _emp_de_dict(rows[0], sb=False) if rows else None
 
 
-def buscar_empleados_texto(termino: str, top: int = 20) -> list[EmpleadoFalta]:
+def buscar_empleados_texto(termino: str, top: int = 20, fuente: str = "") -> list[EmpleadoFalta]:
     """Buscador de empleados (código o apellidos/nombres). Puerto de `buscar_empleados_texto`."""
     termino = (termino or "").strip()
     if not termino:
         return []
-    flt = _filtro()
     top = max(1, min(int(top), 100))
+    if _fuente(fuente) == FUENTE_SUPABASE:
+        cols = "empleado,apellidos,nombres,cedula,seccion"
+        q = _sb().table("rpemplea").select(cols).eq("codemp", "10")
+        if termino.isdigit():
+            q = q.ilike("empleado", f"%{termino}%")
+        else:
+            q = q.or_(f"apellidos.ilike.%{termino}%,nombres.ilike.%{termino}%")
+        filas = q.limit(top).execute().data or []
+        return [_emp_de_dict(r, sb=True) for r in filas]
+    flt = _filtro()
     if termino.isdigit():
         rows = sqlserver.filas(
             f"SELECT TOP {top} EMPLEADO, APELLIDOS, NOMBRES, CEDULA, SECCION "
-            f"FROM dbo.RPEMPLEA WHERE {flt} AND EMPLEADO LIKE ?",
-            (f"%{termino}%",),
+            f"FROM dbo.RPEMPLEA WHERE {flt} AND EMPLEADO LIKE ?", (f"%{termino}%",),
         )
     else:
         rows = sqlserver.filas(
@@ -138,25 +169,23 @@ def buscar_empleados_texto(termino: str, top: int = 20) -> list[EmpleadoFalta]:
             f"FROM dbo.RPEMPLEA WHERE {flt} AND (APELLIDOS LIKE ? OR NOMBRES LIKE ?)",
             (f"%{termino}%", f"%{termino}%"),
         )
-    return [
-        EmpleadoFalta(
-            empleado=str(r.get("EMPLEADO") or "").strip(),
-            apellidos=str(r.get("APELLIDOS") or "").strip(),
-            nombres=str(r.get("NOMBRES") or "").strip(),
-            cedula=normalizar_cedula(r.get("CEDULA")),
-            seccion=str(r.get("SECCION") or "").strip(),
-        )
-        for r in rows
-    ]
+    return [_emp_de_dict(r, sb=False) for r in rows]
 
 
-def horas_extra_empleado(empleado: str) -> dict[str, int]:
+def horas_extra_empleado(empleado: str, fuente: str = "") -> dict[str, int]:
     """HOR25/HOR50/HOR100 actuales. Puerto de `obtener_horas_extra_empleado`."""
+    if _fuente(fuente) == FUENTE_SUPABASE:
+        filas = (
+            _sb().table("rpemplea").select("hor25,hor50,hor100")
+            .eq("codemp", "10").eq("empleado", str(empleado)).limit(1).execute().data or []
+        )
+        r = filas[0] if filas else {}
+        return {"HOR25": int(r.get("hor25") or 0), "HOR50": int(r.get("hor50") or 0),
+                "HOR100": int(r.get("hor100") or 0)}
     flt = _filtro()
     rows = sqlserver.filas(
         f"SELECT ISNULL(HOR25,0) HOR25, ISNULL(HOR50,0) HOR50, ISNULL(HOR100,0) HOR100 "
-        f"FROM dbo.RPEMPLEA WHERE {flt} AND EMPLEADO = ?",
-        (str(empleado),),
+        f"FROM dbo.RPEMPLEA WHERE {flt} AND EMPLEADO = ?", (str(empleado),),
     )
     if not rows:
         return {"HOR25": 0, "HOR50": 0, "HOR100": 0}
@@ -173,13 +202,21 @@ def _seccion_empleado(empleado: str) -> str:
     return str(rows[0].get("SECCION") or "").strip() if rows else ""
 
 
-def _registro_existente(empleado: str, fecha_ven: date) -> dict | None:
+def _registro_existente(empleado: str, fecha_ven: date, fuente: str = "") -> dict | None:
     """RPHORTOT para (empleado, fecha_ven). Puerto de `verificar_existe`."""
+    if _fuente(fuente) == FUENTE_SUPABASE:
+        filas = (
+            _sb().table("rphortot").select("totaus,observ")
+            .eq("codemp", "10").eq("empleado", str(empleado))
+            .eq("fecha_ven", fecha_ven.isoformat()).limit(1).execute().data or []
+        )
+        if not filas:
+            return None
+        return {"TOTAUS": filas[0].get("totaus") or 0, "OBSERV": filas[0].get("observ") or ""}
     flt = _filtro()
     rows = sqlserver.filas(
         f"SELECT TOTAUS, OBSERV FROM dbo.RPHORTOT "
-        f"WHERE {flt} AND EMPLEADO = ? AND FECHA_VEN = ?",
-        (str(empleado), fecha_ven),
+        f"WHERE {flt} AND EMPLEADO = ? AND FECHA_VEN = ?", (str(empleado), fecha_ven),
     )
     if not rows:
         return None
@@ -187,14 +224,46 @@ def _registro_existente(empleado: str, fecha_ven: date) -> dict | None:
     return {"TOTAUS": r.get("TOTAUS") or 0, "OBSERV": r.get("OBSERV") or ""}
 
 
-def listar_periodo(anio: int, mes: int, *, historicas: bool = False) -> list[RegistroPeriodo]:
+def listar_periodo(anio: int, mes: int, *, historicas: bool = False,
+                   fuente: str = "") -> list[RegistroPeriodo]:
     """Registros TOTAUS>0 de un período. `historicas=True` → RPHORHIS (solo lectura).
     Puerto de `cargar_periodo_bd`.
     """
-    tabla = "RPHORHIS" if historicas else "RPHORTOT"
-    flt = _filtro().replace("CODEMP", "r.CODEMP").replace("CODSUC", "r.CODSUC")
     fecha_ini = date(anio, mes, 1)
     fecha_fin = fc.obtener_fecha_fin_mes(anio, mes)
+
+    if _fuente(fuente) == FUENTE_SUPABASE:
+        sb = _sb()
+        tabla = "rphorhis" if historicas else "rphortot"
+        filas = (
+            sb.table(tabla).select("empleado,totaus,observ,fecha_ven")
+            .eq("codemp", "10").gt("totaus", 0)
+            .gte("fecha_ven", fecha_ini.isoformat()).lte("fecha_ven", fecha_fin.isoformat())
+            .limit(5000).execute().data or []
+        )
+        cods = list({str(f["empleado"]) for f in filas if f.get("empleado")})
+        emap: dict[str, dict] = {}
+        for i in range(0, len(cods), 200):
+            for e in (sb.table("rpemplea").select("empleado,apellidos,nombres,cedula")
+                      .eq("codemp", "10").in_("empleado", cods[i:i + 200]).execute().data or []):
+                emap[str(e["empleado"])] = e
+        out = []
+        for f in filas:
+            e = emap.get(str(f.get("empleado")), {})
+            nombre = f"{(e.get('apellidos') or '').strip()} {(e.get('nombres') or '').strip()}".strip()
+            out.append(RegistroPeriodo(
+                empleado=str(f.get("empleado") or "").strip(),
+                nombre=nombre or f"Emp {f.get('empleado')}",
+                cedula=fc.formatear_cedula(e.get("cedula")),
+                totaus=float(f.get("totaus") or 0),
+                observ=str(f.get("observ") or ""),
+                fecha_ven=str(f.get("fecha_ven") or "")[:10],
+            ))
+        out.sort(key=lambda r: r.nombre)
+        return out
+
+    tabla = "RPHORHIS" if historicas else "RPHORTOT"
+    flt = _filtro().replace("CODEMP", "r.CODEMP").replace("CODSUC", "r.CODSUC")
     rows = sqlserver.filas(
         f"""SELECT r.EMPLEADO,
                    ISNULL(e.APELLIDOS,'') + ' ' + ISNULL(e.NOMBRES,'') AS NOMBRE,
@@ -220,13 +289,23 @@ def listar_periodo(anio: int, mes: int, *, historicas: bool = False) -> list[Reg
     ]
 
 
-def historial_empleado(empleado: str) -> list[dict]:
+def historial_empleado(empleado: str, fuente: str = "") -> list[dict]:
     """RPHORHIS (TOTAUS>0) de un empleado, más reciente primero. Puerto de `cargar_historial_bd`."""
+    if _fuente(fuente) == FUENTE_SUPABASE:
+        filas = (
+            _sb().table("rphorhis").select("fecha_ven,totaus,observ")
+            .eq("codemp", "10").eq("empleado", str(empleado)).gt("totaus", 0)
+            .order("fecha_ven", desc=True).execute().data or []
+        )
+        return [
+            {"fecha_ven": str(f.get("fecha_ven") or "")[:10],
+             "totaus": float(f.get("totaus") or 0), "observ": str(f.get("observ") or "")}
+            for f in filas
+        ]
     flt = _filtro()
     rows = sqlserver.filas(
         f"SELECT FECHA_VEN, TOTAUS, ISNULL(OBSERV,'') OBSERV FROM dbo.RPHORHIS "
-        f"WHERE {flt} AND EMPLEADO = ? AND TOTAUS > 0 ORDER BY FECHA_VEN DESC",
-        (str(empleado),),
+        f"WHERE {flt} AND EMPLEADO = ? AND TOTAUS > 0 ORDER BY FECHA_VEN DESC", (str(empleado),),
     )
     return [
         {"fecha_ven": str(r.get("FECHA_VEN") or "")[:10],
@@ -235,15 +314,28 @@ def historial_empleado(empleado: str) -> list[dict]:
     ]
 
 
-def empleados_por_cedulas(cedulas_norm: list[str]) -> list[dict]:
+def empleados_por_cedulas(cedulas_norm: list[str], fuente: str = "") -> list[dict]:
     """RPEMPLEA para un lote de cédulas normalizadas (sin ceros a la izquierda).
     Puerto de `obtener_empleados_por_cedulas`. Devuelve dicts con CED_N.
     """
     cedulas = [c for c in {str(x).strip().lstrip("0") for x in cedulas_norm} if c]
     if not cedulas:
         return []
-    flt = _filtro().replace("CODEMP", "e.CODEMP").replace("CODSUC", "e.CODSUC")
     out: list[dict] = []
+    if _fuente(fuente) == FUENTE_SUPABASE:
+        sb = _sb()
+        for i in range(0, len(cedulas), 200):
+            for e in (sb.table("rpemplea").select("empleado,cedula,apellidos,nombres,hor50,hor100")
+                      .eq("codemp", "10").in_("cedula", cedulas[i:i + 200]).execute().data or []):
+                out.append({
+                    "EMPLEADO": str(e.get("empleado") or "").strip(),
+                    "CEDULA": str(e.get("cedula") or ""),
+                    "APELLIDOS": e.get("apellidos") or "", "NOMBRES": e.get("nombres") or "",
+                    "HOR50": e.get("hor50") or 0, "HOR100": e.get("hor100") or 0,
+                    "CED_N": str(e.get("cedula") or "").strip().lstrip("0"),
+                })
+        return out
+    flt = _filtro().replace("CODEMP", "e.CODEMP").replace("CODSUC", "e.CODSUC")
     for i in range(0, len(cedulas), 500):
         chunk = cedulas[i:i + 500]
         marcas = ",".join("?" * len(chunk))
@@ -300,7 +392,7 @@ def registrar(
     empleado: str, tipo: str, cantidad: int, fecha_evento: str, anio: int, mes: int,
     observ_libre: str = "", *, seccion: str | None = None,
     descontar_horas_extra: bool = True, usuario: str = "", roles: set[str] | None = None,
-    dry_run: bool = True,
+    fuente: str = "", dry_run: bool = True,
 ) -> Vista:
     """Registra una FALTA / PERMISO / SUSPENSIÓN / LEVANTAMIENTO SUSPENSIÓN /
     PERMISO MÉDICO en RPHORTOT (inserta o acumula). Orquesta lo que en el legado
@@ -327,7 +419,7 @@ def registrar(
         pct = fc.calcular_porcentaje_descuento_suspension(dias)
         d25 = d50 = d100 = 0
         if descontar_horas_extra and pct > 0:
-            he = horas_extra_empleado(empleado)
+            he = horas_extra_empleado(empleado, fuente)
             # bug #3 CORREGIDO: clamp=True siempre -> nunca HOR negativo
             d25, d50, d100 = fc.calcular_descuento_horas_extra(
                 he["HOR25"], he["HOR50"], he["HOR100"], pct, clamp=True
@@ -347,7 +439,7 @@ def registrar(
     if not fc.validar_longitud_observacion(observ):
         return Vista(False, error=f"La observación supera 255 caracteres ({len(observ)}).")
 
-    existente = _registro_existente(empleado, fecha_ven)
+    existente = _registro_existente(empleado, fecha_ven, fuente)
     alerta: dict = {}
     if existente is not None:
         totaus_actual = float(existente["TOTAUS"] or 0)
