@@ -49,17 +49,26 @@ mkdir -p ~/Documentos/mis_proyecto && cd ~/Documentos/mis_proyecto
 # 1. El repo web (destino) — donde se trabaja
 git clone https://github.com/Alcano3520/NOMINA_ROLES_SISTEMA_INSEVIG.git
 
-# 2. Proyectos-fuente ya migrados o en migración (referencia, NO se tocan)
-git clone https://github.com/Alcano3520/sistema_sanciones_RRHH.git
+# 2. Repos-fuente YA usados (referencia viva, NO se tocan). El repo web los
+#    espera como carpetas hermanas con el nombre de la izquierda:
+git clone https://github.com/Alcano3520/sistema_sanciones_RRHH.git                 sistema_sanciones_RRHH
+git clone https://github.com/Alcano3520/liquidaciones-generator.git                LIQUIDACIONES_SISTEMA_INSEVIG
+git clone https://github.com/Alcano3520/VACACIONES_SISTEMA_INSEVIG.git             VACACIONES_SISTEMA_INSEVIG
+git clone https://github.com/Alcano3520/Agenda_Liquidacion_Haberes_INSEVIG.git     BITACORAS_AGENDA_EGRESOS_FORMATOS
+git clone https://github.com/Alcano3520/GESTION_EMPLEADOS_INSEVIG.git              GESTION_EMPLEADOS_INSEVIG
 
-# 3. Repos anidados del repo web (ya vienen copiados dentro; clonalos solo si
-#    vas a trabajar SU código directamente)
+# 3. Repos anidados dentro del repo web (ya vienen copiados; clonalos aparte solo
+#    si vas a trabajar SU código directamente):
 git clone https://github.com/Alcano3520/TOTAL_OBSERVACIONES_INSEVIG.git
 git clone https://github.com/Alcano3520/PRESTAMOS_HISTORIAL_INSEVIG.git
 ```
 
+Los módulos `empleados`, `roles`, `registrador`, `reportes` se portaron desde
+carpetas Tkinter que ya viven **dentro** del repo web — no hay repo hermano que
+clonar para esos.
+
 Cuando toque anexar otra app de RRHH, se clona su repo como carpeta hermana y se
-sigue el patrón de §6. **El inventario completo de repos a anexar está en §8.**
+sigue el patrón de §6. **El inventario completo (usados + pendientes) está en §8.**
 
 **NO clonar / NO tocar:** `rpa_bot_mrl`, `rpa-bot-mrl`, `ingresosMrl`
 (automatización MRL, es otro asunto), ni los proyectos no-RRHH del directorio
@@ -216,26 +225,41 @@ estimación por nombre/README — el usuario confirma cada una antes de arrancar
 El proceso para cada uno: FASE -1 (§6) → propuesta de contrato si toca congelado
 → rebanada → tests → actualizar este archivo.
 
-### Ya anexados
+### 8a. Repos YA USADOS como fuente (los que ya se consumieron)
 
-| Repo | Módulo(s) | Commits |
+Estos ya se portaron a un módulo. Se clonan para **reproducir el set completo de
+trabajo** (el repo web espera encontrarlos como carpetas hermanas). No se tocan —
+son referencia viva.
+
+| Repo (carpeta) | Clone URL | Produjo el módulo |
 |---|---|---|
-| `sistema_sanciones_RRHH` | sanciones · faltas · maniobras · carga_usuarios | `c2d5dd8`…`bbcf83f` |
+| `sistema_sanciones_RRHH` | `github.com/Alcano3520/sistema_sanciones_RRHH.git` | `sanciones` · `faltas` · `maniobras` · `carga_usuarios` |
+| `LIQUIDACIONES_SISTEMA_INSEVIG` | `github.com/Alcano3520/liquidaciones-generator.git` | `liquidaciones` |
+| `VACACIONES_SISTEMA_INSEVIG` | `github.com/Alcano3520/VACACIONES_SISTEMA_INSEVIG.git` | `vacaciones` |
+| `BITACORAS_AGENDA_EGRESOS_FORMATOS` | `github.com/Alcano3520/Agenda_Liquidacion_Haberes_INSEVIG.git` | `bitacora` |
+| `TOTAL_OSERVACIONES` (repo anidado) | `github.com/Alcano3520/TOTAL_OBSERVACIONES_INSEVIG.git` | `observaciones` |
+| `HISTORIAL PRESTAMOS` (repo anidado) | `github.com/Alcano3520/PRESTAMOS_HISTORIAL_INSEVIG.git` | `prestamos` |
+| `GESTION_EMPLEADOS_INSEVIG` | `github.com/Alcano3520/GESTION_EMPLEADOS_INSEVIG.git` | `empleados` (carga masiva, historial) — parcial |
 
-### Fuente de módulos que YA existen (falta FASE -1 para confirmar que no quedó nada)
+Los módulos `empleados`, `roles`, `registrador`, `reportes` se portaron desde
+carpetas Tkinter que ya viven **dentro** de este repo (`empleados/`, `roles/`,
+`envio_roles/`, `registrdor_vizulizador_egresosingresos/`, `reportes/`,
+`prestamos/`, `observaciones/`) — no hay repo hermano que clonar para esos.
+
+### 8b. Repos candidatos, todavía sin portar
+
+Todos de `github.com/Alcano3520/`. **La columna "destino" es estimación por
+nombre/README — el usuario confirma cada una.** Proceso: FASE -1 (§6) →
+contrato si toca congelado → rebanada → tests → actualizar este archivo.
 
 | Repo | Clone | Módulo destino |
 |---|---|---|
-| `GESTION_EMPLEADOS_INSEVIG` | `…/GESTION_EMPLEADOS_INSEVIG.git` | `empleados` (carga masiva, historial) |
-| `empleados_app` | `…/empleados_app.git` | `empleados` |
-| `EmpleadosSupabase` | `…/EmpleadosSupabase.git` ⚠️ el remote local tiene un token `gho_…` embebido — usar la URL limpia y **rotar ese token** | `empleados` (sync Supabase) |
-| `LIQUIDACIONES_SISTEMA_INSEVIG` | `…/liquidaciones-generator.git` | `liquidaciones` |
-| `VACACIONES_SISTEMA_INSEVIG` | `…/VACACIONES_SISTEMA_INSEVIG.git` | `vacaciones` |
-| `BITACORAS_AGENDA_EGRESOS_FORMATOS` | `…/Agenda_Liquidacion_Haberes_INSEVIG.git` | `bitacora` |
+| `empleados_app` | `…/empleados_app.git` | `empleados` (FASE -1) |
+| `EmpleadosSupabase` | `…/EmpleadosSupabase.git` ⚠️ el remote local trae un token `gho_…` — usar URL limpia y **rotar el token** | `empleados` (sync Supabase) |
 | `NOMINA_SYSTEM_RRHH` | `…/NOMINA_SYSTEM_RRHH.git` | `empleados` / `roles` (variante) |
 | `sai-nomina-tkinter` (SAI) | `…/sai-nomina-tkinter.git` | sistema RRHH paralelo completo — **decidir con el usuario** si aporta algo o se descarta |
 
-### Nuevos (todavía sin módulo)
+### 8c. Nuevos (todavía sin módulo asignado)
 
 | Repo | Clone | Destino probable |
 |---|---|---|
