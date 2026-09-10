@@ -66,6 +66,14 @@ MODULES: list[ModuleSpec] = [
          NavItem("Carga masiva", "/observaciones/carga-masiva", "crear")],
     ),
     ModuleSpec(
+        "sanciones", "Sanciones y reportes", "gavel",
+        [NavItem("Bandeja (aprobar / procesar)", "/sanciones/bandeja"),
+         NavItem("Historial", "/sanciones/historial"),
+         NavItem("Buscar", "/sanciones/buscar"),
+         NavItem("Novedades de horario", "/sanciones/novedades"),
+         NavItem("Estadísticas", "/sanciones/estadisticas")],
+    ),
+    ModuleSpec(
         "faltas", "Gestión de faltas", "calendar-x",
         [NavItem("Registro masivo", "/faltas/masivo", "crear"),
          NavItem("Registro uno a uno", "/faltas/individual", "crear"),

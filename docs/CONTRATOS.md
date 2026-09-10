@@ -30,11 +30,15 @@ no lo hace por su cuenta.
 | `states/datasource_state.py` | `DataSourceState.fuente_de(modulo)` / `set_fuente`. |
 | `registry.py` | `ModuleSpec`, `NavItem`, `MODULES`. Editarlo = integrar un módulo (no es tarea de módulo). |
 
-**`sanciones` es backend puro.** El frontend de sanciones es la app Flutter
-`sistema_sanciones_insevig/`. `core/repos/sanciones.py` existe (trasplante de
-`nucleo_modular`), pero **no** se añade `"sanciones"` a `MODULES`/`MODULOS`, **no**
-hay páginas en `insevig_web/pages/sanciones/`, **no** hay `sanciones_state.py`.
-`test_registry_coherente` debe seguir verde sin `"sanciones"`.
+**`sanciones` ES un módulo Reflex completo (C3 revisado 2026-09-09).** Es el
+reemplazo web de la app de escritorio `sistema_sanciones_RRHH/main.py` que RRHH y
+gerencia usan a diario para **revisar / aprobar / rechazar / procesar** los
+reportes de supervisores y coordinadores, + novedades de horario + estadísticas +
+reportes Excel/PDF. (La app Flutter — el lado "supervisor crea el reporte" — es
+otro asunto, para más adelante; no entra en esta migración.) `"sanciones"` SÍ va
+en `MODULES`/`MODULOS`, con páginas en `insevig_web/pages/sanciones/` y
+`sanciones_state.py`. Datos: proyecto Supabase de sanciones (`syxzopyevfuwymmltbwn`),
+sin SQL Server.
 | `theme.py` + `components/ui/*` | Sistema de diseño. Los módulos usan estos componentes, no crean estilos. |
 | `components/layout.py` | `pagina(*contenido, requiere=(modulo, accion))`. Envoltura obligatoria de toda página. |
 | `components/sidebar.py`, `components/data_source_selector.py` | Se consumen, no se editan. |

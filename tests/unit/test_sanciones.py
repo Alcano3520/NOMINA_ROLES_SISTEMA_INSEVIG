@@ -153,10 +153,16 @@ def test_procesar_sancion_individual():
     assert catalogos.MSG_PROCESADO in cli.q.updates[0]["comentarios_rrhh"]
 
 
-def test_no_esta_en_registry():
+def test_es_modulo_reflex():
+    # C3 revisado (2026-09-09): sanciones ES un módulo web (reemplaza main.py).
     from insevig_web.registry import MODULES
 
-    assert "sanciones" not in {m.nombre for m in MODULES}
+    m = {x.nombre: x for x in MODULES}
+    assert "sanciones" in m
+    assert {i.ruta for i in m["sanciones"].items} == {
+        "/sanciones/bandeja", "/sanciones/historial", "/sanciones/buscar",
+        "/sanciones/novedades", "/sanciones/estadisticas",
+    }
 
 
 def test_roles_usuarios_referencia():
@@ -169,3 +175,55 @@ def test_roles_usuarios_referencia():
 ])
 def test_estados_legibles(estado, esperado):
     assert catalogos.ESTADOS_LEGIBLES[estado] == esperado
+
+
+# ── estadísticas (fake client) ────────────────────────────────────────────
+
+def test_estadisticas():
+    import datetime as dt
+
+    hoy = dt.datetime.now().strftime("%Y-%m-%d")
+    cli = _FakeClient([
+        {"status": "enviado", "tipo_sancion": "ATRASO", "comentarios_rrhh": None},
+        {"status": "aprobado", "tipo_sancion": "FALTA", "comentarios_rrhh": None},
+        {"status": "aprobado", "tipo_sancion": "FALTA",
+         "comentarios_rrhh": "Procesado", "updated_at": f"{hoy}T10:00:00"},
+    ])
+    st = repo.estadisticas(cliente=cli)
+    assert st["pendientes_aprobacion"] == 1
+    assert st["pendientes_proceso"] == 1
+    assert st["total_procesadas"] == 1
+    assert st["procesadas_hoy"] == 1
+    assert st["por_tipo"]["FALTA"] == 1
+
+
+# ── valores monetarios (AppConfig) ────────────────────────────────────────
+
+def test_valores_defaults_y_set():
+    from core.sanciones.valores import DEFAULTS, get_valores, set_valor
+
+    # los tipos por defecto siempre están presentes (aunque otro test los cambie)
+    assert set(DEFAULTS) <= set(get_valores())
+    set_valor("MAL USO DEL EQUIPO DE DOTACION", 99)
+    assert get_valores()["MAL USO DEL EQUIPO DE DOTACION"] == 99.0
+    set_valor("MAL USO DEL EQUIPO DE DOTACION", DEFAULTS["MAL USO DEL EQUIPO DE DOTACION"])
+
+
+# ── excel builder ─────────────────────────────────────────────────────────
+
+def test_sanciones_xlsx():
+    import io
+
+    import openpyxl
+
+    from core.excel.sanciones_builders import sanciones_xlsx
+
+    data = sanciones_xlsx(
+        [{"id": "s1", "empleado_cod": 1, "empleado_cedula": "0912345678",
+          "empleado_nombre": "ANA", "tipo_sancion": "ATRASO", "fecha": "2026-09-05",
+          "status": "aprobado"}],
+        {}, {"ATRASO": 16},
+    )
+    wb = openpyxl.load_workbook(io.BytesIO(data))
+    assert "Resumen" in wb.sheetnames
+    assert "Detalle Resumen" in wb.sheetnames

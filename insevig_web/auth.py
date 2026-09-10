@@ -31,7 +31,7 @@ ACCIONES = (
 _TODOS_MODULOS = (
     "reportes", "prestamos", "observaciones", "empleados", "roles",
     "registrador", "bitacora", "liquidaciones", "vacaciones", "faltas",
-    "carga_usuarios", "admin",
+    "sanciones", "carga_usuarios", "admin",
 )
 
 PERMISOS_POR_DEFECTO: dict[str, dict[str, set[str]]] = {
@@ -44,6 +44,7 @@ PERMISOS_POR_DEFECTO: dict[str, dict[str, set[str]]] = {
         "roles": {"ver", "generar_pdf", "enviar_email"},
         "registrador": {"ver", "registrar_rpingdes"},
         "faltas": {"ver", "exportar", "crear", "editar", "eliminar", "cargar_masivo"},
+        "sanciones": {"ver", "exportar", "editar"},
         "bitacora": {"ver", "crear", "editar"},
         "liquidaciones": {"ver", "exportar", "generar_pdf", "editar"},
         "vacaciones": {"ver", "exportar", "crear", "editar"},
@@ -56,6 +57,7 @@ PERMISOS_POR_DEFECTO: dict[str, dict[str, set[str]]] = {
         "roles": {"ver"},
         "registrador": {"ver"},
         "faltas": {"ver"},
+        "sanciones": {"ver", "exportar"},
         "bitacora": {"ver"},
         "liquidaciones": {"ver", "exportar"},
         "vacaciones": {"ver"},

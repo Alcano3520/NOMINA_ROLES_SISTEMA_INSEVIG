@@ -407,8 +407,106 @@ def marcar_novedad_procesada(novedad_id: int, observacion: str = "",
 
 
 def resolver_urls_evidencia(sancion: dict) -> dict[str, str | None]:
-    """{'firma': url|None, 'foto': url|None} para la ficha de detalle (Flutter/PDF)."""
+    """{'firma': url|None, 'foto': url|None} para la ficha de detalle."""
     from core.sanciones.imagenes import resolver_url_firma, resolver_url_foto
 
     base = get_settings().supabase_sanciones_url
     return {"firma": resolver_url_firma(sancion, base), "foto": resolver_url_foto(sancion, base)}
+
+
+# ── supervisores (tabla `profiles`, requiere SERVICE key) ───────────────────
+
+
+def nombres_supervisores(ids: list[str], *, cliente_service: Any | None = None) -> dict[str, str]:
+    """Resuelve IDs de supervisor/revisor a nombres legibles (tabla `profiles`).
+    Puerto de `empleados.obtener_nombres_supervisores`.
+    """
+    unicos = list({str(i) for i in ids if i})
+    if not unicos:
+        return {}
+    cli = _cli(cliente_service, service=True)
+    out: dict[str, str] = {}
+    for i in range(0, len(unicos), 50):
+        try:
+            filas = (
+                cli.table("profiles").select("id,full_name,email")
+                .in_("id", unicos[i:i + 50]).execute().data or []
+            )
+        except Exception as e:  # noqa: BLE001
+            log.error("nombres_supervisores: %s", e)
+            continue
+        for p in filas:
+            out[str(p.get("id"))] = p.get("full_name") or p.get("email") or "Sin nombre"
+    return out
+
+
+# ── estadísticas (del proyecto Supabase, reemplaza el SQLite del legado) ────
+
+
+def estadisticas(*, cliente: Any | None = None) -> dict:
+    """Conteos sobre la tabla `sanciones`: por estado, por tipo, procesadas hoy,
+    total histórico. Reemplaza `local_db.obtener_estadisticas` (que leía el
+    SQLite del escritorio, inexistente en la web).
+    """
+    cli = _cli(cliente)
+    out: dict = {"por_estado": {}, "por_tipo": {}, "procesadas_hoy": 0,
+                 "total_procesadas": 0, "pendientes_aprobacion": 0, "pendientes_proceso": 0}
+    try:
+        filas = list(
+            cli.table(_TABLA).select("status,tipo_sancion,comentarios_rrhh,updated_at")
+            .limit(20000).execute().data or []
+        )
+    except Exception as e:  # noqa: BLE001
+        log.error("estadisticas: %s", e)
+        return out
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    for f in filas:
+        est = (f.get("status") or "sin estado")
+        out["por_estado"][est] = out["por_estado"].get(est, 0) + 1
+        if f.get("comentarios_rrhh"):
+            out["total_procesadas"] += 1
+            if str(f.get("updated_at") or "").startswith(hoy):
+                out["procesadas_hoy"] += 1
+            tipo = (f.get("tipo_sancion") or "OTRO").upper()
+            out["por_tipo"][tipo] = out["por_tipo"].get(tipo, 0) + 1
+        if est == "enviado":
+            out["pendientes_aprobacion"] += 1
+        elif est == "aprobado" and not f.get("comentarios_rrhh"):
+            out["pendientes_proceso"] += 1
+    out["por_tipo"] = dict(sorted(out["por_tipo"].items(), key=lambda kv: -kv[1]))
+    return out
+
+
+# ── reportes (Excel / PDF) ─────────────────────────────────────────────────
+
+
+def exportar_excel(sanciones: list[dict], *, con_supervisores: bool = True,
+                   cliente_service: Any | None = None) -> bytes | None:
+    """`.xlsx` de una lista de sanciones ya enriquecidas (una hoja por categoría
+    + Detalle Resumen con valor monetario + Resumen).
+    """
+    from core.excel.sanciones_builders import sanciones_xlsx
+    from core.sanciones.valores import get_valores
+
+    nombres = {}
+    if con_supervisores:
+        ids = [s.get("supervisor_id") for s in sanciones] + [s.get("reviewed_by") for s in sanciones]
+        nombres = nombres_supervisores([i for i in ids if i], cliente_service=cliente_service)
+    return sanciones_xlsx(sanciones, nombres, get_valores())
+
+
+def ficha_pdf(sancion_id: str, *, cliente: Any | None = None,
+              cliente_empleados: Any | None = None, cliente_service: Any | None = None) -> bytes | None:
+    """PDF de la ficha de una sanción (la busca, enriquece y resuelve el supervisor)."""
+    from core.pdf.sancion_ficha import sancion_pdf
+
+    s = obtener_sancion(sancion_id, cliente=cliente)
+    if s is None:
+        return None
+    s = enriquecer_sanciones_lote([s], cliente_empleados=cliente_empleados)[0]
+    nom = "No asignado"
+    if s.get("supervisor_id"):
+        nom = nombres_supervisores([s["supervisor_id"]], cliente_service=cliente_service).get(
+            s["supervisor_id"], "No asignado"
+        )
+    return sancion_pdf(s, nom)
