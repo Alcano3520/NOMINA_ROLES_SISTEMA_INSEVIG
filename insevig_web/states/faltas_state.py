@@ -329,8 +329,14 @@ class FaltasState(rx.State):
     edit_observ: str = ""
 
     @rx.event
-    def toggle_historicas(self, v: bool):
+    async def toggle_historicas(self, v: bool):
         self.per_historicas = bool(v)
+        self.per_cargando = True
+        yield
+        try:
+            await self._recargar_periodo()
+        finally:
+            self.per_cargando = False
 
     @rx.var
     def per_editable(self) -> bool:
@@ -340,7 +346,12 @@ class FaltasState(rx.State):
         anio, mes, hist = self.anio, self.mes, self.per_historicas
         filas = await asyncio.to_thread(repo.listar_periodo, anio, mes, historicas=hist)
         self.per_filas = [dataclasses.asdict(f) for f in filas]
-        self.per_msg = f"{len(filas)} registros" if filas else "Sin registros en el período."
+        fte = "RPHORHIS (meses cerrados)" if hist else "RPHORTOT (período actual)"
+        try:
+            venc = fc.obtener_fecha_fin_mes(anio, mes).strftime("%d/%m/%Y")
+        except ValueError:
+            venc = "—"
+        self.per_msg = f"{anio}-{mes:02d} · {fte} · Vence {venc} · {len(filas)} registro(s)"
 
     @rx.event
     async def per_cargar(self):

@@ -19,6 +19,7 @@ def _fila(f: rx.Var) -> rx.Component:
         data_cell(f["nombre"]),
         data_cell(f["cedula"]),
         data_cell(f["totaus"].to_string()),
+        data_cell((f["totaus"].to(float) // 8).to_string()),
         data_cell(rx.text(f["observ"], size="1")),
         data_cell(f["fecha_ven"]),
         data_cell(
@@ -63,7 +64,7 @@ def _dialog_editar() -> rx.Component:
 
 
 @rx.page(route="/faltas/periodo", title="INSEVIG — Faltas · Ver / editar período",
-         on_load=AuthState.cargar_sesion)
+         on_load=[AuthState.cargar_sesion, FaltasState.per_cargar])
 def periodo() -> rx.Component:
     return pagina(
         page_heading("Ver / editar período de faltas",
@@ -91,10 +92,15 @@ def periodo() -> rx.Component:
                 _S.per_filas.length() > 0,
                 card(
                     data_table(
-                        ["Código", "Nombre", "Cédula", "TOTAUS", "Observación", "Vence", ""],
+                        ["Código", "Nombre", "Cédula", "TOTAUS", "Días", "Observación", "Vence", ""],
                         rx.foreach(_S.per_filas, _fila),
                     ),
                     width="100%",
+                ),
+                rx.cond(
+                    ~_S.per_cargando,
+                    rx.callout("Sin registros en el período seleccionado.", size="1",
+                               color_scheme="gray"),
                 ),
             ),
             _dialog_editar(),
