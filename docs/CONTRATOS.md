@@ -40,6 +40,15 @@ en `MODULES`/`MODULOS`, con páginas en `insevig_web/pages/sanciones/` y
 `sanciones_state.py`. Datos: proyecto Supabase de sanciones (`syxzopyevfuwymmltbwn`),
 sin SQL Server.
 | `theme.py` + `components/ui/*` | Sistema de diseño. Los módulos usan estos componentes, no crean estilos. |
+
+**2026-09-11, aditivo (rediseño de `empleados`):** `components/ui/*` sumó
+`native_select` (estilo de `rx.el.select`, reemplaza los dicts `_SELECT`
+duplicados por módulo), `section_box` (recuadro tipo LabelFrame, con
+`tono="peligro"`), `field_label`, `empty_state`; `primary_button` pasó de
+`(texto: str, **props)` a `(*children, **props)` (100% compatible, las
+llamadas existentes pasan un string posicional); `data_table` sumó el kwarg
+opcional `max_height` (sin él, comportamiento idéntico). Nada de esto rompe
+firmas ni estilos por defecto existentes.
 | `components/layout.py` | `pagina(*contenido, requiere=(modulo, accion))`. Envoltura obligatoria de toda página. |
 | `components/sidebar.py`, `components/data_source_selector.py` | Se consumen, no se editan. |
 
