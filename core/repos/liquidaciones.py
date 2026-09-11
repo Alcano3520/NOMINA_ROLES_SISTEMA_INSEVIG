@@ -698,6 +698,18 @@ class Liquidacion:
     # proyecto (decimo_anterior_no_pagado_no_debe_aparecer): el .pyw
     # original tampoco persiste ese detalle, ni siquiera como referencia.
     detalle_decimo_tercera: list[DetalleMesDecimo] = field(default_factory=list)
+    # Desglose mes a mes de los últimos 2 periodos de vacaciones (BUG REAL
+    # corregido 2026-09-11: nunca se llegó a exponer/persistir, así que el
+    # panel "Ver detalle mensual" del Editor y el bot MRL se quedaban sin
+    # nada para vacaciones -- reportado por el usuario ["no muestra los
+    # valores que salen de mes mensual"] contra VARGAS CHICHANDE CRISTOPHER,
+    # cédula 1207739887). Claves iguales a `tipo` en
+    # `liquidaciones_periodos_calculo`: "VACACIONES_1" (penúltimo periodo,
+    # el que el .pyw llama "anterior") y "VACACIONES_2" (último periodo,
+    # "actual") -- mismas 2 claves que ya usa `nucleo_modular/mapeo_liquidacion.py`
+    # del `.pyw`. Solo se detallan estos 2 (igual que el .pyw), nunca
+    # periodos más antiguos con saldo pendiente.
+    detalle_vacaciones_meses: dict[str, list[DetalleMesDecimo]] = field(default_factory=dict)
     # Ids de `descuentos_pendientes` (estado='pendiente') consumidos en el
     # cálculo de esta liquidación -- ver `descuentos_pendientes_de`. Quien
     # persista (guardar_liquidacion) debe marcarlos 'aplicado' recién
@@ -973,9 +985,22 @@ def procesar_empleado(
     # 4. Vacaciones: TODOS los periodos pendientes (no caducan), descartando
     # los ya pagados/gozados según `vac_registros` (ver total_vacaciones_a_pagar).
     pv = periodos_vacaciones(fing, fsal)
-    sumatorias_brutas = [_suma_base(cod, i, f, fuente) for i, f in pv]
+    _detalles_periodo_vac: list[list[DetalleMesDecimo]] = []
+    sumatorias_brutas: list[float] = []
+    for i, f in pv:
+        total_p, detalle_p = _suma_base_mensual(cod, i, f, fuente)
+        sumatorias_brutas.append(total_p)
+        _detalles_periodo_vac.append(detalle_p)
     vac_ant = sumatorias_brutas[-2] if len(sumatorias_brutas) >= 2 else 0.0
     vac_ult = sumatorias_brutas[-1] if sumatorias_brutas else 0.0
+    # Desglose mensual de los últimos 2 periodos (VACACIONES_1 = penúltimo /
+    # "anterior", VACACIONES_2 = último / "actual") -- ver comentario en el
+    # campo `detalle_vacaciones_meses` de `Liquidacion`.
+    detalle_vac_meses: dict[str, list[DetalleMesDecimo]] = {}
+    if len(_detalles_periodo_vac) >= 2:
+        detalle_vac_meses["VACACIONES_1"] = _detalles_periodo_vac[-2]
+    if _detalles_periodo_vac:
+        detalle_vac_meses["VACACIONES_2"] = _detalles_periodo_vac[-1]
     suma_pendiente, alertas_vac, detalle_vac = total_vacaciones_a_pagar(ced, sumatorias_brutas, pv)
     vac_calc = round(suma_pendiente / 24, 2) if suma_pendiente > 0 else 0.0
 
@@ -1123,6 +1148,7 @@ def procesar_empleado(
         dias_trabajados=dias_trab, campos=campos, alertas=alertas_vac,
         apellidos=apellidos_emp, nombres=nombres_emp, detalle_vacaciones=detalle_vac,
         detalle_decimo_tercera=detalle_dec13,
+        detalle_vacaciones_meses=detalle_vac_meses,
         descuentos_aplicados=descuentos_aplicados,
     )
 
@@ -1655,6 +1681,25 @@ def guardar_liquidacion(
                         "meses": [
                             {"label": d.label, "valor": d.valor}
                             for d in liq.detalle_decimo_tercera
+                        ],
+                    }).execute()
+            # Desglose mensual de Vacaciones (VACACIONES_1/VACACIONES_2) --
+            # BUG REAL corregido 2026-09-11: nunca se guardaba (solo la
+            # Décima Tercera de arriba), así que el panel "Ver detalle
+            # mensual" y el bot MRL veían vacaciones siempre vacío para
+            # cualquier liquidación generada por esta app (el .pyw legado sí
+            # lo escribe -- por eso las liquidaciones viejas migradas SÍ
+            # tenían este detalle, pero cualquiera nueva de esta app no).
+            for tipo, detalle_meses in liq.detalle_vacaciones_meses.items():
+                if not detalle_meses:
+                    continue
+                with contextlib.suppress(Exception):
+                    sb.table(TABLA_LIQ_PERIODOS).insert({
+                        "liquidacion_id": liquidacion_id,
+                        "tipo": tipo,
+                        "meses": [
+                            {"label": d.label, "valor": d.valor}
+                            for d in detalle_meses
                         ],
                     }).execute()
             with contextlib.suppress(Exception):
@@ -2246,3 +2291,63 @@ def recalcular_liquidacion(
         ced, fsal, mot, fuente, cfg,
         incluir_dec13_anterior=False, incluir_dec14_anterior=False,
     )
+
+
+def refrescar_periodos_calculo(
+    liquidacion_id: str, fuente: str, cfg: ConfigLiquidacion, *,
+    usuario: str, roles: set[str],
+) -> tuple[bool, str]:
+    """Recalcula SOLO el desglose mes a mes (`liquidaciones_periodos_calculo`,
+    DEC_TERCERA/VACACIONES_1/VACACIONES_2) de una liquidación YA GUARDADA y
+    reemplaza las filas existentes -- no toca `liquidaciones`/
+    `liquidaciones_detalle` ni ningún total.
+
+    Existe para corregir registros con el detalle mensual desactualizado o
+    en blanco (labels vacíos, valores en 0) que quedaron de una versión
+    anterior del motor -- caso real: VARGAS CHICHANDE CRISTOPHER JESUS
+    (cédula 1207739887, id `bc312594-ddca-4bf2-8869-f5f134f9b403`), reportado
+    2026-09-11 porque el bot MRL mostraba las 24 columnas mensuales en 0
+    ("liquidaciones_periodos_calculo vacío"). El total (`total_liquido` y
+    demás) YA estaba correcto -- solo el desglose mensual había quedado
+    obsoleto porque nada lo refrescaba después de un `editar_valores_liquidacion`.
+
+    Devuelve (True, liquidacion_id) o (False, mensaje de error)."""
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, "No existe esa liquidación."
+    liq = recalcular_liquidacion(
+        liquidacion_id, fuente, cfg,
+        cedula=str(registro.get("empleado_cedula") or ""),
+        fecha_salida=str(registro.get("fecha_salida") or ""),
+        motivo=str(registro.get("motivo") or ""),
+    )
+    if liq.error:
+        return False, liq.error
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "refrescar_periodos_calculo", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ_PERIODOS, target_key=liquidacion_id,
+        after={"tipos": list(liq.detalle_vacaciones_meses) + (["DEC_TERCERA"] if liq.detalle_decimo_tercera else [])},
+    ):
+        try:
+            sb = supabase_client.get_client()
+            sb.table(TABLA_LIQ_PERIODOS).delete().eq("liquidacion_id", liquidacion_id).execute()
+            filas = []
+            if liq.detalle_decimo_tercera:
+                filas.append({
+                    "liquidacion_id": liquidacion_id, "tipo": "DEC_TERCERA",
+                    "meses": [{"label": d.label, "valor": d.valor} for d in liq.detalle_decimo_tercera],
+                })
+            for tipo, detalle_meses in liq.detalle_vacaciones_meses.items():
+                if not detalle_meses:
+                    continue
+                filas.append({
+                    "liquidacion_id": liquidacion_id, "tipo": tipo,
+                    "meses": [{"label": d.label, "valor": d.valor} for d in detalle_meses],
+                })
+            if filas:
+                sb.table(TABLA_LIQ_PERIODOS).insert(filas).execute()
+            return True, liquidacion_id
+        except Exception as e:  # noqa: BLE001
+            return False, str(e)

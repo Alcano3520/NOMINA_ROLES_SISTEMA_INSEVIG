@@ -524,6 +524,11 @@ def test_usar_ingresos_reales_desahucio_usa_promedio_del_ultimo_periodo(monkeypa
     # El último periodo de vacaciones (anclado en el ingreso, 15/01) para una
     # salida el 15/06/2026 es 15/01/2026 -> 15/06/2026: 6 meses exactos.
     monkeypatch.setattr(lq, "_suma_base", lambda cod, i, f, fuente: 1200.0)
+    # Vacaciones usa `_suma_base_mensual` desde que se agregó el desglose
+    # mensual persistido (VACACIONES_1/VACACIONES_2, ver
+    # `detalle_vacaciones_meses`) -- mismo total que `_suma_base`, detalle
+    # mensual vacío (no relevante para este test).
+    monkeypatch.setattr(lq, "_suma_base_mensual", lambda cod, i, f, fuente: (1200.0, []))
     cfg = lq.ConfigLiquidacion()
 
     con_default = lq.procesar_empleado(
@@ -1328,6 +1333,82 @@ def test_guardar_liquidacion_persiste_desglose_mensual_del_decimo(monkeypatch, a
         {"label": "mayo -2026", "valor": 40.0},
         {"label": "junio -2026", "valor": 45.0},
     ]
+
+
+def test_guardar_liquidacion_persiste_desglose_mensual_de_vacaciones(monkeypatch, app_db):
+    """BUG REAL corregido 2026-09-11: `guardar_liquidacion` solo persistía el
+    desglose mensual de la Décima Tercera -- el de Vacaciones
+    (VACACIONES_1/VACACIONES_2) nunca se guardaba, así que cualquier
+    liquidación generada por esta app (a diferencia de una migrada del
+    `.pyw`) quedaba sin ese detalle. Reportado por el usuario contra VARGAS
+    CHICHANDE CRISTOPHER (cédula 1207739887): "no muestra los valores que
+    salen de mes mensual"."""
+    liq = _liq_ejemplo()
+    liq.detalle_vacaciones_meses = {
+        "VACACIONES_1": [lq.DetalleMesDecimo(label="enero -2025", valor=500.0)],
+        "VACACIONES_2": [
+            lq.DetalleMesDecimo(label="febrero -2026", valor=510.0),
+            lq.DetalleMesDecimo(label="marzo -2026", valor=515.0),
+        ],
+    }
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, _id = lq.guardar_liquidacion(liq, "generada", lq.ConfigLiquidacion(), usuario="ana", roles=set())
+    assert ok
+
+    periodos_ins = {
+        pl["tipo"]: pl for (t, op, pl) in cliente.log
+        if t == lq.TABLA_LIQ_PERIODOS and op == "insert"
+    }
+    assert set(periodos_ins) == {"VACACIONES_1", "VACACIONES_2"}
+    assert periodos_ins["VACACIONES_1"]["meses"] == [{"label": "enero -2025", "valor": 500.0}]
+    assert periodos_ins["VACACIONES_2"]["meses"] == [
+        {"label": "febrero -2026", "valor": 510.0},
+        {"label": "marzo -2026", "valor": 515.0},
+    ]
+
+
+def test_refrescar_periodos_calculo_reemplaza_desglose_obsoleto(monkeypatch, app_db):
+    """`refrescar_periodos_calculo` recalcula (vía `recalcular_liquidacion`)
+    y reemplaza SOLO el desglose mensual -- no toca `liquidaciones` ni
+    `liquidaciones_detalle`. Caso real que lo motivó: el id
+    `bc312594-ddca-4bf2-8869-f5f134f9b403` (VARGAS CHICHANDE CRISTOPHER)
+    tenía un `DEC_TERCERA` guardado con labels vacíos y valores en 0 -- de
+    una versión anterior del motor -- que hacía que el bot MRL mostrara las
+    24 columnas mensuales en 0."""
+    registro = {
+        "id": "bc312594-x", "empleado_cedula": "1207739887",
+        "fecha_salida": "2026-08-07", "motivo": "RENUNCIA VOLUNTARIA",
+    }
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
+    liq_fresca = _liq_ejemplo(
+        detalle_decimo_tercera=[lq.DetalleMesDecimo(label="agosto -2026", valor=113.7)],
+        detalle_vacaciones_meses={
+            "VACACIONES_2": [lq.DetalleMesDecimo(label="agosto -2026", valor=105.1)],
+        },
+    )
+    monkeypatch.setattr(
+        lq, "recalcular_liquidacion",
+        lambda liq_id, fuente, cfg, **kw: liq_fresca,
+    )
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, res = lq.refrescar_periodos_calculo(
+        "bc312594-x", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), usuario="ana", roles=set()
+    )
+    assert ok and res == "bc312594-x"
+
+    ops = [(t, op) for (t, op, _pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS]
+    assert ("liquidaciones_periodos_calculo", "delete") in ops
+    inserts = [pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS and op == "insert"]
+    assert len(inserts) == 1  # un solo insert con la lista de filas
+    filas = inserts[0]
+    tipos = {f["tipo"] for f in filas}
+    assert tipos == {"DEC_TERCERA", "VACACIONES_2"}
+    # nunca toca la liquidación ni su detalle de conceptos
+    assert not [t for (t, _op, _pl) in cliente.log if t in (lq.TABLA_LIQ, lq.TABLA_LIQ_DETALLE)]
 
 
 def test_guardar_liquidacion_rechaza_estado_invalido():
