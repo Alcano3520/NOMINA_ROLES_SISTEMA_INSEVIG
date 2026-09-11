@@ -17,17 +17,12 @@ from core.repos.empleados import (
     ETIQUETAS,
     SECCIONES,
 )
-from insevig_web.components.ui import card, primary_button
+from insevig_web.components.ui import card, empty_state, field_label, native_select, primary_button, section_box
+from insevig_web.pages.empleados._comunes import badge_estado
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
 
 _S = EmpleadosState
-
-_SELECT_STYLE = {
-    "width": "100%", "padding": "7px 8px", "borderRadius": "6px",
-    "border": "1px solid var(--gray-6)", "background": "var(--color-panel-solid)",
-    "color": "var(--gray-12)", "fontSize": "14px",
-}
 
 
 def _bloqueado() -> rx.Var:
@@ -54,19 +49,18 @@ def _campo(nombre: str) -> rx.Component:
             width="100%",
         )
     if nombre in CAMPOS_COMBO:
-        control = rx.el.select(
+        control = native_select(
             rx.el.option("—", value=""),
             *[rx.el.option(f"{c} — {t}", value=c) for c, t in CAMPOS_COMBO[nombre]],
             value=val,
             on_change=lambda v: _S.set_campo(nombre, v),
             disabled=_bloqueado(),
-            style=_SELECT_STYLE,
         )
     elif nombre in CAMPOS_CATALOGO:
         # Catálogos (DEPTO/CARGO/SECCION/BANCO): se escribe el código y debajo se
         # muestra el NOMBRE que corresponde.
         return rx.vstack(
-            rx.text(_label(nombre), size="1", weight="bold"),
+            field_label(_label(nombre)),
             rx.input(
                 value=val,
                 on_change=lambda v: _S.set_campo_catalogo(nombre, v),
@@ -92,7 +86,7 @@ def _campo(nombre: str) -> rx.Component:
             disabled=_bloqueado(),
         )
     return rx.vstack(
-        rx.text(_label(nombre), size="1", weight="bold", color_scheme="gray"),
+        field_label(_label(nombre)),
         control,
         spacing="1",
         width="100%",
@@ -165,7 +159,8 @@ def _foto_y_documentos() -> rx.Component:
         ("contrato", "Contrato"),
         ("renuncia", "Carta de renuncia"),
     ]
-    return card(
+    return section_box(
+        "Foto y documentos",
         rx.hstack(
             rx.vstack(
                 foto,
@@ -241,7 +236,7 @@ def _fdr_checkbox() -> rx.Component:
             disabled=_bloqueado(),
         ),
         rx.vstack(
-            rx.text("Fondo de Reserva", size="1", weight="bold"),
+            field_label("Fondo de Reserva"),
             rx.text(
                 "Marca al empleado como afiliado al IESS para que el rol calcule el fondo de reserva.",
                 size="1", color_scheme="gray",
@@ -257,34 +252,27 @@ def _fdr_checkbox() -> rx.Component:
 def _subseccion(titulo: str, campos: tuple[str, ...]) -> rx.Component:
     """Un recuadro con título (como los LabelFrame del sistema anterior)."""
     extra = [_fdr_checkbox()] if titulo == "Parámetros de nómina" else []
-    return rx.box(
-        rx.hstack(
-            rx.box(width="7px", height="7px", border_radius="9999px",
-                   background="var(--blue-9)", flex_shrink="0"),
-            rx.text(titulo.upper(), size="1", weight="bold", letter_spacing="0.05em"),
-            spacing="2", align="center", margin_bottom="8px",
-        ),
+    return section_box(
+        titulo,
         rx.grid(
             *[_campo(c) for c in campos],
             *extra,
-            columns=rx.breakpoints(initial="1", sm="2", lg="3"),
+            # `xl` (no `lg`): el editor comparte viewport con la lista maestra
+            # entre 1024-1279px y ahí mide ~460px — a 3 columnas los inputs
+            # quedan inservibles. A 3 solo desde 1280px, donde ya hay espacio.
+            columns=rx.breakpoints(initial="1", sm="2", xl="3"),
             spacing="2",
             width="100%",
         ),
-        border="1px solid var(--gray-5)",
-        border_radius="8px",
-        padding="12px",
-        width="100%",
-        background="var(--gray-2)",
     )
 
 
 def _tab_secciones(tab: str) -> rx.Component:
     return rx.vstack(
         *[_subseccion(tit, campos) for tit, campos in SECCIONES[tab]],
-        spacing="2",
+        spacing="3",
         width="100%",
-        padding_y="2",
+        padding_top="12px",
     )
 
 
@@ -336,7 +324,7 @@ def _vista_completa() -> rx.Component:
 def _observaciones() -> rx.Component:
     slots = [
         rx.vstack(
-            rx.text(f"Campo {i + 1}", size="1", weight="bold"),
+            field_label(f"Campo {i + 1}"),
             rx.text_area(
                 value=_S.edit_obs_slots[i],
                 on_change=lambda v, i=i: _S.set_obs_slot(i, v),
@@ -407,9 +395,13 @@ def editor_panel() -> rx.Component:
             rx.center(rx.spinner(size="3"), padding="3rem", width="100%"),
             rx.vstack(
                 rx.flex(
-                    rx.heading(
-                        rx.cond(_S.es_nuevo, "Nuevo empleado", _S.nombre_editor),
-                        size="5", flex_grow="1", min_width="0",
+                    rx.hstack(
+                        rx.heading(
+                            rx.cond(_S.es_nuevo, "Nuevo empleado", _S.nombre_editor),
+                            size="5",
+                        ),
+                        rx.cond(~_S.es_nuevo, badge_estado(_S.edit_campos["ESTADO"])),
+                        spacing="2", align="center", wrap="wrap", flex_grow="1", min_width="0",
                     ),
                     rx.flex(
                         rx.cond(
@@ -438,18 +430,21 @@ def editor_panel() -> rx.Component:
                     justify="between", align="center", gap="3", width="100%", wrap="wrap",
                 ),
                 _vista_completa(),
-                rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
-                rx.badge(
-                    rx.icon(
-                        rx.cond(_S.edit_dirty, "circle-alert", rx.cond(_S.modo_edicion | _S.es_nuevo, "pencil", "lock")),
-                        size=13,
+                rx.flex(
+                    rx.badge(
+                        rx.icon(
+                            rx.cond(_S.edit_dirty, "circle-alert", rx.cond(_S.modo_edicion | _S.es_nuevo, "pencil", "lock")),
+                            size=13,
+                        ),
+                        _S.estado_barra,
+                        color_scheme=rx.cond(
+                            _S.edit_dirty, "amber", rx.cond(_S.modo_edicion | _S.es_nuevo, "blue", "gray")
+                        ),
+                        variant="soft",
+                        size="1",
                     ),
-                    _S.estado_barra,
-                    color_scheme=rx.cond(
-                        _S.edit_dirty, "amber", rx.cond(_S.modo_edicion | _S.es_nuevo, "blue", "gray")
-                    ),
-                    variant="soft",
-                    size="2",
+                    rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
+                    gap="3", align="center", wrap="wrap",
                 ),
                 rx.cond(_S.edit_error != "", rx.callout(_S.edit_error, color_scheme="red", size="1")),
                 rx.cond(_S.edit_ok != "", rx.callout(_S.edit_ok, color_scheme="green", size="1")),
@@ -457,7 +452,7 @@ def editor_panel() -> rx.Component:
                 rx.cond(
                     _S.es_nuevo,
                     rx.vstack(
-                        rx.text("Código de empleado", size="1", weight="bold"),
+                        field_label("Código de empleado"),
                         rx.input(
                             value=_S.edit_campos["EMPLEADO"],
                             on_change=lambda v: _S.set_campo("EMPLEADO", v),
@@ -466,6 +461,7 @@ def editor_panel() -> rx.Component:
                         spacing="1",
                     ),
                 ),
+                rx.divider(),
                 rx.tabs.root(
                     rx.tabs.list(
                         *[
@@ -505,7 +501,7 @@ def editor_panel() -> rx.Component:
                         AuthState.permisos_flat.contains("empleados:editar")
                         | AuthState.permisos_flat.contains("empleados:crear"),
                         rx.alert_dialog.root(
-                            rx.alert_dialog.trigger(primary_button("Guardar")),
+                            rx.alert_dialog.trigger(primary_button("Guardar", min_width="120px")),
                             rx.alert_dialog.content(
                                 rx.alert_dialog.title("Confirmar"),
                                 rx.alert_dialog.description(
@@ -530,18 +526,20 @@ def editor_panel() -> rx.Component:
                     ),
                     rx.cond(
                         ~_S.es_nuevo & _S.modo_edicion,
-                        rx.button("Cancelar", on_click=_S.cancelar_edicion, variant="soft", color_scheme="gray"),
+                        rx.button("Cancelar", on_click=_S.cancelar_edicion, variant="soft",
+                                  color_scheme="gray", size="3", min_width="120px"),
                     ),
                     spacing="3",
                     wrap="wrap",
                 ),
                 rx.cond(
                     ~_S.es_nuevo & AuthState.permisos_flat.contains("empleados:eliminar"),
-                    card(
+                    section_box(
+                        "Zona de peligro",
                         rx.vstack(
-                            rx.heading("Eliminar empleado", size="3", color_scheme="red"),
                             rx.text(
-                                "Escribe el código exacto (" + _S.edit_empleado + ") y confirma dos veces.",
+                                "Eliminar empleado — escribe el código exacto ("
+                                + _S.edit_empleado + ") y confirma dos veces.",
                                 size="1",
                             ),
                             rx.hstack(
@@ -580,6 +578,7 @@ def editor_panel() -> rx.Component:
                             ),
                             spacing="2",
                         ),
+                        tono="peligro",
                         width="100%",
                     ),
                 ),
@@ -587,14 +586,6 @@ def editor_panel() -> rx.Component:
                 width="100%",
             ),
         ),
-        rx.center(
-            rx.vstack(
-                rx.icon("user", size=40, color="var(--gray-8)"),
-                rx.heading("Ninguna ficha abierta", size="4", color_scheme="gray"),
-                rx.text("Elegí un empleado de la lista para ver y editar su ficha.",
-                        size="2", color_scheme="gray", text_align="center"),
-                spacing="3", align="center", max_width="24em",
-            ),
-            padding="3rem", width="100%", min_height="280px",
-        ),
+        empty_state("user", "Ninguna ficha abierta",
+                   "Elegí un empleado de la lista para ver y editar su ficha."),
     )

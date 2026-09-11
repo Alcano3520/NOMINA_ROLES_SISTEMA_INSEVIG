@@ -3,19 +3,13 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import card, page_heading, primary_button, scroll_x
+from insevig_web.components.ui import card, native_select, page_heading, primary_button, scroll_x
+from insevig_web.pages.empleados._comunes import badge_estado
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
 
 _S = EmpleadosState
 _COLS = ("Código", "Apellidos", "Nombres", "Cédula", "Cargo", "Departamento", "Sueldo", "Teléfono", "Email", "Estado")
-
-
-_SELECT = {
-    "padding": "7px 8px", "borderRadius": "6px", "width": "100%",
-    "border": "1px solid var(--gray-6)", "background": "var(--color-panel-solid)",
-    "color": "var(--gray-12)", "fontSize": "14px",
-}
 
 
 def _crit(etq: str, campo: str, placeholder: str = "") -> rx.Component:
@@ -45,14 +39,13 @@ def avanzada() -> rx.Component:
                         _crit("Cédula", "cedula", "exacta"),
                         rx.vstack(
                             rx.text("Estado", size="1", weight="bold", color_scheme="gray"),
-                            rx.el.select(
+                            native_select(
                                 rx.el.option("Todos", value=""),
                                 rx.el.option("Activo", value="ACTIVO"),
                                 rx.el.option("Liquidado", value="LIQUIDADO"),
                                 rx.el.option("Suspendido", value="SUSPENDIDO"),
                                 value=_S.av_estado,
                                 on_change=lambda v: _S.set_av("estado", v),
-                                style=_SELECT,
                             ),
                             spacing="1",
                         ),
@@ -110,7 +103,7 @@ def avanzada() -> rx.Component:
                                         rx.table.cell(e["sueldo"].to_string()),
                                         rx.table.cell(e["telefono"]),
                                         rx.table.cell(e["email"]),
-                                        rx.table.cell(e["estado"]),
+                                        rx.table.cell(badge_estado(e["estado"], size="1")),
                                     ),
                                 )
                             ),
