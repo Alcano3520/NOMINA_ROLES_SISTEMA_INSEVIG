@@ -189,6 +189,7 @@ class LiquidacionesEditorState(rx.State):
             "fecha_salida": str(registro.get("fecha_salida") or ""),
             "motivo": str(registro.get("motivo") or ""),
             "estado": str(registro.get("estado") or ""),
+            "dias_trabajados": _num("dias_trabajados"),  # insumo de "Recalcular Anticipo Otros/Desahucio"
             # insumo del cálculo de horas (solo lectura, para ver de dónde sale el total)
             "horas_25_cant": _num("horas_25_cantidad"), "horas_25_vh": _num("horas_25_valor_hora"),
             "horas_50_cant": _num("horas_50_cantidad"), "horas_50_vh": _num("horas_50_valor_hora"),
@@ -197,6 +198,9 @@ class LiquidacionesEditorState(rx.State):
         por_cod = {str(c["concepto_codigo"]): round(float(c.get("valor_total") or 0), 2)
                    for c in conceptos}
         self.ed_campos = {cod: str(por_cod.get(cod, 0.0)) for cod, _ in _TODOS}
+        self.periodo_meses = {}
+        self.periodo_abierto = {}
+        self.periodo_msg = ""
         self.ed_orig = dict(self.ed_campos)
         self.ed_fecha_calc_valida = self.ed_datos["fecha_salida"]
         with contextlib.suppress(Exception):
@@ -235,6 +239,123 @@ class LiquidacionesEditorState(rx.State):
     @rx.event
     def set_ed_dato(self, k: str, v: str):
         self.ed_datos = {**self.ed_datos, k: v}
+
+    # ── Desglose mes a mes (Décima Tercera / Vacaciones 1-2) ────────────
+    # "Ver detalle mensual" + "↻ Generar meses" + "↳ Aplicar..." del
+    # original. A diferencia del `.pyw` (que guarda el desglose junto con
+    # el resto al pulsar "Guardar cambios"), acá cada panel se guarda solo
+    # al pulsar su propio "↻ Aplicar..." -- evita rehacer el guardado
+    # combinado de `guardar()` (que solo conoce `liquidaciones_detalle`,
+    # no `liquidaciones_periodos_calculo`) para esta única pieza.
+    periodo_meses: dict[str, list[dict]] = {}   # tipo -> [{label, valor}, ...]
+    periodo_abierto: dict[str, bool] = {}
+    periodo_fecha_inicio: dict[str, str] = {}
+    periodo_msg: str = ""
+
+    def _periodo_vacio(self, tipo: str) -> list[dict]:
+        return [{"label": "", "valor": "0.00"} for _ in range(repo.PERIODO_FILAS[tipo])]
+
+    @rx.event
+    async def abrir_periodo(self, tipo: str):
+        abierto = not self.periodo_abierto.get(tipo, False)
+        self.periodo_abierto = {**self.periodo_abierto, tipo: abierto}
+        if abierto and tipo not in self.periodo_meses:
+            datos = await asyncio.to_thread(repo.obtener_periodos_calculo, self.ed_id)
+            guardados = datos.get(tipo) or []
+            n = repo.PERIODO_FILAS[tipo]
+            self.periodo_meses = {**self.periodo_meses, tipo: [
+                {
+                    "label": str(guardados[i].get("label", "")) if i < len(guardados) else "",
+                    "valor": str(guardados[i].get("valor", 0)) if i < len(guardados) else "0.00",
+                }
+                for i in range(n)
+            ]}
+
+    @rx.event
+    def set_periodo_fecha_inicio(self, tipo: str, v: str):
+        self.periodo_fecha_inicio = {**self.periodo_fecha_inicio, tipo: v}
+
+    @rx.event
+    def generar_meses_periodo(self, tipo: str):
+        n = repo.PERIODO_FILAS[tipo]
+        etiquetas = repo.generar_etiquetas_meses(self.periodo_fecha_inicio.get(tipo, ""), n)
+        if not etiquetas:
+            self.periodo_msg = "Fecha inválida (dd/mm/aaaa)."
+            return
+        actuales = self.periodo_meses.get(tipo) or self._periodo_vacio(tipo)
+        self.periodo_meses = {**self.periodo_meses, tipo: [
+            {"label": et, "valor": actuales[i]["valor"] if i < len(actuales) else "0.00"}
+            for i, et in enumerate(etiquetas)
+        ]}
+        self.periodo_msg = ""
+
+    @rx.event
+    def set_periodo_valor(self, tipo: str, idx: int, v: str):
+        filas = list(self.periodo_meses.get(tipo) or self._periodo_vacio(tipo))
+        if 0 <= idx < len(filas):
+            filas[idx] = {**filas[idx], "valor": v}
+        self.periodo_meses = {**self.periodo_meses, tipo: filas}
+
+    @rx.var
+    def periodo_bruto(self) -> dict[str, float]:
+        return {
+            tipo: round(sum(_f(m.get("valor", 0)) for m in filas), 2)
+            for tipo, filas in self.periodo_meses.items()
+        }
+
+    @rx.var
+    def periodo_final(self) -> dict[str, float]:
+        return {
+            tipo: round(bruto / repo.PERIODO_DIVISOR[tipo], 2)
+            for tipo, bruto in self.periodo_bruto.items()
+        }
+
+    async def _guardar_periodo(self, tipo: str) -> float:
+        """Sin `yield` -- awaitable directo desde `aplicar_decima_tercera`/
+        `aplicar_vacaciones`. Devuelve el valor final (0.0 si hay error, en
+        cuyo caso además deja el mensaje en `periodo_msg`)."""
+        auth = await self.get_state(AuthState)
+        if "liquidaciones:editar" not in auth.permisos_flat:
+            self.periodo_msg = "Sin permiso."
+            return 0.0
+        filas = self.periodo_meses.get(tipo) or []
+        ok, final, err = await asyncio.to_thread(
+            repo.guardar_periodo_calculo, self.ed_id, tipo, filas,
+            usuario=auth.username, roles=set(auth.roles),
+        )
+        if not ok:
+            self.periodo_msg = err
+            return 0.0
+        return final
+
+    @rx.event
+    async def aplicar_decima_tercera(self):
+        final = await self._guardar_periodo("DEC_TERCERA")
+        self.ed_campos = {**self.ed_campos, "DEC_TERCERA_ACT": f"{final:.2f}"}
+        self.periodo_msg = f"Décima Tercera: ${final:.2f} aplicado (guardá los cambios para confirmar el total)."
+
+    @rx.event
+    async def aplicar_vacaciones(self):
+        f1 = await self._guardar_periodo("VACACIONES_1")
+        f2 = await self._guardar_periodo("VACACIONES_2")
+        suma = round(f1 + f2, 2)
+        self.ed_campos = {**self.ed_campos, "VACACIONES": f"{suma:.2f}"}
+        self.periodo_msg = f"Vacaciones: ${suma:.2f} aplicado (guardá los cambios para confirmar el total)."
+
+    @rx.event
+    def recalcular_anticipo_liquidado(self):
+        def g(cod: str) -> float:
+            return _f(self.ed_campos.get(cod, 0))
+
+        otros_l, desahucio_l = repo.recalcular_anticipo_liquidado(
+            _f(self.ed_datos.get("dias_trabajados", 0)),
+            g("VACACIONES"), g("DEC_TERCERA_ACT"), g("DEC_CUARTA_ACT"), g("DESAHUCIO"),
+        )
+        self.ed_campos = {
+            **self.ed_campos,
+            "ANTICIPOS_OTROS_L": f"{otros_l:.2f}",
+            "ANTICIPO_L_DESAHUCIO": f"{desahucio_l:.2f}",
+        }
 
     @rx.var
     def ed_total_ingresos(self) -> float:

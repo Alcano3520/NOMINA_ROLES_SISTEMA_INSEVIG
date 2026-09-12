@@ -216,6 +216,118 @@ def _campo_concepto(cod: str, label: str) -> rx.Component:
     )
 
 
+# tipo -> (título, divisor, con_fechas) del panel "Ver detalle mensual" --
+# décimo no tiene "↻ Generar meses" (con_fechas=False) porque su rango es
+# fijo (diciembre → noviembre); vacaciones sí, porque el período depende de
+# la fecha de ingreso/salida de cada empleado.
+_PANELES_PERIODO = [
+    ("DEC_TERCERA", "Ver detalle mensual — Décima Tercera (diciembre → noviembre)", 12, False),
+    ("VACACIONES_1", "Ver detalle mensual — Vacaciones periodo anterior", 24, True),
+    ("VACACIONES_2", "Ver detalle mensual — Vacaciones periodo actual", 24, True),
+]
+
+
+def _fila_mes_periodo(tipo: str, fila, idx) -> rx.Component:
+    return rx.hstack(
+        rx.text(fila["label"], size="1", color_scheme="gray", flex_grow="1", min_width="0"),
+        rx.input(
+            value=fila["valor"], on_change=lambda v: _S.set_periodo_valor(tipo, idx, v),
+            type="number", size="1", width="90px",
+        ),
+        align="center", width="100%",
+    )
+
+
+def _panel_periodo(tipo: str, titulo: str, divisor: int, con_fechas: bool) -> rx.Component:
+    abierto = _S.periodo_abierto[tipo]
+    return rx.box(
+        rx.hstack(
+            rx.button(
+                rx.cond(abierto, rx.icon("chevron-down", size=13), rx.icon("chevron-right", size=13)),
+                titulo, on_click=lambda: _S.abrir_periodo(tipo), variant="ghost", size="1",
+                color_scheme="gray",
+            ),
+            rx.spacer(),
+            rx.cond(
+                abierto,
+                rx.text(
+                    "Bruto: $" + _S.periodo_bruto[tipo].to_string()
+                    + f"  ÷ {divisor} = $" + _S.periodo_final[tipo].to_string(),
+                    size="1", weight="bold", color_scheme="grass",
+                ),
+            ),
+            align="center", width="100%", wrap="wrap",
+        ),
+        rx.cond(
+            abierto,
+            rx.vstack(
+                rx.cond(
+                    con_fechas,
+                    rx.hstack(
+                        rx.input(
+                            placeholder="dd/mm/aaaa", value=_S.periodo_fecha_inicio[tipo],
+                            on_change=lambda v: _S.set_periodo_fecha_inicio(tipo, v),
+                            size="1", width="110px",
+                        ),
+                        rx.button("↻ Generar meses", on_click=lambda: _S.generar_meses_periodo(tipo),
+                                 size="1", variant="soft"),
+                        spacing="2", align="center", margin_top="6px",
+                    ),
+                ),
+                rx.grid(
+                    rx.foreach(_S.periodo_meses[tipo], lambda fila, idx: _fila_mes_periodo(tipo, fila, idx)),
+                    columns=rx.breakpoints(initial="1", sm="2"),
+                    spacing="1", width="100%", margin_top="6px",
+                ),
+                width="100%",
+            ),
+        ),
+        padding="8px 10px", border=_LINE, border_radius=_RADIUS,
+        background="var(--gray-1)", width="100%",
+    )
+
+
+def _seccion_beneficios() -> rx.Component:
+    """CONCEPTOS DE BENEFICIOS -- igual que `_seccion`, pero con los 3
+    paneles "Ver detalle mensual" y los 2 botones "↳ Aplicar..."
+    intercalados en el mismo orden del `.pyw` original."""
+    campos_por_cod = dict(SEC_BENEFICIOS)
+
+    def campo(cod: str) -> rx.Component:
+        return _campo_concepto(cod, campos_por_cod[cod])
+
+    return rx.box(
+        rx.hstack(
+            rx.box(width="8px", height="8px", border_radius="9999px", background="var(--grass-9)"),
+            rx.text("CONCEPTOS DE BENEFICIOS", size="3", weight="bold"),
+            spacing="2", align="center", margin_bottom="6px",
+        ),
+        rx.vstack(
+            campo("DEC_TERCERA_ANT"),
+            campo("DEC_TERCERA_ACT"),
+            _panel_periodo(*_PANELES_PERIODO[0]),
+            rx.button("↳ Aplicar detalle a Décima Tercera (actual)",
+                      on_click=_S.aplicar_decima_tercera, variant="ghost", size="1", color_scheme="blue"),
+            campo("DEC_CUARTA_ANT"),
+            campo("DEC_CUARTA_ACT"),
+            campo("VACACIONES"),
+            _panel_periodo(*_PANELES_PERIODO[1]),
+            _panel_periodo(*_PANELES_PERIODO[2]),
+            rx.button("↳ Aplicar suma de ambos periodos a Vacaciones Pendientes",
+                      on_click=_S.aplicar_vacaciones, variant="ghost", size="1", color_scheme="blue"),
+            campo("DESAHUCIO"),
+            campo("INDEM_DESPIDO"),
+            campo("OTRAS_INDEM"),
+            campo("VALOR_NO_CONSIDERADO"),
+            campo("AJUSTE_CUADRE"),
+            rx.cond(_S.periodo_msg != "", rx.callout(_S.periodo_msg, size="1")),
+            spacing="1", width="100%",
+        ),
+        padding="12px", border=_LINE, border_left="3px solid var(--grass-8)",
+        border_radius=_RADIUS, background=_SURFACE, width="100%",
+    )
+
+
 def _seccion(titulo: str, campos: list, *, acento: str) -> rx.Component:
     return rx.box(
         rx.hstack(
@@ -405,8 +517,11 @@ def _formulario() -> rx.Component:
                     background=_SURFACE, width="100%",
                 ),
                 _seccion("CONCEPTOS DE REMUNERACIÓN", SEC_REMUNERACION, acento="grass"),
-                _seccion("CONCEPTOS DE BENEFICIOS", SEC_BENEFICIOS, acento="grass"),
+                _seccion_beneficios(),
                 _seccion("DESCUENTOS", SEC_DESCUENTOS, acento="red"),
+                rx.button("↻ Recalcular Anticipo Otros/Desahucio (liquidado)",
+                          on_click=_S.recalcular_anticipo_liquidado, variant="ghost", size="1",
+                          color_scheme="blue", margin_top="-8px"),
                 _totales(),
                 _barra_acciones(),
                 _dialogo_ajuste(),

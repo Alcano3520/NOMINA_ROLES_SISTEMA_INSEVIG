@@ -1860,3 +1860,84 @@ def test_parse_excel_liquidaciones_arma_desglose_mensual_de_vacaciones():
     assert [d.valor for d in v1] == [100.0 + i for i in range(12)]
     assert [d.label for d in v2] == ["enero -2026", "febrero -2026"]
     assert [d.valor for d in v2] == [112.0, 113.0]
+
+
+# ── Desglose mes a mes editable a mano (2026-09-12) ─────────────────────────
+
+def test_generar_etiquetas_meses():
+    etiquetas = lq.generar_etiquetas_meses("15/12/2025", 3)
+    assert etiquetas == ["diciembre -2025", "enero -2026", "febrero -2026"]
+
+
+def test_generar_etiquetas_meses_fecha_invalida():
+    assert lq.generar_etiquetas_meses("no es una fecha", 12) == []
+
+
+def test_obtener_periodos_calculo(monkeypatch):
+    datos = {
+        "liquidaciones_periodos_calculo": [
+            {"tipo": "DEC_TERCERA", "meses": [{"label": "enero -2026", "valor": 10.0}]},
+        ],
+    }
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClient(
+        datos["liquidaciones_periodos_calculo"]))
+    # _FakeClient (arriba) siempre expone la misma tabla -- alcanza para
+    # confirmar que arma bien el dict tipo -> meses.
+    out = lq.obtener_periodos_calculo("L1")
+    assert out == {"DEC_TERCERA": [{"label": "enero -2026", "valor": 10.0}]}
+
+
+def test_guardar_periodo_calculo_decima_tercera(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "generada"}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    meses = [{"label": f"mes{i}", "valor": 10.0} for i in range(12)]
+    ok, final, err = lq.guardar_periodo_calculo("L1", "DEC_TERCERA", meses, usuario="ana", roles={"editor"})
+    assert ok and err == ""
+    assert final == 10.0  # bruto 120 / 12
+
+    ops = [(op, pl) for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS]
+    assert ("delete", None) in ops
+    inserted = next(pl for op, pl in ops if op == "insert")
+    assert inserted["tipo"] == "DEC_TERCERA"
+    assert len(inserted["meses"]) == 12
+
+
+def test_guardar_periodo_calculo_vacaciones_divisor_24(monkeypatch, app_db):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "generada"}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    meses = [{"label": f"mes{i}", "valor": 24.0} for i in range(24)]
+    ok, final, err = lq.guardar_periodo_calculo("L1", "VACACIONES_1", meses, usuario="ana", roles={"editor"})
+    assert ok and final == 24.0  # bruto 576 / 24
+
+
+def test_guardar_periodo_calculo_tipo_invalido():
+    ok, final, err = lq.guardar_periodo_calculo("L1", "OTRO", [], usuario="x", roles=set())
+    assert not ok and final == 0.0 and "inválido" in err
+
+
+def test_guardar_periodo_calculo_no_toca_pagada(monkeypatch):
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"estado": "pagado"}, []))
+    ok, final, err = lq.guardar_periodo_calculo("L1", "DEC_TERCERA", [], usuario="x", roles=set())
+    assert not ok and "pagada" in err
+
+
+def test_recalcular_anticipo_liquidado_bajo_umbral():
+    # total_liq_af = 100 + 50 + 20 + 30 = 200; /3.75 = 53.33 -> int 53
+    otros_l, desahucio_l = lq.recalcular_anticipo_liquidado(
+        dias_trabajados=10, vacaciones=100.0, dec_tercera_act=50.0,
+        dec_cuarta_act=20.0, desahucio=30.0,
+    )
+    assert otros_l == 53.0
+    assert desahucio_l == 8.0  # 30 / 3.75 = 8.0
+
+
+def test_recalcular_anticipo_liquidado_sobre_umbral_da_cero():
+    otros_l, desahucio_l = lq.recalcular_anticipo_liquidado(
+        dias_trabajados=200, vacaciones=100.0, dec_tercera_act=50.0,
+        dec_cuarta_act=20.0, desahucio=30.0,
+    )
+    assert otros_l == 0.0 and desahucio_l == 0.0

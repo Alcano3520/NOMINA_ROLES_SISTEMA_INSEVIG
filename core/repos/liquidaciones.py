@@ -1840,6 +1840,101 @@ def obtener_liquidacion(liquidacion_id: str) -> tuple[dict | None, list[dict]]:
     return registro, conceptos
 
 
+# ── Desglose mes a mes editable a mano (Décima Tercera / Vacaciones 1-2) ────
+# "Ver detalle mensual" + "↻ Generar meses" + "↳ Aplicar..." del Editor
+# original -- panel colapsable por tipo con 12 (décimo) o 24 (vacaciones,
+# 2 periodos) filas editables de [mes, valor], que se suman y dividen para
+# obtener el valor a aplicar al concepto correspondiente. Reusa
+# `MESES_NOMBRE` (arriba), la misma fuente que ya usa el detalle mensual
+# calculado en `_suma_base_mensual`.
+PERIODO_DIVISOR = {"DEC_TERCERA": 12, "VACACIONES_1": 24, "VACACIONES_2": 24}
+PERIODO_FILAS = {"DEC_TERCERA": 12, "VACACIONES_1": 24, "VACACIONES_2": 24}
+
+
+def generar_etiquetas_meses(fecha_inicio: str, n: int) -> list[str]:
+    """"↻ Generar meses": etiqueta las `n` filas con el mes/año consecutivo
+    a partir de `fecha_inicio` (dd/mm/aaaa). `[]` si la fecha no es válida."""
+    try:
+        fi = dt.datetime.strptime(fecha_inicio.strip(), "%d/%m/%Y")
+    except (ValueError, TypeError, AttributeError):
+        return []
+    etiquetas = []
+    for i in range(n):
+        mes_num = (fi.month - 1 + i) % 12 + 1
+        anio = fi.year + (fi.month - 1 + i) // 12
+        etiquetas.append(f"{MESES_NOMBRE[mes_num]} -{anio}")
+    return etiquetas
+
+
+def obtener_periodos_calculo(liquidacion_id: str) -> dict[str, list[dict]]:
+    """tipo -> [{label, valor}, ...] ya guardado (vacío si nunca se guardó)."""
+    sb = supabase_client.get_client()
+    filas = (
+        sb.table(TABLA_LIQ_PERIODOS).select("tipo,meses")
+        .eq("liquidacion_id", liquidacion_id).execute().data or []
+    )
+    return {f["tipo"]: f.get("meses") or [] for f in filas}
+
+
+def guardar_periodo_calculo(
+    liquidacion_id: str, tipo: str, meses: list[dict], *, usuario: str, roles: set[str],
+) -> tuple[bool, float, str]:
+    """Guarda a mano el desglose mensual de un período (reemplaza el
+    anterior para ese `tipo`). Devuelve `(ok, valor_final, error)` --
+    `valor_final` es `bruto / divisor` (12 para décimo, 24 para vacaciones),
+    ya redondeado; el llamador lo aplica al concepto correspondiente
+    (DEC_TERCERA_ACT, o la suma de ambos periodos a VACACIONES) vía
+    `editar_valores_liquidacion`."""
+    if tipo not in PERIODO_DIVISOR:
+        return False, 0.0, f"Tipo de período inválido: {tipo}"
+    registro, _c = obtener_liquidacion(liquidacion_id)
+    if registro is None:
+        return False, 0.0, "No existe esa liquidación."
+    if registro.get("estado") == "pagado":
+        return False, 0.0, "No se puede editar una liquidación ya marcada como pagada."
+    bruto = round(sum(a_float(m.get("valor")) for m in meses), 2)
+    final = round(bruto / PERIODO_DIVISOR[tipo], 2)
+    from core.audit.writer import audit_scope
+
+    with audit_scope(
+        "liquidaciones", "guardar_periodo_calculo", usuario=usuario, roles=roles,
+        target_table=TABLA_LIQ_PERIODOS, target_key=f"{liquidacion_id}/{tipo}",
+        after={"valor_bruto": bruto, "valor_final": final},
+    ):
+        try:
+            sb = supabase_client.get_client()
+            sb.table(TABLA_LIQ_PERIODOS).delete().eq(
+                "liquidacion_id", liquidacion_id).eq("tipo", tipo).execute()
+            sb.table(TABLA_LIQ_PERIODOS).insert({
+                "liquidacion_id": liquidacion_id, "tipo": tipo,
+                "meses": [
+                    {"label": str(m.get("label") or ""), "valor": a_float(m.get("valor"))}
+                    for m in meses
+                ],
+            }).execute()
+        except Exception as e:  # noqa: BLE001
+            return False, 0.0, str(e)
+    return True, final, ""
+
+
+def recalcular_anticipo_liquidado(
+    dias_trabajados: float, vacaciones: float, dec_tercera_act: float,
+    dec_cuarta_act: float, desahucio: float,
+) -> tuple[float, float]:
+    """"↻ Recalcular Anticipo Otros/Desahucio (liquidado)" del Editor
+    original: recalcula `ANTICIPOS_OTROS_L`/`ANTICIPO_L_DESAHUCIO` a partir
+    de los valores YA EN PANTALLA (no de lo guardado) -- para no dejarlos
+    desactualizados después de editar Vacaciones/Décimos/Desahucio a mano.
+    Devuelve `(anticipos_otros_l, anticipo_l_desahucio)`."""
+    total_liq_af = vacaciones + dec_tercera_act + dec_cuarta_act + desahucio
+    if dias_trabajados < ANTICIPO_DIAS_UMBRAL:
+        otros_l = float(int(total_liq_af / ANTICIPO_DIVISOR)) if total_liq_af > 0 else 0.0
+        desahucio_l = float(int(desahucio / ANTICIPO_DIVISOR)) if desahucio > 0 else 0.0
+    else:
+        otros_l = desahucio_l = 0.0
+    return otros_l, desahucio_l
+
+
 def cambiar_estado_liquidacion(
     liquidacion_id: str, estado: str, *, usuario: str, roles: set[str], observacion: str = "",
 ) -> None:
