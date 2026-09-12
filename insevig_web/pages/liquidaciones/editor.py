@@ -421,7 +421,8 @@ def _formulario() -> rx.Component:
 @rx.page(
     route="/liquidaciones/editor",
     title="INSEVIG — Editor de liquidaciones",
-    on_load=[AuthState.cargar_sesion, LiquidacionesEditorState.cargar_lista],
+    on_load=[AuthState.cargar_sesion, LiquidacionesEditorState.cargar_lista,
+             LiquidacionesEditorState.abrir_desde_query],
 )
 def editor() -> rx.Component:
     return pagina(

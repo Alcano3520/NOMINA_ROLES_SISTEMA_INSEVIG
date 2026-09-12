@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import datetime as dt
 
 import reflex as rx
 
@@ -514,6 +515,16 @@ class LiquidacionesGuardadasState(rx.State):
         await self._aplicar(fn, fecha=self.f_fecha.strip())
 
     @rx.event
+    def abrir_en_editor(self, liquidacion_id: str):
+        """"✎ Abrir/Editar" del original -- salta al Editor con esta
+        liquidación ya cargada, en vez de obligar a volver a buscarla ahí.
+        Vía query param (no `LiquidacionesEditorState` importado acá -- los
+        states de feature no se importan entre sí, ver
+        test_states_de_feature_no_se_importan_entre_si); el propio Editor
+        lee `?abrir=` en su `on_load`."""
+        return rx.redirect(f"/liquidaciones/editor?abrir={liquidacion_id}")
+
+    @rx.event
     async def eliminar(self, liquidacion_id: str):
         auth = await self.get_state(AuthState)
         if "admin" not in auth.roles:
@@ -527,8 +538,54 @@ class LiquidacionesGuardadasState(rx.State):
             self.cerrar_detalle()
         await self._recargar()
 
-    # ── Bot MRL (selección múltiple) ────────────────────────────────
+    @rx.event
+    async def eliminar_seleccionadas(self):
+        """"🗑 Eliminar" en lote del original -- mismo requisito: SOLO se
+        puede eliminar en lote lo que esté en estado 'generada' (ya
+        autorizada/en MRL/pagada no se borra desde acá; hay que sacarla de
+        la selección). El original bloquea TODO el lote si una sola no
+        cumple; se replica igual."""
+        auth = await self.get_state(AuthState)
+        if "admin" not in auth.roles:
+            return rx.toast.error("Solo un administrador puede eliminar liquidaciones.")
+        ids = list(self.seleccion)
+        if not ids:
+            return rx.toast.error("Selecciona una o más liquidaciones en estado 'Generada'.")
+        mapa = {f["id"]: f["estado"] for f in self.filas}
+        no_generadas = [i for i in ids if mapa.get(i) != "generada"]
+        if no_generadas:
+            return rx.toast.error(
+                f"Solo se pueden eliminar liquidaciones en estado 'Generada'. "
+                f"{len(no_generadas)} de las seleccionadas ya avanzaron en el trámite "
+                "(autorización/MRL/pago) -- quítelas de la selección e intente de nuevo."
+            )
+        ok_n = err = 0
+        for lid in ids:
+            ok, _error = await asyncio.to_thread(
+                repo.eliminar_liquidacion, lid, "Eliminada en lote desde Liquidaciones guardadas",
+                usuario=auth.username, roles=set(auth.roles),
+            )
+            ok_n += int(ok)
+            err += int(not ok)
+        self.msg = f"{ok_n} liquidación(es) eliminada(s)." + (f" {err} con error." if err else "")
+        if self.detalle_id in ids:
+            self.cerrar_detalle()
+        self.seleccion = []
+        await self._recargar()
+
+    # ── Selección múltiple (Bot MRL, cuadrícula, avance/eliminar en lote) ──
     seleccion: list[str] = []
+
+    @rx.var
+    def seleccion_estado_comun(self) -> str:
+        """El estado que comparten TODAS las filas seleccionadas, o "" si
+        no hay selección o los estados están mezclados ("Selección mixta"
+        del original -- ahí el botón de avance de estado se deshabilita)."""
+        if not self.seleccion:
+            return ""
+        mapa = {f["id"]: f["estado"] for f in self.filas}
+        estados = {mapa[i] for i in self.seleccion if i in mapa}
+        return next(iter(estados)) if len(estados) == 1 else ""
 
     @rx.event
     def toggle_seleccion(self, liquidacion_id: str):
@@ -577,3 +634,74 @@ class LiquidacionesGuardadasState(rx.State):
             return rx.toast.error("No se encontró esa liquidación.")
         emp, fsal, data = res
         return rx.download(data=data, filename=f"liquidacion_{emp}_{fsal}.pdf")
+
+    # ── "🖨 Imprimir PDF/Excel" en lote (diálogo del original con las 2
+    # casillas: "Extendida" y "También generar Excel") ─────────────────────
+    masivo_pdf_abierto: bool = False
+    masivo_pdf_extendida: bool = False
+    masivo_pdf_excel: bool = False
+
+    @rx.event
+    def abrir_impresion_masiva(self):
+        if not self.seleccion:
+            return rx.toast.error("Selecciona una o más liquidaciones de la lista.")
+        self.masivo_pdf_abierto = True
+        self.masivo_pdf_extendida = False
+        self.masivo_pdf_excel = False
+
+    @rx.event
+    def cerrar_impresion_masiva(self):
+        self.masivo_pdf_abierto = False
+
+    @rx.event
+    def set_masivo_pdf_extendida(self, v: bool):
+        self.masivo_pdf_extendida = bool(v)
+
+    @rx.event
+    def set_masivo_pdf_excel(self, v: bool):
+        self.masivo_pdf_excel = bool(v)
+
+    @rx.event
+    async def confirmar_impresion_masiva(self):
+        """Un PDF (+ Excel si se marcó) por liquidación, empaquetados en un
+        único .zip -- el original guarda un archivo por empleado en una
+        carpeta elegida por el usuario; en la web el equivalente natural de
+        "una carpeta con varios archivos" es un .zip descargable."""
+        ids = list(self.seleccion)
+        extendida = self.masivo_pdf_extendida
+        tambien_excel = self.masivo_pdf_excel
+
+        def _build():
+            import io
+            import zipfile
+
+            from core.excel.liquidaciones_builders import liquidaciones_xlsx
+            from core.pdf.liquidacion_individual import liquidacion_pdf
+
+            buf = io.BytesIO()
+            generados = errores = 0
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for lid in ids:
+                    registro, conceptos = repo.obtener_liquidacion(lid)
+                    if registro is None:
+                        errores += 1
+                        continue
+                    liq = repo.reconstruir_liquidacion(registro, conceptos)
+                    nombre = f"liquidacion_{liq.empleado}_{liq.fecha_salida}"
+                    try:
+                        zf.writestr(f"{nombre}.pdf",
+                                   liquidacion_pdf(liq, mostrar_insumos=extendida, es_simulacion=False))
+                        if tambien_excel:
+                            zf.writestr(f"{nombre}.xlsx", liquidaciones_xlsx([liq]))
+                        generados += 1
+                    except Exception:  # noqa: BLE001
+                        errores += 1
+            return buf.getvalue(), generados, errores
+
+        data, generados, errores = await asyncio.to_thread(_build)
+        self.masivo_pdf_abierto = False
+        if generados == 0:
+            return rx.toast.error("No se pudo generar ningún documento.")
+        self.msg = f"{generados} documento(s) generados." + (f" {errores} con error." if errores else "")
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        return rx.download(data=data, filename=f"liquidaciones_{ts}.zip")

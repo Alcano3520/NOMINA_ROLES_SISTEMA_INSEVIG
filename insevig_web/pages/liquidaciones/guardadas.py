@@ -38,25 +38,43 @@ def _badge_estado(estado: rx.Var) -> rx.Component:
 
 # ── Fila de la tabla ─────────────────────────────────────────────────────────
 
-def _accion_fila(f) -> rx.Component:
-    """Botón de acción según el estado de la fila (uno solo, o nada)."""
-    e = f["estado"]
-    ids = rx.Var.create([f["id"]])
+def _boton_para_estado(estado: rx.Var, ids: rx.Var, **props) -> rx.Component:
+    """El botón de avance de estado que corresponde a `estado` (uno solo, o
+    nada) -- compartido entre la fila individual y la acción en lote."""
     return rx.match(
-        e,
-        ("generada", rx.button("Autorizar", size="1", variant="soft", color_scheme="cyan",
-                               on_click=lambda: _S.abrir_accion("autorizar", ids))),
-        ("aprobado", rx.button("Registrar MRL", size="1", variant="soft",
-                               on_click=lambda: _S.abrir_accion("avance", ids, "registrado_mrl"))),
-        ("registrado_mrl", rx.button("Cheque listo", size="1", variant="soft",
-                                     on_click=lambda: _S.abrir_accion("cheque", ids))),
-        ("cheque_listo", rx.button("Pagar/Consignar", size="1", variant="soft", color_scheme="amber",
-                                   on_click=lambda: _S.abrir_accion("pago", ids))),
-        ("pagado", rx.button("Legalizar MRL", size="1", variant="soft",
-                             on_click=lambda: _S.abrir_accion("avance", ids, "legalizada_mrl"))),
-        ("consignada", rx.button("Legalizar MRL", size="1", variant="soft",
-                                 on_click=lambda: _S.abrir_accion("avance", ids, "legalizada_mrl"))),
+        estado,
+        ("generada", rx.button("Autorizar", variant="soft", color_scheme="cyan",
+                               on_click=lambda: _S.abrir_accion("autorizar", ids), **props)),
+        ("aprobado", rx.button("Registrar MRL", variant="soft",
+                               on_click=lambda: _S.abrir_accion("avance", ids, "registrado_mrl"), **props)),
+        ("registrado_mrl", rx.button("Cheque listo", variant="soft",
+                                     on_click=lambda: _S.abrir_accion("cheque", ids), **props)),
+        ("cheque_listo", rx.button("Pagar/Consignar", variant="soft", color_scheme="amber",
+                                   on_click=lambda: _S.abrir_accion("pago", ids), **props)),
+        ("pagado", rx.button("Legalizar MRL", variant="soft",
+                             on_click=lambda: _S.abrir_accion("avance", ids, "legalizada_mrl"), **props)),
+        ("consignada", rx.button("Legalizar MRL", variant="soft",
+                                 on_click=lambda: _S.abrir_accion("avance", ids, "legalizada_mrl"), **props)),
         rx.fragment(),
+    )
+
+
+def _accion_fila(f) -> rx.Component:
+    return _boton_para_estado(f["estado"], rx.Var.create([f["id"]]), size="1")
+
+
+def _accion_lote() -> rx.Component:
+    """Avance de estado para TODAS las seleccionadas de una — el original
+    permite marcar varias con el mismo estado y avanzarlas juntas
+    (deshabilitado con "Selección mixta" si no comparten estado)."""
+    return rx.cond(
+        _S.seleccion.length() == 0,
+        rx.fragment(),
+        rx.cond(
+            _S.seleccion_estado_comun != "",
+            _boton_para_estado(_S.seleccion_estado_comun, _S.seleccion, size="1"),
+            rx.button("Selección mixta", size="1", disabled=True, variant="soft"),
+        ),
     )
 
 
@@ -92,6 +110,11 @@ def _fila(f) -> rx.Component:
         )),
         rx.table.cell(rx.hstack(
             rx.button("Ver", on_click=lambda: _S.ver_detalle(f["id"]), size="1", variant="soft"),
+            rx.cond(
+                AuthState.permisos_flat.contains("liquidaciones:editar"),
+                rx.button(rx.icon("pencil", size=13), on_click=lambda: _S.abrir_en_editor(f["id"]),
+                          size="1", variant="soft", title="Abrir en el Editor"),
+            ),
             _accion_fila(f),
             spacing="1", wrap="wrap",
         )),
@@ -459,6 +482,39 @@ def _dialogo_cuadre() -> rx.Component:
     )
 
 
+def _dialogo_impresion_masiva() -> rx.Component:
+    """"🖨 Imprimir PDF/Excel" del original -- un .pdf (+ .xlsx si se marca)
+    por liquidación seleccionada, empaquetados en un .zip descargable (el
+    original guarda un archivo por empleado en una carpeta elegida por el
+    usuario; acá el equivalente de "una carpeta con varios archivos" es
+    un solo .zip)."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Imprimir liquidación(es)"),
+            rx.text(_S.seleccion.length().to_string() + " liquidación(es) seleccionada(s).",
+                    size="2", weight="bold"),
+            rx.flex(
+                rx.checkbox(
+                    "Extendida (con insumos del cálculo: desglose mensual y horas)",
+                    checked=_S.masivo_pdf_extendida, on_change=_S.set_masivo_pdf_extendida,
+                ),
+                rx.checkbox(
+                    "También generar Excel (mismo contenido del PDF)",
+                    checked=_S.masivo_pdf_excel, on_change=_S.set_masivo_pdf_excel,
+                ),
+                direction="column", gap="2", margin_y="0.75rem",
+            ),
+            rx.hstack(
+                rx.dialog.close(rx.button("Cancelar", variant="soft", on_click=_S.cerrar_impresion_masiva)),
+                rx.button("Generar", on_click=_S.confirmar_impresion_masiva),
+                justify="end", width="100%", margin_top="0.5rem", spacing="2",
+            ),
+            max_width="440px",
+        ),
+        open=_S.masivo_pdf_abierto, on_open_change=_S.cerrar_impresion_masiva,
+    )
+
+
 # ── Página ───────────────────────────────────────────────────────────────────
 
 def _chip(label: str, valor: str) -> rx.Component:
@@ -531,6 +587,39 @@ def guardadas() -> rx.Component:
                                   disabled=_S.seleccion.length() == 0),
                         rx.button(rx.icon("calculator", size=14), "Cuadre masivo",
                                   on_click=_S.abrir_cuadre, size="1", variant="soft"),
+                        rx.button(rx.icon("printer", size=14),
+                                  "Imprimir PDF/Excel (" + _S.seleccion.length().to_string() + ")",
+                                  on_click=_S.abrir_impresion_masiva, size="1", variant="soft",
+                                  disabled=_S.seleccion.length() == 0),
+                        rx.cond(
+                            AuthState.es_admin,
+                            rx.alert_dialog.root(
+                                rx.alert_dialog.trigger(
+                                    rx.button(rx.icon("trash-2", size=14),
+                                              "Eliminar (" + _S.seleccion.length().to_string() + ")",
+                                              size="1", variant="soft", color_scheme="red",
+                                              disabled=_S.seleccion.length() == 0),
+                                ),
+                                rx.alert_dialog.content(
+                                    rx.alert_dialog.title(
+                                        "¿Eliminar " + _S.seleccion.length().to_string()
+                                        + " liquidación(es)?"),
+                                    rx.alert_dialog.description(
+                                        "Solo se eliminan las que estén en estado 'Generada'. "
+                                        "Esta acción no se puede deshacer, pero queda un registro."
+                                    ),
+                                    rx.hstack(
+                                        rx.alert_dialog.cancel(rx.button("Cancelar", variant="soft")),
+                                        rx.alert_dialog.action(rx.button(
+                                            "Sí, eliminar", color_scheme="red",
+                                            on_click=_S.eliminar_seleccionadas,
+                                        )),
+                                        spacing="3", justify="end", margin_top="1rem",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        _accion_lote(),
                         spacing="2", wrap="wrap",
                     ),
                     spacing="2", width="100%",
@@ -542,6 +631,7 @@ def guardadas() -> rx.Component:
             _dialogos_accion(),
             _dialogo_grid(),
             _dialogo_cuadre(),
+            _dialogo_impresion_masiva(),
             rx.cond(
                 _S.cargando,
                 rx.center(rx.spinner(), padding="1rem"),

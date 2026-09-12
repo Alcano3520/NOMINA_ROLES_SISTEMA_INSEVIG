@@ -144,6 +144,17 @@ class LiquidacionesEditorState(rx.State):
         await self._recargar_lista()
         self.ed_cargando_lista = False
 
+    @rx.event
+    async def abrir_desde_query(self):
+        """"✎ Abrir/Editar" desde 'Liquidaciones guardadas' -- llega acá como
+        `?abrir=<id>` (no como un `LiquidacionesGuardadasState` importado:
+        los states de feature no se importan entre sí, ver
+        test_states_de_feature_no_se_importan_entre_si)."""
+        qid = self.router.page.params.get("abrir", "")
+        if qid:
+            async for x in self.abrir(qid):
+                yield x
+
     # ── Formulario (panel derecho) ───────────────────────────────────
     ed_id: str = ""
     ed_datos: dict[str, str] = {}      # cedula, nombre, cargo, seccion, fecha_ingreso, fecha_salida, motivo, estado
