@@ -2302,6 +2302,53 @@ def recalcular_liquidacion(
     )
 
 
+# Rango de factor de reescalado aceptado (ver _reescalar_a_objetivo) -- una
+# divergencia de más de 2x entre el recálculo fresco y el valor YA pagado no
+# es "nómina que cambió un poco", es una señal de que algo más de fondo
+# difiere (periodo mal encontrado, movimientos duplicados/faltantes); en ese
+# caso NO se reescala -- se deja la liquidación sin desglose antes que
+# fabricar un número sin respaldo real.
+_FACTOR_RESCALE_MIN = 0.5
+_FACTOR_RESCALE_MAX = 2.0
+
+
+def _reescalar_a_objetivo(
+    detalle: list[DetalleMesDecimo], objetivo_neto: float, divisor: int,
+) -> tuple[list[DetalleMesDecimo] | None, str]:
+    """Reescala `detalle` (desglose BRUTO mensual, recién recalculado)
+    proporcionalmente para que `sum(valores) / divisor` coincida EXACTO con
+    `objetivo_neto` -- el monto YA guardado/pagado, que nunca se toca.
+    Conserva la FORMA relativa del cálculo fresco (qué mes aportó más o
+    menos) pero garantiza que el desglose nunca contradiga el total oficial
+    que ya se pagó y quedó legalmente registrado.
+
+    BUG REAL encontrado 2026-09-12 (el usuario preguntó explícitamente "te
+    aseguraste que no cambie el valor total y el décimo cuadre"): al
+    recalcular `procesar_empleado` fresco contra los datos ACTUALES de
+    nómina, el desglose puede diferir del décimo YA pagado si los
+    movimientos cambiaron desde que esta liquidación se generó
+    originalmente -- verificado en una muestra real: 15 de 25 liquidaciones
+    ya "corregidas" (60%) NO reconciliaban, con diferencias de hasta $90.
+
+    Si la divergencia es tan grande que reescalar produciría valores sin
+    relación real con lo cobrado (factor fuera de
+    [_FACTOR_RESCALE_MIN, _FACTOR_RESCALE_MAX]), NO reescala -- devuelve
+    `(None, motivo)` para que el llamador deje esa liquidación sin desglose
+    en vez de mostrar números fabricados."""
+    if not detalle:
+        return None, "sin desglose fresco que reescalar"
+    suma_fresca = round(sum(d.valor for d in detalle), 2)
+    objetivo_bruto = round(objetivo_neto * divisor, 2)
+    if abs(suma_fresca) < 0.01:
+        if abs(objetivo_bruto) < 0.01:
+            return detalle, ""
+        return None, "el recálculo fresco dio 0 pero el valor guardado no es 0"
+    factor = objetivo_bruto / suma_fresca
+    if not (_FACTOR_RESCALE_MIN <= factor <= _FACTOR_RESCALE_MAX):
+        return None, f"divergencia demasiado grande (factor {factor:.2f}x) para reescalar con confianza"
+    return [DetalleMesDecimo(label=d.label, valor=round(d.valor * factor, 2)) for d in detalle], ""
+
+
 def refrescar_periodos_calculo(
     liquidacion_id: str, fuente: str, cfg: ConfigLiquidacion, *,
     usuario: str, roles: set[str],
@@ -2320,8 +2367,22 @@ def refrescar_periodos_calculo(
     demás) YA estaba correcto -- solo el desglose mensual había quedado
     obsoleto porque nada lo refrescaba después de un `editar_valores_liquidacion`.
 
-    Devuelve (True, liquidacion_id) o (False, mensaje de error)."""
-    registro, _c = obtener_liquidacion(liquidacion_id)
+    RECONCILIACIÓN (agregada 2026-09-12, ver `_reescalar_a_objetivo`): el
+    recálculo fresco de DEC_TERCERA se reescala para sumar EXACTO al
+    `DEC_TERCERA_ACT` YA guardado/pagado -- si la divergencia es demasiado
+    grande para reescalar con confianza, esa liquidación queda SIN desglose
+    de décimo (no se fabrica un valor). VACACIONES no tiene un valor
+    guardado por período con el que reescalar (solo existe el
+    `vacaciones_pendientes` combinado, que puede incluir más períodos de los
+    que detallan VACACIONES_1/2, o estar reducido por PAGADO/GOZADO_PARCIAL)
+    -- por eso solo se persiste si YA reconcilia razonablemente tal cual,
+    nunca forzado.
+
+    Devuelve (True, mensaje) si escribió AL MENOS un tipo de desglose (el
+    mensaje incluye avisos de lo que se omitió y por qué), o (False,
+    mensaje) si no se pudo reconciliar nada -- en ese caso no se tocó la
+    tabla."""
+    registro, conceptos = obtener_liquidacion(liquidacion_id)
     if registro is None:
         return False, "No existe esa liquidación."
     liq = recalcular_liquidacion(
@@ -2332,23 +2393,60 @@ def refrescar_periodos_calculo(
     )
     if liq.error:
         return False, liq.error
+
+    avisos: list[str] = []
+
+    filas_dec13: list[DetalleMesDecimo] = []
+    if liq.detalle_decimo_tercera:
+        dec_act_guardado = next(
+            (float(c["valor_total"]) for c in conceptos if c["concepto_codigo"] == "DEC_TERCERA_ACT"), None
+        )
+        if dec_act_guardado is None:
+            avisos.append("DEC_TERCERA: no hay DEC_TERCERA_ACT guardado, se omite el desglose.")
+        else:
+            reescalado, motivo = _reescalar_a_objetivo(liq.detalle_decimo_tercera, dec_act_guardado, 12)
+            if reescalado is None:
+                avisos.append(f"DEC_TERCERA: {motivo} -- se deja sin desglose.")
+            else:
+                filas_dec13 = reescalado
+
+    detalle_vac_final: dict[str, list[DetalleMesDecimo]] = {}
+    if liq.detalle_vacaciones_meses:
+        vac_pendientes_guardado = float(registro.get("vacaciones_pendientes") or 0)
+        suma_vac_fresca = sum(
+            d.valor for lst in liq.detalle_vacaciones_meses.values() for d in lst
+        )
+        calculado = round(suma_vac_fresca / 24, 2)
+        tolerancia = max(1.0, abs(vac_pendientes_guardado) * 0.02)
+        if abs(calculado - vac_pendientes_guardado) <= tolerancia:
+            detalle_vac_final = liq.detalle_vacaciones_meses
+        else:
+            avisos.append(
+                f"VACACIONES: el desglose fresco (${calculado:.2f}) no reconcilia con "
+                f"vacaciones_pendientes guardado (${vac_pendientes_guardado:.2f}) -- se deja sin "
+                "desglose (puede haber más períodos con saldo, o goce parcial ya aplicado)."
+            )
+
+    if not filas_dec13 and not detalle_vac_final:
+        return False, " / ".join(avisos) if avisos else "Nada reconcilia; no se tocó nada."
+
     from core.audit.writer import audit_scope
 
     with audit_scope(
         "liquidaciones", "refrescar_periodos_calculo", usuario=usuario, roles=roles,
         target_table=TABLA_LIQ_PERIODOS, target_key=liquidacion_id,
-        after={"tipos": list(liq.detalle_vacaciones_meses) + (["DEC_TERCERA"] if liq.detalle_decimo_tercera else [])},
+        after={"tipos": list(detalle_vac_final) + (["DEC_TERCERA"] if filas_dec13 else []), "avisos": avisos},
     ):
         try:
             sb = supabase_client.get_client()
             sb.table(TABLA_LIQ_PERIODOS).delete().eq("liquidacion_id", liquidacion_id).execute()
             filas = []
-            if liq.detalle_decimo_tercera:
+            if filas_dec13:
                 filas.append({
                     "liquidacion_id": liquidacion_id, "tipo": "DEC_TERCERA",
-                    "meses": [{"label": d.label, "valor": d.valor} for d in liq.detalle_decimo_tercera],
+                    "meses": [{"label": d.label, "valor": d.valor} for d in filas_dec13],
                 })
-            for tipo, detalle_meses in liq.detalle_vacaciones_meses.items():
+            for tipo, detalle_meses in detalle_vac_final.items():
                 if not detalle_meses:
                     continue
                 filas.append({
@@ -2357,6 +2455,7 @@ def refrescar_periodos_calculo(
                 })
             if filas:
                 sb.table(TABLA_LIQ_PERIODOS).insert(filas).execute()
-            return True, liquidacion_id
+            msg = liquidacion_id if not avisos else f"{liquidacion_id} ({'; '.join(avisos)})"
+            return True, msg
         except Exception as e:  # noqa: BLE001
             return False, str(e)

@@ -1412,8 +1412,13 @@ def test_refrescar_periodos_calculo_reemplaza_desglose_obsoleto(monkeypatch, app
     registro = {
         "id": "bc312594-x", "empleado_cedula": "1207739887",
         "fecha_salida": "2026-08-07", "motivo": "RENUNCIA VOLUNTARIA",
+        # Coinciden EXACTO con el desglose fresco de abajo (113.7/12 y
+        # 105.1/24) -- reconcilian sin necesidad de reescalar, cubriendo
+        # también el caso feliz de _reescalar_a_objetivo/tolerancia de vacaciones.
+        "vacaciones_pendientes": 4.38,
     }
-    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
+    conceptos = [{"concepto_codigo": "DEC_TERCERA_ACT", "valor_total": 9.475}]  # 113.7 / 12 exacto
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
     liq_fresca = _liq_ejemplo(
         detalle_decimo_tercera=[lq.DetalleMesDecimo(label="agosto -2026", valor=113.7)],
         detalle_vacaciones_meses={
@@ -1430,7 +1435,7 @@ def test_refrescar_periodos_calculo_reemplaza_desglose_obsoleto(monkeypatch, app
     ok, res = lq.refrescar_periodos_calculo(
         "bc312594-x", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), usuario="ana", roles=set()
     )
-    assert ok and res == "bc312594-x"
+    assert ok and res == "bc312594-x"  # sin avisos -- reconcilió limpio
 
     ops = [(t, op) for (t, op, _pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS]
     assert ("liquidaciones_periodos_calculo", "delete") in ops
@@ -1441,6 +1446,140 @@ def test_refrescar_periodos_calculo_reemplaza_desglose_obsoleto(monkeypatch, app
     assert tipos == {"DEC_TERCERA", "VACACIONES_2"}
     # nunca toca la liquidación ni su detalle de conceptos
     assert not [t for (t, _op, _pl) in cliente.log if t in (lq.TABLA_LIQ, lq.TABLA_LIQ_DETALLE)]
+
+
+def test_reescalar_a_objetivo_conserva_forma_y_cuadra_exacto():
+    """`_reescalar_a_objetivo` -- caso feliz: el recálculo fresco difiere un
+    poco del valor YA pagado (nómina cambió desde entonces), se reescala
+    proporcionalmente para que la suma coincida EXACTO, sin inventar la
+    forma relativa entre meses."""
+    detalle = [
+        lq.DetalleMesDecimo(label="enero -2026", valor=100.0),
+        lq.DetalleMesDecimo(label="febrero -2026", valor=200.0),
+    ]
+    # suma_fresca=300 -> objetivo_bruto=27*12=324 -> factor=324/300=1.08
+    reescalado, motivo = lq._reescalar_a_objetivo(detalle, 27.0, 12)
+    assert motivo == ""
+    assert reescalado is not None
+    assert [d.valor for d in reescalado] == [108.0, 216.0]
+    assert round(sum(d.valor for d in reescalado) / 12, 2) == 27.0  # cuadra EXACTO
+    # conserva la forma relativa (febrero seguía siendo el doble de enero)
+    assert reescalado[1].valor == reescalado[0].valor * 2
+
+
+def test_reescalar_a_objetivo_rechaza_divergencia_extrema():
+    """Si el factor de reescalado cae fuera de [0.5, 2.0] (recálculo fresco
+    $170/mes vs. $3.55 guardado, factor ~48x -- caso REAL encontrado
+    2026-09-12), no se reescala -- se deja sin desglose antes que fabricar
+    un número sin relación real con lo cobrado."""
+    detalle = [lq.DetalleMesDecimo(label="enero -2026", valor=2040.55)]
+    reescalado, motivo = lq._reescalar_a_objetivo(detalle, 3.55, 12)
+    assert reescalado is None
+    assert "divergencia" in motivo
+
+
+def test_reescalar_a_objetivo_sin_desglose_fresco_pero_objetivo_no_cero():
+    """Si el cálculo fresco da 0 (no encontró movimientos) pero el valor YA
+    guardado no es 0, no hay forma de repartir proporcionalmente -- se deja
+    sin desglose en vez de inventar un reparto."""
+    reescalado, motivo = lq._reescalar_a_objetivo([], 50.0, 12)
+    assert reescalado is None and motivo
+
+
+def test_refrescar_periodos_calculo_reescala_decimo_para_cuadrar_con_lo_pagado(monkeypatch, app_db):
+    """Caso real (VERGARA-tipo): el recálculo fresco de DEC_TERCERA no
+    coincide exacto con `DEC_TERCERA_ACT` ya pagado -- se reescala para que
+    el desglose SIEMPRE sume igual a lo ya pagado, nunca lo contradiga."""
+    registro = {
+        "id": "L2", "empleado_cedula": "0900000000",
+        "fecha_salida": "2026-06-15", "motivo": "RENUNCIA VOLUNTARIA",
+        "vacaciones_pendientes": 0.0,
+    }
+    conceptos = [{"concepto_codigo": "DEC_TERCERA_ACT", "valor_total": 27.0}]
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    liq_fresca = _liq_ejemplo(
+        detalle_decimo_tercera=[
+            lq.DetalleMesDecimo(label="enero -2026", valor=100.0),
+            lq.DetalleMesDecimo(label="febrero -2026", valor=200.0),
+        ],
+        detalle_vacaciones_meses={},
+    )
+    monkeypatch.setattr(lq, "recalcular_liquidacion", lambda liq_id, fuente, cfg, **kw: liq_fresca)
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, res = lq.refrescar_periodos_calculo(
+        "L2", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), usuario="ana", roles=set()
+    )
+    assert ok
+
+    inserts = [pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS and op == "insert"]
+    filas_dec = next(f for f in inserts[0] if f["tipo"] == "DEC_TERCERA")
+    suma = sum(m["valor"] for m in filas_dec["meses"])
+    assert round(suma / 12, 2) == 27.0  # cuadra EXACTO con lo ya pagado
+
+
+def test_refrescar_periodos_calculo_omite_decimo_si_diverge_demasiado(monkeypatch, app_db):
+    """Si la divergencia entre el recálculo fresco y lo YA pagado es
+    demasiado grande para reescalar con confianza, esa liquidación queda
+    SIN desglose de décimo (nunca se fabrica un número) -- pero si
+    vacaciones sí reconcilia, igual se guarda ese pedazo."""
+    registro = {
+        "id": "L3", "empleado_cedula": "0900000000",
+        "fecha_salida": "2026-06-15", "motivo": "RENUNCIA VOLUNTARIA",
+        "vacaciones_pendientes": 4.38,
+    }
+    conceptos = [{"concepto_codigo": "DEC_TERCERA_ACT", "valor_total": 3.55}]  # caso real
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    liq_fresca = _liq_ejemplo(
+        detalle_decimo_tercera=[lq.DetalleMesDecimo(label="enero -2026", valor=2040.55)],
+        detalle_vacaciones_meses={
+            "VACACIONES_2": [lq.DetalleMesDecimo(label="agosto -2026", valor=105.1)],
+        },
+    )
+    monkeypatch.setattr(lq, "recalcular_liquidacion", lambda liq_id, fuente, cfg, **kw: liq_fresca)
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, res = lq.refrescar_periodos_calculo(
+        "L3", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), usuario="ana", roles=set()
+    )
+    assert ok  # se guardó lo de vacaciones aunque décimo se omitió
+    assert "DEC_TERCERA" in res and "divergencia" in res
+
+    inserts = [pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS and op == "insert"]
+    tipos = {f["tipo"] for f in inserts[0]}
+    assert tipos == {"VACACIONES_2"}  # DEC_TERCERA nunca se insertó
+
+
+def test_refrescar_periodos_calculo_omite_vacaciones_si_no_reconcilia(monkeypatch, app_db):
+    """No hay columna separada del bruto por período de vacaciones -- si el
+    desglose fresco no reconcilia con `vacaciones_pendientes` (puede haber
+    más períodos con saldo, o goce parcial ya aplicado), se deja sin
+    desglose en vez de reescalar a ciegas algo que no tiene un objetivo
+    confiable."""
+    registro = {
+        "id": "L4", "empleado_cedula": "0900000000",
+        "fecha_salida": "2026-06-15", "motivo": "RENUNCIA VOLUNTARIA",
+        "vacaciones_pendientes": 500.0,  # muy distinto del desglose fresco
+    }
+    conceptos: list[dict] = []
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, conceptos))
+    liq_fresca = _liq_ejemplo(
+        detalle_decimo_tercera=[],
+        detalle_vacaciones_meses={
+            "VACACIONES_2": [lq.DetalleMesDecimo(label="agosto -2026", valor=105.1)],
+        },
+    )
+    monkeypatch.setattr(lq, "recalcular_liquidacion", lambda liq_id, fuente, cfg, **kw: liq_fresca)
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    ok, res = lq.refrescar_periodos_calculo(
+        "L4", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), usuario="ana", roles=set()
+    )
+    assert not ok  # nada reconcilió (sin décimo fresco, vacaciones no cuadra)
+    assert "VACACIONES" in res
 
 
 def test_guardar_liquidacion_rechaza_estado_invalido():
