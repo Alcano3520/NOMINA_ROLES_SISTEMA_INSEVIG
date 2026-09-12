@@ -147,9 +147,25 @@ migración de sanciones (C1–C6) están en `docs/modulos/CAMBIOS_CONTRATO_SANCI
 - **Rotar credenciales filtradas en git**: JWT `service_role` de Supabase de
   nómina, password `sa` del SQL Server, y las SERVICE keys del proyecto de
   sanciones (están hardcodeadas en `sistema_sanciones_RRHH/config.py`).
-- Corrección de dato de producción MATICUREMA (liquidación `b2d6698b-...`,
-  $3.50 → $184.25) — espera decisión del usuario.
-- Bug del motor de liquidaciones: totales negativos / "Grupo 2".
+- ~~Corrección de dato de producción MATICUREMA~~ — **hecho 2026-09-12**:
+  liquidación `b2d6698b-1260-4928-b05e-02d5376fc378` corregida de $3.50 a
+  $184.25 vía `editar_valores_liquidacion` (recalcula con la fórmula ya
+  arreglada; queda auditado en `liquidaciones_historial_estados`, usuario
+  `correccion_maticurema_2026-09`).
+- **Bug del motor de liquidaciones: totales negativos / "Grupo 2" — causa
+  encontrada 2026-09-12, falta la regla de negocio para cerrarlo.**
+  `DESCUENTOS_MULTI_MES` (`core/repos/liquidaciones.py:38`) suma TODAS las
+  cuotas futuras programadas de `PRESTAMOS_COMPANIA` (hasta 36 meses) como un
+  solo descuento — para préstamos con amortización larga (>1 año) esto cobra
+  el saldo completo de golpe y da totales muy negativos. Casos reales:
+  cédula `2100696455` (27 cuotas de $100 hasta oct-2028, liquidación
+  `a3dbae72-ba84-4555-a3a9-f60c65d0173c`, real RRHH $809.93 vs motor
+  -$1990.08) y cédula `0941345589` (13 cuotas de $100, liquidación
+  `50e53e0b-03a4-4760-b7a0-f5780f7f42b7`, real $66.02 vs motor negativo). NO
+  es la sección "todo incluido" la causa (coincidencia). Falta decidir la
+  regla: ¿se cobra solo lo vencido a la fecha de salida? ¿se topa en $0 y el
+  resto queda como cuenta por cobrar aparte? ¿se limita a N meses? — pendiente
+  de decisión del usuario, preguntado el 2026-09-12.
 - `_utilitarios/` — apps sueltas de RRHH por absorber (ver §6 + su README).
 
 ---

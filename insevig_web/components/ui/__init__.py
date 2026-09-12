@@ -131,16 +131,26 @@ def stat_card(titulo: str, descripcion: str, valor: str, icono: str) -> rx.Compo
 # `.rt-Table*`; estos helpers son solo azúcar para armarlas rápido.
 
 def data_table(cabeceras: list[str], filas: rx.Component, *, max_height: str = "",
-              **box_props) -> rx.Component:
+              densidad: str = "", sticky: bool = False, **box_props) -> rx.Component:
     """`rx.table` con la cuadrícula/densidad del sistema. `filas` es el
     resultado de un `rx.foreach(...)` que produce `rx.table.row(...)`.
     `max_height`: si se pasa, el scroll vertical queda DENTRO de este box (así
     la sombra/radio envuelven el área scrolleable, en vez de quedar recortados
-    por un contenedor manual del llamador)."""
+    por un contenedor manual del llamador).
+    `densidad="comoda"`: opt-in a más aire (ver `assets/theme.css`); default
+    (sin pasarlo) es la densidad ERP compacta de siempre, sin cambios.
+    `sticky=True`: header fijo al hacer scroll DENTRO de `max_height` (si no
+    se pasa `max_height`, no hay contenedor con scroll propio y no hace nada
+    visible)."""
     box_props.setdefault("width", "100%")
     if max_height:
         box_props.setdefault("max_height", max_height)
         box_props.setdefault("overflow_y", "auto")
+    root_attrs: dict[str, str] = {}
+    if densidad:
+        root_attrs["data_densidad"] = densidad
+    if sticky:
+        root_attrs["data_sticky"] = "true"
     return rx.box(
         rx.table.root(
             rx.table.header(
@@ -152,6 +162,7 @@ def data_table(cabeceras: list[str], filas: rx.Component, *, max_height: str = "
             variant="surface",
             size="1",
             width="100%",
+            **root_attrs,
         ),
         overflow_x="auto",
         box_shadow=theme.SHADOW_SM,

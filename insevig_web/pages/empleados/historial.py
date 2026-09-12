@@ -4,7 +4,7 @@ import reflex as rx
 
 from insevig_web.components.employee_search import employee_search
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import card, page_heading, scroll_x, stat_card
+from insevig_web.components.ui import card, data_table, page_heading, stat_card
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
 
@@ -22,61 +22,37 @@ def _historial_multi() -> rx.Component:
             rx.cond(
                 _S.hist_cargando,
                 rx.center(rx.spinner(), padding="1rem"),
-                scroll_x(
-                    rx.table.root(
-                        rx.table.header(
-                            rx.table.row(*[
-                                rx.table.column_header_cell(c)
-                                for c in ("Período", "Días", "Ingresos", "Egresos", "Neto", "")
-                            ])
+                data_table(
+                    ["Período", "Días", "Ingresos", "Egresos", "Neto", ""],
+                    rx.foreach(
+                        _S.hist_periodos,
+                        lambda f: rx.table.row(
+                            rx.table.cell(f["periodo"]),
+                            rx.table.cell(f["dias"].to_string()),
+                            rx.table.cell(f["ingresos"].to_string()),
+                            rx.table.cell(f["egresos"].to_string()),
+                            rx.table.cell(f["neto"].to_string()),
+                            rx.table.cell(
+                                rx.button("Conceptos", size="1", variant="soft",
+                                          on_click=lambda: _S.ver_detalle_periodo(f["periodo"]))
+                            ),
                         ),
-                        rx.table.body(
-                            rx.foreach(
-                                _S.hist_periodos,
-                                lambda f: rx.table.row(
-                                    rx.table.cell(f["periodo"]),
-                                    rx.table.cell(f["dias"].to_string()),
-                                    rx.table.cell(f["ingresos"].to_string()),
-                                    rx.table.cell(f["egresos"].to_string()),
-                                    rx.table.cell(f["neto"].to_string()),
-                                    rx.table.cell(
-                                        rx.button("Conceptos", size="1", variant="soft",
-                                                  on_click=lambda: _S.ver_detalle_periodo(f["periodo"]))
-                                    ),
-                                ),
-                            )
-                        ),
-                        variant="surface",
-                        size="1",
-                        width="100%",
-                    )
+                    ),
                 ),
             ),
             rx.cond(
                 _S.hist_detalle.length() > 0,
                 rx.vstack(
                     rx.heading("Conceptos de " + _S.hist_detalle_periodo, size="2"),
-                    scroll_x(
-                        rx.table.root(
-                            rx.table.header(
-                                rx.table.row(
-                                    rx.table.column_header_cell("Concepto"),
-                                    rx.table.column_header_cell("Valor"),
-                                )
+                    data_table(
+                        ["Concepto", "Valor"],
+                        rx.foreach(
+                            _S.hist_detalle,
+                            lambda c: rx.table.row(
+                                rx.table.cell(c["concepto"]),
+                                rx.table.cell(c["valor"].to_string()),
                             ),
-                            rx.table.body(
-                                rx.foreach(
-                                    _S.hist_detalle,
-                                    lambda c: rx.table.row(
-                                        rx.table.cell(c["concepto"]),
-                                        rx.table.cell(c["valor"].to_string()),
-                                    ),
-                                )
-                            ),
-                            variant="surface",
-                            size="1",
-                            width="100%",
-                        )
+                        ),
                     ),
                     spacing="2",
                     width="100%",
@@ -153,31 +129,15 @@ def historial() -> rx.Component:
                                         spacing="3",
                                         width="100%",
                                     ),
-                                    scroll_x(
-                                        rx.table.root(
-                                            rx.table.header(
-                                                rx.table.row(
-                                                    rx.table.column_header_cell(
-                                                        "Concepto"
-                                                    ),
-                                                    rx.table.column_header_cell(
-                                                        "Valor"
-                                                    ),
-                                                )
+                                    data_table(
+                                        ["Concepto", "Valor"],
+                                        rx.foreach(
+                                            EmpleadosState.conceptos,
+                                            lambda c: rx.table.row(
+                                                rx.table.cell(c["concepto"]),
+                                                rx.table.cell(c["valor"].to_string()),
                                             ),
-                                            rx.table.body(
-                                                rx.foreach(
-                                                    EmpleadosState.conceptos,
-                                                    lambda c: rx.table.row(
-                                                        rx.table.cell(c["concepto"]),
-                                                        rx.table.cell(c["valor"].to_string()),
-                                                    ),
-                                                )
-                                            ),
-                                            variant="surface",
-                                            size="1",
-                                            width="100%",
-                                        )
+                                        ),
                                     ),
                                     spacing="3",
                                     width="100%",

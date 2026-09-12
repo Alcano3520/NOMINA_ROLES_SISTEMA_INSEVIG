@@ -49,6 +49,21 @@ duplicados por módulo), `section_box` (recuadro tipo LabelFrame, con
 llamadas existentes pasan un string posicional); `data_table` sumó el kwarg
 opcional `max_height` (sin él, comportamiento idéntico). Nada de esto rompe
 firmas ni estilos por defecto existentes.
+
+**2026-09-12, aditivo (Fase 6 opcional del rediseño de `empleados`,
+implementada a pedido del usuario):** `data_table` sumó dos kwargs opcionales
+más, `densidad: str = ""` y `sticky: bool = False` (ninguno cambia el
+comportamiento por defecto sin pasarlos). Se propagan como `data-densidad`/
+`data-sticky` en el `rx.table.root` vía `custom_attrs`, y `assets/theme.css`
+suma las reglas correspondientes gateadas por esos atributos (selectores
+nuevos, especificidad 0-3-0 máx., sin `!important`, sin tocar ninguna regla
+existente): `densidad="comoda"` da más padding/font-size que la densidad ERP
+compacta de siempre; `sticky=True` fija el header dentro del contenedor con
+scroll de `max_height` (pasa `.rt-TableRootTable` de `overflow: hidden` a
+`visible` SOLO bajo `[data-sticky]`). `avanzada.py` e `historial.py`
+(`empleados/`) migraron sus tablas manuales (`rx.table.root` a mano +
+`scroll_x`) a `data_table`, cerrando la deuda técnica anotada en el plan de
+rediseño; `avanzada.py` también adoptó `empty_state` para "sin resultados".
 | `components/layout.py` | `pagina(*contenido, requiere=(modulo, accion))`. Envoltura obligatoria de toda página. |
 | `components/sidebar.py`, `components/data_source_selector.py` | Se consumen, no se editan. |
 

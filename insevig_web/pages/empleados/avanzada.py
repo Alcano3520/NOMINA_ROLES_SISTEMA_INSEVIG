@@ -3,7 +3,7 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web.components.layout import pagina
-from insevig_web.components.ui import card, native_select, page_heading, primary_button, scroll_x
+from insevig_web.components.ui import card, data_table, empty_state, native_select, page_heading, primary_button
 from insevig_web.pages.empleados._comunes import badge_estado
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.empleados_state import EmpleadosState
@@ -79,38 +79,32 @@ def avanzada() -> rx.Component:
                 rx.center(rx.spinner(), padding="2rem"),
                 rx.cond(
                     _S.av_resultados.length() > 0,
-                    scroll_x(
-                        rx.table.root(
-                            rx.table.header(
-                                rx.table.row(*[
-                                    rx.table.column_header_cell(c)
-                                    for c in _COLS
-                                ])
+                    data_table(
+                        list(_COLS),
+                        rx.foreach(
+                            _S.av_resultados,
+                            lambda e: rx.table.row(
+                                rx.table.cell(
+                                    rx.link(e["empleado"], on_click=lambda: _S.abrir_editor(e["empleado"]),
+                                            href="/empleados/buscar")
+                                ),
+                                rx.table.cell(e["apellidos"]),
+                                rx.table.cell(e["nombres"]),
+                                rx.table.cell(e["cedula"]),
+                                rx.table.cell(e["cargo_nombre"]),
+                                rx.table.cell(e["depto_nombre"]),
+                                rx.table.cell(e["sueldo"].to_string()),
+                                rx.table.cell(e["telefono"]),
+                                rx.table.cell(e["email"]),
+                                rx.table.cell(badge_estado(e["estado"], size="1")),
                             ),
-                            rx.table.body(
-                                rx.foreach(
-                                    _S.av_resultados,
-                                    lambda e: rx.table.row(
-                                        rx.table.cell(
-                                            rx.link(e["empleado"], on_click=lambda: _S.abrir_editor(e["empleado"]),
-                                                    href="/empleados/buscar")
-                                        ),
-                                        rx.table.cell(e["apellidos"]),
-                                        rx.table.cell(e["nombres"]),
-                                        rx.table.cell(e["cedula"]),
-                                        rx.table.cell(e["cargo_nombre"]),
-                                        rx.table.cell(e["depto_nombre"]),
-                                        rx.table.cell(e["sueldo"].to_string()),
-                                        rx.table.cell(e["telefono"]),
-                                        rx.table.cell(e["email"]),
-                                        rx.table.cell(badge_estado(e["estado"], size="1")),
-                                    ),
-                                )
-                            ),
-                            variant="surface",
-                            size="1",
-                            width="100%",
-                        )
+                        ),
+                        max_height="60vh",
+                    ),
+                    rx.cond(
+                        _S.av_msg != "",
+                        empty_state("search", "Sin resultados", "Ajustá los criterios y volvé a buscar."),
+                        rx.fragment(),
                     ),
                 ),
             ),

@@ -109,3 +109,29 @@
 .rt-TableRoot .rt-TableBody .rt-TableRow:hover {
   background: var(--gray-2);
 }
+
+/* ── Tablas: densidad "cómoda" (opt-in, data_table(..., densidad="comoda")) ──
+   El default de arriba es la densidad ERP compacta; esta variante da más
+   aire para tablas donde se prioriza legibilidad sobre cantidad de filas
+   visibles. Gateado por atributo, no toca ninguna regla existente. */
+.rt-TableRoot[data-densidad="comoda"] .rt-TableCell,
+.rt-TableRoot[data-densidad="comoda"] .rt-TableColumnHeaderCell,
+.rt-TableRoot[data-densidad="comoda"] .rt-TableRowHeaderCell {
+  padding: 10px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Tablas: header pegajoso (opt-in, data_table(..., sticky=True)) ──
+   Requiere que `.rt-TableRootTable` deje de recortar (overflow: hidden lo
+   rompería) SOLO bajo este atributo -- el default sigue intacto. El scroll
+   real lo da `max_height` de `data_table` (overflow_y: auto en el rx.box
+   contenedor); acá solo se fija el header dentro de ESE contenedor. */
+.rt-TableRoot[data-sticky] .rt-TableRootTable {
+  overflow: visible;
+}
+.rt-TableRoot[data-sticky] .rt-TableColumnHeaderCell {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
