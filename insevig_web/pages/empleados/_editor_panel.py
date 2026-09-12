@@ -133,7 +133,45 @@ _JS_CAMARA = """
 """
 
 
-def _foto_y_documentos() -> rx.Component:
+def _dato_clave(etiqueta: str, valor: rx.Var) -> rx.Component:
+    """Un dato de la ficha rápida (label chico + valor), para el resumen que
+    va al lado de la foto — es de solo lectura, la edición real está en la
+    pestaña "Datos generales" más abajo."""
+    return rx.vstack(
+        rx.text(etiqueta, size="1", color_scheme="gray"),
+        rx.text(rx.cond(valor.to(str) != "", valor.to(str), "—"), size="2", weight="medium"),
+        spacing="0",
+    )
+
+
+def _nombre_o_codigo(campo: str) -> rx.Var:
+    """DEPTO/CARGO/SECCION: el nombre resuelto del catálogo si ya cargó,
+    si no el código crudo (mismo dato que ve `_campo` para ese input)."""
+    return rx.cond(
+        _S.edit_nombres_cat[campo] != "", _S.edit_nombres_cat[campo], _S.edit_campos[campo].to(str),
+    )
+
+
+def _ficha_rapida() -> rx.Component:
+    """Los datos que se necesitan de un vistazo, sin entrar a las pestañas."""
+    return rx.grid(
+        _dato_clave("Apellidos", _S.edit_campos["APELLIDOS"]),
+        _dato_clave("Nombres", _S.edit_campos["NOMBRES"]),
+        _dato_clave("Cédula", _S.edit_campos["CEDULA"]),
+        _dato_clave("Fecha de ingreso", _S.edit_campos["FECHA_ING"]),
+        _dato_clave("Fecha de nacimiento", _S.edit_campos["FECHA_NAC"]),
+        _dato_clave("Puesto", _nombre_o_codigo("CARGO")),
+        _dato_clave("Departamento", _nombre_o_codigo("DEPTO")),
+        _dato_clave("Sección", _nombre_o_codigo("SECCION")),
+        columns=rx.breakpoints(initial="2", sm="3", lg="4"),
+        spacing="3",
+        width="100%",
+        flex_grow="1",
+        min_width="0",
+    )
+
+
+def _foto_y_ficha() -> rx.Component:
     puede_editar = AuthState.permisos_flat.contains("empleados:editar")
     foto = rx.cond(
         _S.foto_uri != "",
@@ -153,14 +191,8 @@ def _foto_y_documentos() -> rx.Component:
             border="1px dashed var(--gray-6)",
         ),
     )
-    docs = [
-        ("hoja_vida", "Hoja de vida"),
-        ("certificado", "Certificado de trabajo"),
-        ("contrato", "Contrato"),
-        ("renuncia", "Carta de renuncia"),
-    ]
     return section_box(
-        "Foto y documentos",
+        "Ficha del empleado",
         rx.hstack(
             rx.vstack(
                 foto,
@@ -194,35 +226,48 @@ def _foto_y_documentos() -> rx.Component:
                 rx.cond(_S.foto_msg != "", rx.text(_S.foto_msg, size="1", color_scheme="gray")),
                 spacing="2",
                 align="center",
+                flex_shrink="0",
             ),
-            rx.vstack(
-                rx.text("Documentos", weight="bold", size="3"),
-                rx.text("Se generan con los datos de la ficha.", size="1", color_scheme="gray"),
-                rx.grid(
-                    *[
-                        rx.button(
-                            rx.icon("file-text", size=14), etq,
-                            on_click=lambda tipo=tipo: _S.generar_documento(tipo),
-                            variant="soft", size="2", justify="start",
-                        )
-                        for tipo, etq in docs
-                    ],
-                    rx.button(rx.icon("printer", size=14), "Imprimir ficha",
-                              on_click=_S.imprimir_ficha, variant="soft", size="2", justify="start"),
-                    columns=rx.breakpoints(initial="1", sm="2"),
-                    spacing="2",
-                    width="100%",
-                ),
-                spacing="2",
-                align="start",
-                width="100%",
-                flex_grow="1",
-                min_width="0",
-            ),
-            spacing="3",
+            _ficha_rapida(),
+            spacing="4",
             align="start",
             width="100%",
             wrap="wrap",
+        ),
+        width="100%",
+    )
+
+
+def _documentos() -> rx.Component:
+    """Barra de generación de documentos — sección propia, debajo de la
+    ficha (antes compartía caja con la foto, quedando apretada al costado)."""
+    docs = [
+        ("hoja_vida", "Hoja de vida"),
+        ("certificado", "Certificado de trabajo"),
+        ("contrato", "Contrato"),
+        ("renuncia", "Carta de renuncia"),
+    ]
+    return section_box(
+        "Documentos",
+        rx.vstack(
+            rx.text("Se generan con los datos de la ficha.", size="1", color_scheme="gray"),
+            rx.grid(
+                *[
+                    rx.button(
+                        rx.icon("file-text", size=14), etq,
+                        on_click=lambda tipo=tipo: _S.generar_documento(tipo),
+                        variant="soft", size="2", width="100%",
+                    )
+                    for tipo, etq in docs
+                ],
+                rx.button(rx.icon("printer", size=14), "Imprimir ficha",
+                          on_click=_S.imprimir_ficha, variant="soft", size="2", width="100%"),
+                columns=rx.breakpoints(initial="1", sm="2", lg="3"),
+                spacing="2",
+                width="100%",
+            ),
+            spacing="2",
+            width="100%",
         ),
         width="100%",
     )
@@ -448,7 +493,8 @@ def editor_panel() -> rx.Component:
                 ),
                 rx.cond(_S.edit_error != "", rx.callout(_S.edit_error, color_scheme="red", size="1")),
                 rx.cond(_S.edit_ok != "", rx.callout(_S.edit_ok, color_scheme="green", size="1")),
-                rx.cond(~_S.es_nuevo, _foto_y_documentos()),
+                rx.cond(~_S.es_nuevo, _foto_y_ficha()),
+                rx.cond(~_S.es_nuevo, _documentos()),
                 rx.cond(
                     _S.es_nuevo,
                     rx.vstack(
