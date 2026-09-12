@@ -27,13 +27,10 @@
 > **NO portado:** `usuarios_rrhh` (login propio del .exe — en la web se usa el auth
 > de nómina; la gestión de cuentas Auth de la app va en el módulo `carga_usuarios`);
 > el fallback SQLite de `local_db.py` (reemplazado por `core.audit`).
-
-> Estado en el repo Reflex: **NO existe** y, por la **regla #7 del prompt
-> maestro**, `core/repos/sanciones.py` es **solo backend** (para un futuro
-> worker de sincronización Supabase ↔ SQL Server). **NO se crean páginas
-> Reflex de sanciones**: el frontend es la app **Flutter** `sistema_sanciones_insevig/`,
-> que consume Supabase directo, y `main.py` de este repo es la herramienta de
-> escritorio de RRHH.
+>
+> (El párrafo de abajo, de antes del revert de C3, quedaba contradiciendo esto
+> — eliminado 2026-09-12, sincronizado contra `docs/ESTADO_MIGRACION.md`, que
+> es la fuente de verdad del lado Nómina.)
 
 ## Qué hace (para el usuario)
 
@@ -81,8 +78,16 @@ La herramienta de escritorio (`main.py`) permite a RRHH/gerencia:
 
 ## Rutas y permisos
 
-**Ninguna ruta Reflex** (regla #7). Si en el futuro se hace el worker de sync:
-es un `core.jobs.Job` o un script suelto, sin UI.
+| Ruta | Acción requerida |
+|---|---|
+| `/sanciones/bandeja` | `sanciones.ver` (aprobar/rechazar/procesar requiere `sanciones.editar`) |
+| `/sanciones/historial` | `sanciones.ver` |
+| `/sanciones/buscar` | `sanciones.ver` |
+| `/sanciones/novedades` | `sanciones.ver` (`sanciones.editar` para registrar) |
+| `/sanciones/estadisticas` | `sanciones.ver` |
+
+Roles: `editor` = ver/exportar/editar (aprobar/rechazar/procesar), `consulta`
+= ver/exportar. `"sanciones"` está en `registry.MODULES`/`auth`/sidebar.
 
 ## Datos
 
@@ -111,9 +116,15 @@ es un `core.jobs.Job` o un script suelto, sin UI.
 - Cédula: el legado **no** normaliza (`str(int).zfill(10)`); el repo Reflex sí
   (`core.utils.normalizar_cedula`, regla "NO ROMPER"). Aplicar en la frontera.
 
-## Criterio de "hecho" (solo si se hace el backend de sync)
+## Criterio de "hecho"
 
-- [ ] `core/repos/sanciones.py` importable sin I/O, cliente Supabase inyectado.
-- [ ] Cédula normalizada en entrada/salida.
-- [ ] `pytest tests/unit/test_sanciones_*` verde.
-- [ ] NO se agregó `"sanciones"` a `registry.MODULES` ni páginas Reflex.
+- [x] `core/repos/sanciones.py` importable sin I/O, cliente Supabase inyectado.
+- [x] Cédula normalizada en entrada/salida.
+- [x] `pytest tests/unit/test_sanciones_*` verde (18 tests).
+- [x] `"sanciones"` en `registry.MODULES` + 5 páginas Reflex + sidebar + auth.
+- [x] `reflex export` OK.
+- [ ] Desplegado en el NAS con `SUPABASE_SANCIONES_SERVICE_KEY` configurada —
+      pedido 2026-09-12, en curso (ver `docs/ESTADO_MIGRACION.md`).
+- [ ] Rotar las SERVICE keys del proyecto de sanciones.
+- [ ] Paridad end-to-end contra `main.py` en uso real. **Pendiente.**
+- [ ] Revisado a 360 / 768 / 1280 px. **Pendiente.**

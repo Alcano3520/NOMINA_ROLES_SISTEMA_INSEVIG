@@ -152,20 +152,22 @@ migración de sanciones (C1–C6) están en `docs/modulos/CAMBIOS_CONTRATO_SANCI
   $184.25 vía `editar_valores_liquidacion` (recalcula con la fórmula ya
   arreglada; queda auditado en `liquidaciones_historial_estados`, usuario
   `correccion_maticurema_2026-09`).
-- **Bug del motor de liquidaciones: totales negativos / "Grupo 2" — causa
-  encontrada 2026-09-12, falta la regla de negocio para cerrarlo.**
-  `DESCUENTOS_MULTI_MES` (`core/repos/liquidaciones.py:38`) suma TODAS las
-  cuotas futuras programadas de `PRESTAMOS_COMPANIA` (hasta 36 meses) como un
-  solo descuento — para préstamos con amortización larga (>1 año) esto cobra
-  el saldo completo de golpe y da totales muy negativos. Casos reales:
-  cédula `2100696455` (27 cuotas de $100 hasta oct-2028, liquidación
-  `a3dbae72-ba84-4555-a3a9-f60c65d0173c`, real RRHH $809.93 vs motor
-  -$1990.08) y cédula `0941345589` (13 cuotas de $100, liquidación
-  `50e53e0b-03a4-4760-b7a0-f5780f7f42b7`, real $66.02 vs motor negativo). NO
-  es la sección "todo incluido" la causa (coincidencia). Falta decidir la
-  regla: ¿se cobra solo lo vencido a la fecha de salida? ¿se topa en $0 y el
-  resto queda como cuenta por cobrar aparte? ¿se limita a N meses? — pendiente
-  de decisión del usuario, preguntado el 2026-09-12.
+- ~~Bug del motor de liquidaciones: totales negativos / "Grupo 2"~~ —
+  **CERRADO 2026-09-12, sin cambio de código.** Causa: `DESCUENTOS_MULTI_MES`
+  (`core/repos/liquidaciones.py:38`) suma TODAS las cuotas futuras programadas
+  de `PRESTAMOS_COMPANIA` (hasta 36 meses) como un solo descuento — para
+  préstamos con amortización larga (>1 año) esto cobra el saldo completo de
+  golpe y puede dar totales negativos (casos reales: cédula `2100696455`,
+  27 cuotas de $100 hasta oct-2028, liquidación
+  `a3dbae72-ba84-4555-a3a9-f60c65d0173c`; cédula `0941345589`, 13 cuotas de
+  $100, liquidación `50e53e0b-03a4-4760-b7a0-f5780f7f42b7`). **Decisión del
+  usuario, preguntado y confirmado el 2026-09-12: es el comportamiento
+  correcto** — el motor debe sumar TODO el saldo pendiente aunque el total dé
+  negativo; cuánto se descuenta realmente al empleado es un análisis
+  posterior de RRHH, no algo que el motor deba acotar. No es un bug: no
+  requiere cambio de código. (Los dos IDs de ejemplo tienen guardado un valor
+  distinto porque, al cargarse desde el Excel histórico, RRHH ya había hecho
+  ese análisis posterior caso por caso — no porque el motor estuviera mal.)
 - `_utilitarios/` — apps sueltas de RRHH por absorber (ver §6 + su README).
 
 ---
