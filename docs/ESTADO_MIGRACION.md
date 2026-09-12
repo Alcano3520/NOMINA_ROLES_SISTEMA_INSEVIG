@@ -169,6 +169,18 @@ migración de sanciones (C1–C6) están en `docs/modulos/CAMBIOS_CONTRATO_SANCI
   distinto porque, al cargarse desde el Excel histórico, RRHH ya había hecho
   ese análisis posterior caso por caso — no porque el motor estuviera mal.)
 - `_utilitarios/` — apps sueltas de RRHH por absorber (ver §6 + su README).
+- **Paginar/virtualizar las listas grandes** (pedido del usuario 2026-09-12,
+  al bajar el tope de empleados de un primer intento en 12000/3000 a 5000 —
+  "no en exageración", son ~2500 empleados reales con rotación de ~150
+  altas/bajas). Hoy varias pantallas cargan TODO de una y confían en un
+  tope fijo (`empleados/buscar` 5000, `liquidaciones/guardadas` 5000,
+  `sanciones/novedades` 200) — funciona porque el server tiene RAM de sobra
+  (47GB, confirmado con la sesión del NAS), pero no escala indefinidamente:
+  la empresa es grande y con mucho movimiento. Falta diseñar paginación real
+  (server-side, con cursor/offset) o virtualización de la tabla (solo
+  renderizar las filas visibles) para `empleados/buscar`,
+  `liquidaciones/guardadas` y cualquier otra lista que crezca sin límite
+  natural — no resuelto todavía, ningún módulo lo implementa hoy.
 
 ---
 

@@ -156,7 +156,7 @@ _ESTADOS_FILTRO = {
 
 
 def buscar(
-    texto: str, fuente: str, *, solo_activos: bool = False, estado: str = "", limite: int = 12000
+    texto: str, fuente: str, *, solo_activos: bool = False, estado: str = "", limite: int = 5000
 ) -> list[dict]:
     texto = texto.strip()
     if solo_activos and not estado:

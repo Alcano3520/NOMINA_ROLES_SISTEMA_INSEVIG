@@ -235,11 +235,12 @@ class EmpleadosState(rx.State):
         self.grid_filtro_vivo = v
 
     # Filas renderizadas como máximo (evita saturar el DOM con miles de filas
-    # sin virtualización). Cubre completo "Activos" (~2300 empleados reales,
-    # 2026-09) con margen; "Inactivos"/"Todos" (histórico, ~8000/~10000) sigue
-    # topándose acá -- pedido explícito del usuario: subir el tope real, no
-    # dejar el histórico completo sin virtualizar (perf del navegador).
-    _GRID_TOPE = 3000
+    # sin virtualización). 5000 -- pedido explícito del usuario 2026-09-12:
+    # "Activos" real (~2500, con rotación de ~150 altas/bajas) entra sobrado;
+    # bajado de un primer intento en 12000/3000 ("no en exageración" -- son
+    # 2500 empleados, no 10000). Paginar/virtualizar la lista queda anotado
+    # como pendiente real en docs/ESTADO_MIGRACION.md, no resuelto acá.
+    _GRID_TOPE = 5000
 
     @rx.var
     def grid_filtrado(self) -> list[dict]:
