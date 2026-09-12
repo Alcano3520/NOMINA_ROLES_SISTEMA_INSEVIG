@@ -165,8 +165,8 @@ def _ficha_rapida() -> rx.Component:
         _dato_clave("Sección", _nombre_o_codigo("SECCION")),
         columns=rx.breakpoints(initial="2", sm="3", lg="4"),
         spacing="3",
-        width="100%",
         flex_grow="1",
+        flex_basis="260px",
         min_width="0",
     )
 
