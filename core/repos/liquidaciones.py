@@ -1768,10 +1768,18 @@ def resumen_liquidaciones() -> dict[str, int]:
 
 def listar_liquidaciones(
     *, texto: str = "", estado: str = "", tipo: str = "", lote: str = "",
-    desde: str = "", hasta: str = "", orden: str = "-created_at", limite: int = 200,
+    desde: str = "", hasta: str = "", orden: str = "-created_at", limite: int = 5000,
 ) -> list[dict]:
     """Lista de `liquidaciones` para el Editor/Gestión — más recientes
     primero por defecto.
+
+    `limite` default subido de 200 a 5000 (2026-09-12, pedido del usuario):
+    con 200 se recortaban silenciosamente ~3900 de las ~4100 liquidaciones
+    guardadas reales cuando no había filtro activo, sin ningún aviso de que
+    la lista estaba incompleta. "Gestión de liquidaciones" no tiene un
+    contenedor con scroll propio (a diferencia de la lista de empleados) —
+    la tabla ya crece con la página, así que no hace falta un tope de
+    renderizado aparte.
 
     `lote`: filtra por `codigo_lote` exacto (selector "Lote:" de Gestión de
     Liquidaciones). `desde`/`hasta`: rango de `fecha_salida` (ISO

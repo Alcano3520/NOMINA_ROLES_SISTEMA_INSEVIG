@@ -11,7 +11,7 @@ import reflex as rx
 
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, data_cell, data_table, page_heading, primary_button
-from insevig_web.pages.sanciones._comunes import badge_estado, dialog_detalle, tabs_nav
+from insevig_web.pages.sanciones._comunes import badge_estado, categoria_selector, dialog_detalle, tabs_nav
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.sanciones_state import SancionesState
 
@@ -101,6 +101,7 @@ def bandeja() -> rx.Component:
                         "Por procesar (" + _S.conteo_proceso.to_string() + ")", value="proceso"),
                     value=_S.tab, on_change=_S.set_tab,
                 ),
+                categoria_selector(_S.bandeja_categoria, _S.set_bandeja_categoria, width="200px"),
                 rx.spacer(),
                 rx.button("Recargar", on_click=_S.cargar_bandeja, size="2", variant="soft",
                           loading=_S.cargando),

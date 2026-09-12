@@ -227,3 +227,19 @@ def test_sanciones_xlsx():
     wb = openpyxl.load_workbook(io.BytesIO(data))
     assert "Resumen" in wb.sheetnames
     assert "Detalle Resumen" in wb.sheetnames
+
+
+# ── historial filtrado por categoría (2026-09-12) ──────────────────────────
+
+def test_obtener_procesadas_completas_pasa_tipos_a_in_():
+    """`tipos` (categoría de core.sanciones.catalogos.CATEGORIAS) debe llegar
+    al filtro `.in_("tipo_sancion", ...)` sin romper el resto del query."""
+    cli = _FakeClient([{"id": "s1", "empleado_cedula": "912345678", "tipo_sancion": "FALTA"}])
+    res = repo.obtener_procesadas_completas(1, tipos=["FALTA", "PERMISO"], cliente=cli)
+    assert res["data"][0]["empleado_cedula"] == "0912345678"
+
+
+def test_obtener_procesadas_completas_sin_tipos_no_filtra():
+    cli = _FakeClient([{"id": "s1", "empleado_cedula": "912345678", "tipo_sancion": "ATRASO"}])
+    res = repo.obtener_procesadas_completas(1, cliente=cli)
+    assert len(res["data"]) == 1

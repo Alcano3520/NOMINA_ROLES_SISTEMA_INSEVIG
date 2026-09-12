@@ -25,6 +25,19 @@ def _roles(auth: AuthState) -> set[str]:
     return set(auth.roles or [])
 
 
+# Categorías de tipo_sancion, para filtrar bandeja/historial -- las mismas 3
+# del original (`main.py`: "Faltas y Permisos" / "Horas y Franco" / "Resto",
+# botones F&P/H&F/RST del sidebar de sanciones) + "TODOS" para no filtrar.
+# Usa `catalogos.CATEGORIAS` (ya portado, antes sin usar en la web).
+CATEGORIA_OPCIONES: tuple[str, ...] = ("TODOS", *catalogos.CATEGORIAS)
+
+
+def _en_categoria(fila: dict, categoria: str) -> bool:
+    if categoria == "TODOS":
+        return True
+    return fila.get("tipo_sancion") in catalogos.CATEGORIAS.get(categoria, [])
+
+
 class SancionesState(rx.State):
     # ═══════════════════════ BANDEJA ═══════════════════════
     tab: str = "aprobacion"                     # aprobacion | proceso
@@ -34,10 +47,16 @@ class SancionesState(rx.State):
     sel: list[str] = []                          # ids seleccionados
     motivo_rechazo: str = ""
     msg: str = ""
+    bandeja_categoria: str = "TODOS"
 
     @rx.event
     def set_tab(self, v: str | list[str]):
         self.tab = v if isinstance(v, str) else (v[0] if v else "aprobacion")
+        self.sel = []
+
+    @rx.event
+    def set_bandeja_categoria(self, v: str):
+        self.bandeja_categoria = v
         self.sel = []
 
     @rx.event
@@ -50,8 +69,9 @@ class SancionesState(rx.State):
 
     @rx.event
     def sel_todos(self):
-        filas = self.aprob if self.tab == "aprobacion" else self.proceso
-        ids = [f["id"] for f in filas]
+        # Solo lo visible con el filtro de categoría actual -- no seleccionar
+        # de más filas ocultas por el filtro.
+        ids = [f["id"] for f in self.bandeja_actual]
         self.sel = [] if set(self.sel) >= set(ids) else ids
 
     @rx.event
@@ -67,7 +87,8 @@ class SancionesState(rx.State):
 
     @rx.var
     def bandeja_actual(self) -> list[dict]:
-        return self.aprob if self.tab == "aprobacion" else self.proceso
+        filas = self.aprob if self.tab == "aprobacion" else self.proceso
+        return [f for f in filas if _en_categoria(f, self.bandeja_categoria)]
 
     @rx.var
     def conteo_aprob(self) -> int:
@@ -140,6 +161,13 @@ class SancionesState(rx.State):
     hist_page: int = 1
     hist_has_more: bool = False
     hist_cargando: bool = False
+    hist_categoria: str = "TODOS"
+
+    @rx.event
+    async def set_hist_categoria(self, v: str):
+        self.hist_categoria = v
+        async for x in self.hist_cargar(1):
+            yield x
 
     @rx.event
     async def hist_cargar(self, page: int = 1):
@@ -147,7 +175,10 @@ class SancionesState(rx.State):
         self.hist_page = max(1, page)
         yield
         try:
-            res = await asyncio.to_thread(repo.obtener_procesadas_completas, self.hist_page)
+            tipos = catalogos.CATEGORIAS.get(self.hist_categoria)
+            res = await asyncio.to_thread(
+                repo.obtener_procesadas_completas, self.hist_page, tipos=tipos,
+            )
             self.hist = res["data"]
             self.hist_has_more = res["has_more"]
         finally:

@@ -272,15 +272,22 @@ def obtener_sanciones_pendientes(*, cliente: Any | None = None,
 
 
 def obtener_procesadas_completas(page: int = 1, page_size: int | None = None,
-                                 *, cliente: Any | None = None,
+                                 *, tipos: list[str] | None = None,
+                                 cliente: Any | None = None,
                                  cliente_empleados: Any | None = None) -> dict:
-    """Historial paginado (`comentarios_rrhh IS NOT NULL`, `updated_at.desc`)."""
+    """Historial paginado (`comentarios_rrhh IS NOT NULL`, `updated_at.desc`).
+
+    `tipos`: si se pasa, filtra por `tipo_sancion IN (...)` -- categorías de
+    `core.sanciones.catalogos.CATEGORIAS` (Faltas y Permisos / Horas y
+    Franco / Resto, botones F&P/H&F/RST del sidebar del `.pyw` original)."""
     page_size = page_size or _PAGE_SIZE
     offset = (page - 1) * page_size
     try:
+        q = _cli(cliente).table(_TABLA).select("*").not_.is_("comentarios_rrhh", "null")
+        if tipos:
+            q = q.in_("tipo_sancion", tipos)
         filas = list(
-            _cli(cliente).table(_TABLA).select("*").not_.is_("comentarios_rrhh", "null")
-            .order("updated_at", desc=True).range(offset, offset + page_size - 1).execute().data or []
+            q.order("updated_at", desc=True).range(offset, offset + page_size - 1).execute().data or []
         )
     except Exception as e:  # noqa: BLE001
         log.error("procesadas page %s: %s", page, e)

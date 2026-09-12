@@ -10,7 +10,7 @@ import reflex as rx
 
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, data_cell, data_table, page_heading
-from insevig_web.pages.sanciones._comunes import dialog_detalle, tabs_nav
+from insevig_web.pages.sanciones._comunes import categoria_selector, dialog_detalle, tabs_nav
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.sanciones_state import SancionesState
 
@@ -45,6 +45,7 @@ def historial() -> rx.Component:
                 rx.text("Página " + _S.hist_page.to_string(), size="2"),
                 rx.button("Siguiente ›", on_click=_S.hist_siguiente, size="2", variant="soft",
                           disabled=~_S.hist_has_more),
+                categoria_selector(_S.hist_categoria, _S.set_hist_categoria, width="200px"),
                 rx.spacer(),
                 rx.cond(
                     AuthState.permisos_flat.contains("sanciones:exportar"),

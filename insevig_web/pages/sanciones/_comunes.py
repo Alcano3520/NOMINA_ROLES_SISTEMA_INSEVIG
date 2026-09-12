@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web.states.sanciones_state import SancionesState
+from insevig_web.components.ui import native_select
+from insevig_web.states.sanciones_state import CATEGORIA_OPCIONES, SancionesState
 
 _S = SancionesState
 
@@ -34,6 +35,17 @@ def tabs_nav(activo: str) -> rx.Component:
             for txt, ruta in _TABS
         ],
         gap="1", wrap="wrap", border_bottom="1px solid var(--gray-4)", margin_bottom="1rem",
+    )
+
+
+def categoria_selector(value: rx.Var, on_change, **props) -> rx.Component:
+    """Filtro por categoría de tipo_sancion -- los mismos 3 botones
+    F&P/H&F/RST del sidebar de `main.py` (Faltas y Permisos / Horas y Franco
+    / Resto), acá como selector en vez de botones aparte."""
+    return native_select(
+        *[rx.el.option(c, value=c) for c in CATEGORIA_OPCIONES],
+        value=value, on_change=on_change, size="1",
+        **props,
     )
 
 
