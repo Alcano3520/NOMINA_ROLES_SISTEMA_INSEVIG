@@ -201,32 +201,26 @@ siguen siendo necesarios ya que el modo Individual no depende de un
 periodo de corte fijo.
 
 ## Pendiente / a validar contra el legado
-- **BUG SIN RESOLVER (2026-09-08) -- `procesar_empleado` da resultados muy
-  negativos para algunos empleados de larga antigüedad/secciones
-  "todo incluido"** (ej. `CUSTODIO $652.34 INC-FR FIJO`,
-  `24H 715.67 INC-FR CAMARONERAS`, `CHOFER AUX $702.36 INC-FR FIJO`).
-  Detectado al reconciliar "Liquidaciones_por_subir.xlsx" (135 casos
-  reales, 2026-09): 5+ cédulas dieron `total_liquido` cientos o miles de
-  dólares NEGATIVOS con el motor actual, cuando el valor real (Excel ya
-  validado por RRHH) era positivo y razonable -- ej. cédula 2100696455:
-  motor -$2045.08 vs. real $809.93; cédula 0941345589: motor -$1128.98
-  vs. real $66.02. Se descartó `descuentos_pendientes` como causa (tabla
-  vacía para esas cédulas). El nombre "INC-FR FIJO" de la sección NO debe
-  tratarse como regla de negocio especial (decisión explícita del
-  usuario: "es solo un nombre... tiene que guiarse por los valores
-  reflejados") -- la correlación con esas secciones puede ser
-  coincidencia (empleados de sueldo bajo/muchas horas) o puede ser la
-  pista real de dónde está el bug; no se investigó a fondo por falta de
-  acceso a los `campos` completos calculados para esos casos. El lote
-  histórico de 135 se resolvió cargando los valores ya calculados del
-  Excel tal cual (`core/excel/liquidaciones_import.py`,
-  `scripts/importar_liquidaciones_excel.py`), sin pasar por
-  `procesar_empleado` -- este bug sigue activo para cualquier cálculo EN
-  VIVO de esas personas (modo Individual/Lote de `insevig_web/`).
-  Próximo paso: tomar 1-2 cédulas afectadas, volcar el `campos` completo
-  de `procesar_empleado` (no solo un resumen) y compararlo campo a campo
-  contra `nucleo_modular` (`LIQUIDACIONES_SISTEMA_INSEVIG`) para el mismo
-  caso.
+- **RESUELTO -- no era un bug ("Grupo 2", 2026-09-08 → cerrado 2026-09-12).**
+  `procesar_empleado` daba resultados muy negativos para algunos empleados
+  de larga antigüedad/secciones "todo incluido" (ej.
+  `CUSTODIO $652.34 INC-FR FIJO`, `24H 715.67 INC-FR CAMARONERAS`,
+  `CHOFER AUX $702.36 INC-FR FIJO`) -- ej. cédula 2100696455: motor
+  -$2045.08 vs. el valor ya validado por RRHH $809.93; cédula 0941345589:
+  motor -$1128.98 vs. $66.02. Causa raíz encontrada por la sesión
+  `NOMINA_ROLES_SISTEMA_INSEVIG`: `DESCUENTOS_MULTI_MES` suma TODAS las
+  cuotas futuras programadas de `PRESTAMOS_COMPANIA` (hasta 36 meses
+  adelante) como un solo descuento -- para préstamos con amortización
+  larga (ej. 27 cuotas de $100/mes = $2761.85 de golpe), eso resta más de
+  lo que la persona realmente debe descontarse en la liquidación. El
+  nombre "INC-FR FIJO" de la sección era coincidencia (sueldo bajo/muchas
+  horas), no la causa real.
+
+  Confirmado con el usuario (no es un bug): el motor DEBE sumar el saldo
+  pendiente COMPLETO del préstamo aunque el total dé negativo -- cuánto se
+  descuenta realmente al empleado es un análisis posterior de RRHH, no
+  algo que el motor deba acotar. `_totales_desde_valores`/
+  `DESCUENTOS_MULTI_MES` quedan sin cambios.
 - **Fórmula de Fondo de Reserva puede diferir del `.pyw` real en casos de
   alta muy reciente.** El `.pyw` calcula FR como 8.33% del ÚLTIMO mes de
   una lista `_obtener_remuneraciones_mensuales` (arranca en diciembre);
