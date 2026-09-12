@@ -1578,8 +1578,15 @@ def test_refrescar_periodos_calculo_omite_vacaciones_si_no_reconcilia(monkeypatc
     ok, res = lq.refrescar_periodos_calculo(
         "L4", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), usuario="ana", roles=set()
     )
-    assert not ok  # nada reconcilió (sin décimo fresco, vacaciones no cuadra)
+    # ok=True: se procesó (se borró cualquier desglose viejo que hubiera),
+    # aunque nada nuevo reconcilió -- ver aviso en el mensaje.
+    assert ok
     assert "VACACIONES" in res
+
+    ops = [(t, op) for (t, op, _pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS]
+    assert ("liquidaciones_periodos_calculo", "delete") in ops
+    inserts = [pl for (t, op, pl) in cliente.log if t == lq.TABLA_LIQ_PERIODOS and op == "insert"]
+    assert inserts == []  # nada se insertó -- ni un valor fabricado
 
 
 def test_guardar_liquidacion_rechaza_estado_invalido():

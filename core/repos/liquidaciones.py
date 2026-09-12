@@ -2378,10 +2378,14 @@ def refrescar_periodos_calculo(
     -- por eso solo se persiste si YA reconcilia razonablemente tal cual,
     nunca forzado.
 
-    Devuelve (True, mensaje) si escribió AL MENOS un tipo de desglose (el
-    mensaje incluye avisos de lo que se omitió y por qué), o (False,
-    mensaje) si no se pudo reconciliar nada -- en ese caso no se tocó la
-    tabla."""
+    SIEMPRE borra el desglose viejo (aunque nada nuevo reconcilie) -- una
+    fila VIEJA que no reconcilia con lo ya pagado (ej. de una corrida
+    anterior a este fix) es peor que dejar sin desglose.
+
+    Devuelve (True, mensaje) si se pudo procesar (el mensaje incluye avisos
+    de qué tipo se omitió y por qué, si aplica -- puede terminar sin ningún
+    desglose escrito si nada reconcilió), o (False, mensaje) solo ante un
+    error real (liquidación inexistente, error de cálculo, fallo de red)."""
     registro, conceptos = obtener_liquidacion(liquidacion_id)
     if registro is None:
         return False, "No existe esa liquidación."
@@ -2427,9 +2431,12 @@ def refrescar_periodos_calculo(
                 "desglose (puede haber más períodos con saldo, o goce parcial ya aplicado)."
             )
 
-    if not filas_dec13 and not detalle_vac_final:
-        return False, " / ".join(avisos) if avisos else "Nada reconcilia; no se tocó nada."
-
+    # SIEMPRE se borra lo existente, incluso si nada reconcilió -- dejar una
+    # fila VIEJA que no reconcilia con lo ya pagado (ej. de una corrida
+    # anterior a este fix) es peor que dejar sin desglose: un dato
+    # desactualizado se ve igual de "confiable" que uno correcto para quien
+    # lo lee después. "Sin desglose" es honesto; un número que no cuadra no
+    # lo es.
     from core.audit.writer import audit_scope
 
     with audit_scope(
