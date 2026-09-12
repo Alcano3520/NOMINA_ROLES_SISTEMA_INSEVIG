@@ -130,7 +130,7 @@ GitHub Actions solo dispara build si el push toca `core/**`, `insevig_web/**`,
 | `reportes` | `/reportes/consolidado` (+ comparador en admin) | ✅ funcional | `reportes/reporte_nomina_GUI.pyw` |
 | `prestamos` | `/prestamos/{historial,saldos}` | ✅ funcional | `prestamos/HISTORIAL_PRESTAMOS_10.pyw` |
 | `observaciones` | `/observaciones` + carga masiva | ✅ funcional | `observaciones/TOTAL_OSERVACIONES_4_0.pyw` |
-| `liquidaciones` | `/liquidaciones` + editor/guardadas/descuentos | ✅ funcional (motor con 1 bug abierto de totales) | `LIQUIDACIONES_*` |
+| `liquidaciones` | `/liquidaciones` + editor/guardadas/descuentos | ✅ funcional — paridad verificada 2026-09-12 contra `Generador_Liquidaciones_INSEVIG.pyw` (16216 líneas, el archivo activo real del repo `LIQUIDACIONES_SISTEMA_INSEVIG`); 7 gaps de funcionalidad encontrados y cerrados: avance de estado/imprimir/eliminar en lote + "Abrir/Editar" en Gestión, editor de desglose mes a mes en el Editor, IESS%/Fondo Reserva%/Región/Anticipo editables en `/admin/parametros` | `LIQUIDACIONES_*` |
 | `bitacora` | `/bitacora` | ✅ funcional | agenda de cobro de liquidaciones |
 | `vacaciones` | `/vacaciones` | ✅ funcional | `VACACIONES_SISTEMA_INSEVIG` |
 | `admin` | `/admin/{usuarios,roles,auditoria,parametros,config}` | ✅ funcional | — |
