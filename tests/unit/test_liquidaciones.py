@@ -1941,3 +1941,33 @@ def test_recalcular_anticipo_liquidado_sobre_umbral_da_cero():
         dec_cuarta_act=20.0, desahucio=30.0,
     )
     assert otros_l == 0.0 and desahucio_l == 0.0
+
+
+# ── Parámetros editables (IESS%/Fondo Reserva%/Anticipo) 2026-09-12 ─────────
+
+def test_config_liquidacion_defaults_y_overrides():
+    cfg = lq.ConfigLiquidacion()
+    assert cfg.fondo_reserva_pct == lq.FONDO_RESERVA_PCT
+    assert cfg.anticipo_dias_umbral == lq.ANTICIPO_DIAS_UMBRAL
+    assert cfg.anticipo_divisor == lq.ANTICIPO_DIVISOR
+
+    cfg2 = lq.ConfigLiquidacion(fondo_reserva_pct=0.09, anticipo_dias_umbral=60, anticipo_divisor=4.0)
+    assert cfg2.fondo_reserva_pct == 0.09
+    assert cfg2.anticipo_dias_umbral == 60
+    assert cfg2.anticipo_divisor == 4.0
+
+
+def test_recalcular_anticipo_liquidado_con_parametros_custom():
+    # dias_trabajados(10) >= dias_umbral(5) -> se pasó el umbral, ambos en 0
+    otros_l, desahucio_l = lq.recalcular_anticipo_liquidado(
+        dias_trabajados=10, vacaciones=100.0, dec_tercera_act=50.0,
+        dec_cuarta_act=20.0, desahucio=30.0, dias_umbral=5, divisor=10.0,
+    )
+    assert otros_l == 0.0 and desahucio_l == 0.0
+
+    otros_l, desahucio_l = lq.recalcular_anticipo_liquidado(
+        dias_trabajados=2, vacaciones=100.0, dec_tercera_act=50.0,
+        dec_cuarta_act=20.0, desahucio=30.0, dias_umbral=5, divisor=10.0,
+    )
+    assert otros_l == 20.0  # 200 / 10
+    assert desahucio_l == 3.0  # 30 / 10

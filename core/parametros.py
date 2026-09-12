@@ -50,6 +50,40 @@ def set_sbu(sbu: dict[str, float]) -> None:
     _guardar("sbu_por_anio", {str(k): float(v) for k, v in sbu.items()})
 
 
+def get_liquidaciones_params() -> dict[str, float | str]:
+    """IESS%/Fondo de Reserva%/Región por defecto/Anticipo (días umbral y
+    divisor) -- la ventana "⚙ Configuración de Parámetros Anuales" del
+    `.pyw` original (Generador_Liquidaciones_INSEVIG.pyw), antes fija en
+    código (`IESS_PCT`/`FONDO_RESERVA_PCT`/`ANTICIPO_DIAS_UMBRAL`/
+    `ANTICIPO_DIVISOR` de `core.repos.liquidaciones`) y ahora editable
+    desde /admin/parametros, igual que el SBU."""
+    from core.repos.liquidaciones import ANTICIPO_DIAS_UMBRAL, ANTICIPO_DIVISOR, FONDO_RESERVA_PCT, IESS_PCT
+
+    d = _leer("liquidaciones_params")
+    return {
+        "iess_personal_pct": float(d.get("iess_personal_pct", IESS_PCT)),
+        "fondo_reserva_pct": float(d.get("fondo_reserva_pct", FONDO_RESERVA_PCT)),
+        "region_defecto": str(d.get("region_defecto") or "COSTA"),
+        "anticipo_dias_umbral": float(d.get("anticipo_dias_umbral", ANTICIPO_DIAS_UMBRAL)),
+        "anticipo_divisor": float(d.get("anticipo_divisor", ANTICIPO_DIVISOR)),
+    }
+
+
+def set_liquidaciones_params(
+    *, iess_personal_pct: float | None = None, fondo_reserva_pct: float | None = None,
+    region_defecto: str | None = None, anticipo_dias_umbral: float | None = None,
+    anticipo_divisor: float | None = None,
+) -> None:
+    actuales = get_liquidaciones_params()
+    cambios = {
+        "iess_personal_pct": iess_personal_pct, "fondo_reserva_pct": fondo_reserva_pct,
+        "region_defecto": region_defecto.upper() if region_defecto else None,
+        "anticipo_dias_umbral": anticipo_dias_umbral, "anticipo_divisor": anticipo_divisor,
+    }
+    actuales.update({k: v for k, v in cambios.items() if v is not None})
+    _guardar("liquidaciones_params", actuales)
+
+
 _EMAIL_ASUNTO_DEFECTO = "ROL {{mes}}/{{anio}}"
 _EMAIL_HTML_DEFECTO = (
     "<p>Estimado/a {{StrNombres}},</p>"
@@ -99,10 +133,22 @@ def set_ia_config(provider: str, base_url: str, model: str) -> None:
     })
 
 
-def config_liquidacion(region: str = "COSTA"):
-    """`ConfigLiquidacion` con los SBU guardados (o los por defecto)."""
+def config_liquidacion(region: str = ""):
+    """`ConfigLiquidacion` con los SBU + IESS%/Fondo Reserva%/Anticipo
+    guardados (o los valores por defecto de `core.repos.liquidaciones`).
+    `region`: si se omite, usa la "Región por defecto" guardada (COSTA si
+    nunca se configuró) -- todos los llamadores existentes ya pasan una
+    región explícita, así que esto no les cambia nada."""
     from core.repos.liquidaciones import SBU_DEFECTO, ConfigLiquidacion
 
     sbu = dict(SBU_DEFECTO)
     sbu.update(get_sbu())
-    return ConfigLiquidacion(region=region, sbu_por_anio=sbu)
+    p = get_liquidaciones_params()
+    return ConfigLiquidacion(
+        region=region or str(p["region_defecto"]),
+        iess_personal_pct=float(p["iess_personal_pct"]),
+        fondo_reserva_pct=float(p["fondo_reserva_pct"]),
+        anticipo_dias_umbral=float(p["anticipo_dias_umbral"]),
+        anticipo_divisor=float(p["anticipo_divisor"]),
+        sbu_por_anio=sbu,
+    )

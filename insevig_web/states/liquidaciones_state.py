@@ -187,6 +187,14 @@ class LiquidacionesState(rx.State):
 
         if not self.ind_fecha:
             self.ind_fecha = _dt.date.today().strftime("%d/%m/%Y")
+            # "Región por defecto" de /admin/parametros -- solo al primer
+            # load (mismo guard que la fecha), para no pisar una selección
+            # ya hecha por la persona en esta misma sesión.
+            from core.parametros import get_liquidaciones_params
+
+            self.region = await asyncio.to_thread(
+                lambda: str(get_liquidaciones_params()["region_defecto"])
+            )
 
         def _run():
             return repo.resumen_liquidaciones()

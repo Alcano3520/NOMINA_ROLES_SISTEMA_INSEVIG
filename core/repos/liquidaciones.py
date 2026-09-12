@@ -60,6 +60,11 @@ SBU_DEFECTO = {
 class ConfigLiquidacion:
     region: str = "COSTA"  # COSTA | SIERRA
     iess_personal_pct: float = IESS_PCT
+    # Editables desde /admin/parametros (2026-09-12) -- antes constantes de
+    # módulo fijas, como IESS_PCT ya lo era vía `iess_personal_pct` arriba.
+    fondo_reserva_pct: float = FONDO_RESERVA_PCT
+    anticipo_dias_umbral: float = ANTICIPO_DIAS_UMBRAL
+    anticipo_divisor: float = ANTICIPO_DIVISOR
     sbu_por_anio: dict[str, float] = field(default_factory=lambda: dict(SBU_DEFECTO))
 
     def sbu(self, anio: int) -> float:
@@ -1103,7 +1108,7 @@ def procesar_empleado(
     # 8. Fondo de reserva = 8.33% de la base del mes de salida
     fondo_reserva = round((val["SUELDO"] + val["SOBRETIEMPO_25"] + val["SOBRETIEMPO_50"]
                            + val["SOBRETIEMPO_100"] + val["BONIFICACION"] + val["MANIOBRAS"])
-                          * FONDO_RESERVA_PCT, 2)
+                          * cfg.fondo_reserva_pct, 2)
     if val["FONDO_RESERVA"] > 0:
         fondo_reserva = val["FONDO_RESERVA"]
 
@@ -1129,11 +1134,11 @@ def procesar_empleado(
     # no entra en esta base, igual que en el .pyw de producción).
     total_liq_base_split = vac_calc + d13_act + d14_act + des
     ant_otros_l = ant_l_des = 0.0
-    if dias_trab < ANTICIPO_DIAS_UMBRAL:
+    if dias_trab < cfg.anticipo_dias_umbral:
         if total_liq_base_split > 0:
-            ant_otros_l = float(int(total_liq_base_split / ANTICIPO_DIVISOR))
+            ant_otros_l = float(int(total_liq_base_split / cfg.anticipo_divisor))
         if des > 0:
-            ant_l_des = float(int(des / ANTICIPO_DIVISOR))
+            ant_l_des = float(int(des / cfg.anticipo_divisor))
 
     # 12. Totales. El décimo ANTERIOR (13ro y 14to) NO se incluye por
     # defecto en el total -- coincide con el comportamiento real del .pyw en
@@ -1919,17 +1924,21 @@ def guardar_periodo_calculo(
 
 def recalcular_anticipo_liquidado(
     dias_trabajados: float, vacaciones: float, dec_tercera_act: float,
-    dec_cuarta_act: float, desahucio: float,
+    dec_cuarta_act: float, desahucio: float, *,
+    dias_umbral: float = ANTICIPO_DIAS_UMBRAL, divisor: float = ANTICIPO_DIVISOR,
 ) -> tuple[float, float]:
     """"↻ Recalcular Anticipo Otros/Desahucio (liquidado)" del Editor
     original: recalcula `ANTICIPOS_OTROS_L`/`ANTICIPO_L_DESAHUCIO` a partir
     de los valores YA EN PANTALLA (no de lo guardado) -- para no dejarlos
     desactualizados después de editar Vacaciones/Décimos/Desahucio a mano.
+    `dias_umbral`/`divisor`: iguales a `ConfigLiquidacion.anticipo_dias_
+    umbral`/`anticipo_divisor` (editables en /admin/parametros); default a
+    las constantes de siempre para quien no los pase.
     Devuelve `(anticipos_otros_l, anticipo_l_desahucio)`."""
     total_liq_af = vacaciones + dec_tercera_act + dec_cuarta_act + desahucio
-    if dias_trabajados < ANTICIPO_DIAS_UMBRAL:
-        otros_l = float(int(total_liq_af / ANTICIPO_DIVISOR)) if total_liq_af > 0 else 0.0
-        desahucio_l = float(int(desahucio / ANTICIPO_DIVISOR)) if desahucio > 0 else 0.0
+    if dias_trabajados < dias_umbral:
+        otros_l = float(int(total_liq_af / divisor)) if total_liq_af > 0 else 0.0
+        desahucio_l = float(int(desahucio / divisor)) if desahucio > 0 else 0.0
     else:
         otros_l = desahucio_l = 0.0
     return otros_l, desahucio_l

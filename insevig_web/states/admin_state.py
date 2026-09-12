@@ -139,6 +139,61 @@ class AdminState(rx.State):
         await asyncio.to_thread(_save)
         self.sbu_msg = "Guardado."
 
+    # ── Parámetros de negocio: IESS%/Fondo Reserva%/Región/Anticipo ────
+    # "⚙ Configuración de Parámetros Anuales" del Generador_Liquidaciones_
+    # INSEVIG.pyw original -- antes fijos en core/repos/liquidaciones.py.
+    liq_iess_pct: str = ""
+    liq_fondo_reserva_pct: str = ""
+    liq_region_defecto: str = "COSTA"
+    liq_anticipo_dias_umbral: str = ""
+    liq_anticipo_divisor: str = ""
+    liq_params_msg: str = ""
+
+    @rx.event
+    async def cargar_liq_params(self):
+        from core.parametros import get_liquidaciones_params
+
+        d = await asyncio.to_thread(get_liquidaciones_params)
+        self.liq_iess_pct = str(round(float(d["iess_personal_pct"]) * 100, 4))
+        self.liq_fondo_reserva_pct = str(round(float(d["fondo_reserva_pct"]) * 100, 4))
+        self.liq_region_defecto = str(d["region_defecto"])
+        self.liq_anticipo_dias_umbral = str(d["anticipo_dias_umbral"])
+        self.liq_anticipo_divisor = str(d["anticipo_divisor"])
+
+    @rx.event
+    def set_liq_param(self, campo: str, v: str):
+        setattr(self, f"liq_{campo}", v)
+
+    @rx.event
+    async def guardar_liq_params(self):
+        auth_st = await self.get_state(AuthState)
+        if "admin" not in auth_st.roles:
+            self.liq_params_msg = "Solo un administrador."
+            return
+        try:
+            iess = float(self.liq_iess_pct) / 100
+            fondo = float(self.liq_fondo_reserva_pct) / 100
+            umbral = float(self.liq_anticipo_dias_umbral)
+            divisor = float(self.liq_anticipo_divisor)
+        except ValueError:
+            self.liq_params_msg = "Los porcentajes/números deben ser numéricos."
+            return
+        region = self.liq_region_defecto.strip().upper()
+        if region not in ("COSTA", "SIERRA"):
+            self.liq_params_msg = "Región debe ser COSTA o SIERRA."
+            return
+
+        def _save():
+            from core.parametros import set_liquidaciones_params
+
+            set_liquidaciones_params(
+                iess_personal_pct=iess, fondo_reserva_pct=fondo, region_defecto=region,
+                anticipo_dias_umbral=umbral, anticipo_divisor=divisor,
+            )
+
+        await asyncio.to_thread(_save)
+        self.liq_params_msg = "Guardado."
+
     # ── Proveedor de narrativa IA (préstamos) ──────────────────────────
     ia_provider: str = "none"
     ia_base_url: str = ""
