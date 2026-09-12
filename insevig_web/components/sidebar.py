@@ -9,7 +9,7 @@ from __future__ import annotations
 import reflex as rx
 
 from insevig_web import theme
-from insevig_web.registry import MODULES, ModuleSpec
+from insevig_web.registry import MODULES, ModuleSpec, NavItem
 from insevig_web.state import AppState
 from insevig_web.states.auth_state import AuthState
 
@@ -42,27 +42,34 @@ def _seccion_label(texto: str) -> rx.Component:
     )
 
 
-def _entrada(spec: ModuleSpec) -> rx.Component:
-    activo = AppState.router.page.path.startswith("/" + spec.nombre)
+def _entrada(icono: str, etiqueta: str, ruta: str, permiso: str,
+            *, indentado: bool = False, disponible: bool = True) -> rx.Component:
+    """Una fila cliqueable del sidebar (un `NavItem` puntual, no todo el módulo
+    -- BUG REAL corregido 2026-09-12: antes se renderizaba solo UNA fila por
+    módulo, usando `spec.ruta_principal` (el primer `NavItem`); el resto de
+    las páginas de un módulo con 2+ items (ej. `sanciones` con 5, `faltas`
+    con 4, `empleados` con 4, `liquidaciones` con 4) quedaban solo
+    alcanzables tecleando la URL a mano -- invisibles en la navegación real."""
+    activo = AppState.router.page.path == ruta
     fila = rx.hstack(
         rx.box(
             width="3px", height="18px", border_radius="9999px",
             background=rx.cond(activo, _ACTIVE_BAR, "transparent"), flex_shrink="0",
         ),
         rx.icon(
-            spec.icono, size=18,
+            icono, size=16 if indentado else 18,
             color=rx.cond(activo, _FG_ACTIVE, "rgba(255,255,255,.6)"),
         ),
         rx.text(
-            spec.titulo, size="2",
+            etiqueta, size="2",
             weight=rx.cond(activo, "bold", "regular"),
             color=rx.cond(activo, _FG_ACTIVE, _FG),
         ),
-        *([] if spec.disponible else [rx.badge("pronto", color_scheme="gray", size="1")]),
+        *([] if disponible else [rx.badge("pronto", color_scheme="gray", size="1")]),
         spacing="2",
         align="center",
         width="100%",
-        padding="0.55rem 0.7rem 0.55rem 0.35rem",
+        padding=("0.45rem 0.7rem 0.45rem 0.9rem" if indentado else "0.55rem 0.7rem 0.55rem 0.35rem"),
         border_radius="8px",
         background=rx.cond(activo, _ACTIVE_BG, "transparent"),
         _hover={"background": rx.cond(activo, _ACTIVE_BG, _HOVER_BG)},
@@ -71,12 +78,38 @@ def _entrada(spec: ModuleSpec) -> rx.Component:
     )
     enlace = rx.link(
         fila,
-        href=spec.ruta_principal,
+        href=ruta,
         width="100%",
         _hover={"text_decoration": "none"},
         on_click=AppState.cerrar_sidebar,
     )
-    return rx.cond(AuthState.permisos_flat.contains(f"{spec.nombre}:ver"), enlace)
+    return rx.cond(AuthState.permisos_flat.contains(permiso), enlace)
+
+
+def _modulo(spec: ModuleSpec) -> rx.Component:
+    """Un módulo entero: una fila si tiene un solo `NavItem` (como antes),
+    o el título del módulo + una fila indentada por cada `NavItem` si tiene
+    varios -- así todas sus páginas quedan alcanzables, no solo la primera."""
+    if len(spec.items) <= 1:
+        item = spec.items[0] if spec.items else NavItem(spec.titulo, spec.ruta_principal)
+        return _entrada(
+            spec.icono, spec.titulo, item.ruta, f"{spec.nombre}:{item.permiso}",
+            disponible=spec.disponible,
+        )
+    return rx.vstack(
+        rx.text(
+            spec.titulo, size="1", weight="bold", letter_spacing="0.02em",
+            color="rgba(255,255,255,.5)", padding="0.5rem 0.7rem 0.1rem 0.35rem",
+        ),
+        *[
+            _entrada(
+                spec.icono, item.label, item.ruta, f"{spec.nombre}:{item.permiso}",
+                indentado=True, disponible=spec.disponible,
+            )
+            for item in spec.items
+        ],
+        spacing="0", width="100%", align_items="start",
+    )
 
 
 def _grupo(titulo: str, ids: tuple[str, ...]) -> rx.Component:
@@ -86,7 +119,7 @@ def _grupo(titulo: str, ids: tuple[str, ...]) -> rx.Component:
         return rx.fragment()
     return rx.vstack(
         _seccion_label(titulo),
-        *[_entrada(s) for s in specs],
+        *[_modulo(s) for s in specs],
         spacing="1", width="100%", align_items="start",
     )
 

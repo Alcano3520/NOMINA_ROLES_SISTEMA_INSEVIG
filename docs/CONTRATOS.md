@@ -67,6 +67,20 @@ rediseño; `avanzada.py` también adoptó `empty_state` para "sin resultados".
 | `components/layout.py` | `pagina(*contenido, requiere=(modulo, accion))`. Envoltura obligatoria de toda página. |
 | `components/sidebar.py`, `components/data_source_selector.py` | Se consumen, no se editan. |
 
+**2026-09-12, corrección de bug real en `components/sidebar.py`:** el sidebar
+renderizaba **una sola fila por módulo** (`_entrada(spec)` usaba
+`spec.ruta_principal`, el primer `NavItem` nada más) — cualquier módulo con
+2+ `NavItem` (empleados, roles, prestamos, observaciones, sanciones, faltas,
+liquidaciones, carga_usuarios, admin) tenía sus páginas restantes **solo
+alcanzables tecleando la URL a mano**, invisibles en la navegación real.
+Reportado por el usuario al revisar sanciones/faltas ("debería estar
+dividido en tres, está todo uno"). Fix: `_modulo(spec)` renderiza una fila
+por cada `NavItem` (indentada, bajo el título del módulo) cuando hay 2+;
+con 1 solo se ve igual que antes. De paso empieza a respetar
+`NavItem.permiso` por ítem (antes se ignoraba fuera del primero — todo el
+módulo gateaba solo con `f"{modulo}:ver"`). No se tocó `registry.py` ni el
+patrón de agregar módulos (`_grupo`/`MODULES` sin cambios de firma).
+
 ## Lo que SÍ es de cada módulo `<mod>`
 
 ```
