@@ -51,7 +51,11 @@ def _campo(nombre: str) -> rx.Component:
     if nombre in CAMPOS_COMBO:
         control = native_select(
             rx.el.option("—", value=""),
-            *[rx.el.option(f"{c} — {t}", value=c) for c, t in CAMPOS_COMBO[nombre]],
+            # Solo la etiqueta humana en el texto visible del option -- el
+            # código (`value=c`) es de base de datos y nunca debe verlo el
+            # usuario (bug real: se veía "1 — Masculino" en vez de
+            # "Masculino"). `TIP_SAN` tiene código==etiqueta, no le cambia nada.
+            *[rx.el.option(t, value=c) for c, t in CAMPOS_COMBO[nombre]],
             value=val,
             on_change=lambda v: _S.set_campo(nombre, v),
             disabled=_bloqueado(),
@@ -133,38 +137,23 @@ _JS_CAMARA = """
 """
 
 
-def _dato_clave(etiqueta: str, valor: rx.Var) -> rx.Component:
-    """Un dato de la ficha rápida (label chico + valor), para el resumen que
-    va al lado de la foto — es de solo lectura, la edición real está en la
-    pestaña "Datos generales" más abajo."""
-    return rx.vstack(
-        rx.text(etiqueta, size="1", color_scheme="gray"),
-        rx.text(rx.cond(valor.to(str) != "", valor.to(str), "—"), size="2", weight="medium"),
-        spacing="0",
-    )
-
-
-def _nombre_o_codigo(campo: str) -> rx.Var:
-    """DEPTO/CARGO/SECCION: el nombre resuelto del catálogo si ya cargó,
-    si no el código crudo (mismo dato que ve `_campo` para ese input)."""
-    return rx.cond(
-        _S.edit_nombres_cat[campo] != "", _S.edit_nombres_cat[campo], _S.edit_campos[campo].to(str),
-    )
+# Campos primordiales que se editan en la ficha rápida (al lado de la foto)
+# en vez de en la pestaña "Datos generales" -- evita mostrarlos/editarlos por
+# duplicado en dos lugares. `_subseccion` los filtra de sus grupos de abajo.
+# Tupla (no set) para que el orden de despliegue sea siempre el mismo.
+CAMPOS_EN_FICHA: tuple[str, ...] = (
+    "APELLIDOS", "NOMBRES", "CEDULA", "FECHA_ING", "FECHA_NAC", "DEPTO", "CARGO", "SECCION",
+)
 
 
 def _ficha_rapida() -> rx.Component:
-    """Los datos que se necesitan de un vistazo, sin entrar a las pestañas."""
+    """Los datos que se necesitan de un vistazo -- editables desde acá mismo
+    (mismo control que usaría la pestaña correspondiente), sin tener que
+    entrar a las pestañas de abajo."""
     return rx.grid(
-        _dato_clave("Apellidos", _S.edit_campos["APELLIDOS"]),
-        _dato_clave("Nombres", _S.edit_campos["NOMBRES"]),
-        _dato_clave("Cédula", _S.edit_campos["CEDULA"]),
-        _dato_clave("Fecha de ingreso", _S.edit_campos["FECHA_ING"]),
-        _dato_clave("Fecha de nacimiento", _S.edit_campos["FECHA_NAC"]),
-        _dato_clave("Puesto", _nombre_o_codigo("CARGO")),
-        _dato_clave("Departamento", _nombre_o_codigo("DEPTO")),
-        _dato_clave("Sección", _nombre_o_codigo("SECCION")),
+        *[_campo(c) for c in CAMPOS_EN_FICHA],
         columns=rx.breakpoints(initial="2", sm="3", lg="4"),
-        spacing="3",
+        spacing="2",
         flex_grow="1",
         flex_basis="260px",
         min_width="0",
@@ -177,16 +166,16 @@ def _foto_y_ficha() -> rx.Component:
         _S.foto_uri != "",
         rx.image(
             src=_S.foto_uri,
-            width="120px",
-            height="150px",
+            width="96px",
+            height="120px",
             object_fit="cover",
             border_radius="8px",
             border="1px solid var(--gray-6)",
         ),
         rx.center(
-            rx.icon("user", size=48, color="var(--gray-8)"),
-            width="120px",
-            height="150px",
+            rx.icon("user", size=40, color="var(--gray-8)"),
+            width="96px",
+            height="120px",
             border_radius="8px",
             border="1px dashed var(--gray-6)",
         ),
@@ -295,7 +284,12 @@ def _fdr_checkbox() -> rx.Component:
 
 
 def _subseccion(titulo: str, campos: tuple[str, ...]) -> rx.Component:
-    """Un recuadro con título (como los LabelFrame del sistema anterior)."""
+    """Un recuadro con título (como los LabelFrame del sistema anterior).
+    Los campos que ya se editan en la ficha rápida (al lado de la foto) se
+    filtran acá para no mostrarlos/editarlos por duplicado."""
+    campos = tuple(c for c in campos if c not in CAMPOS_EN_FICHA)
+    if not campos:
+        return rx.fragment()
     extra = [_fdr_checkbox()] if titulo == "Parámetros de nómina" else []
     return section_box(
         titulo,
@@ -439,75 +433,88 @@ def editor_panel() -> rx.Component:
             _S.cargando_editor,
             rx.center(rx.spinner(size="3"), padding="3rem", width="100%"),
             rx.vstack(
-                rx.flex(
-                    rx.hstack(
-                        rx.heading(
-                            rx.cond(_S.es_nuevo, "Nuevo empleado", _S.nombre_editor),
-                            size="5",
+                rx.box(
+                    rx.vstack(
+                        rx.flex(
+                            rx.hstack(
+                                rx.heading(
+                                    rx.cond(_S.es_nuevo, "Nuevo empleado", _S.nombre_editor),
+                                    size="5",
+                                ),
+                                rx.cond(~_S.es_nuevo, badge_estado(_S.edit_campos["ESTADO"])),
+                                spacing="2", align="center", wrap="wrap", flex_grow="1", min_width="0",
+                            ),
+                            rx.flex(
+                                rx.cond(
+                                    _S.es_nuevo,
+                                    rx.fragment(),
+                                    rx.cond(
+                                        AuthState.permisos_flat.contains("empleados:editar"),
+                                        rx.button(
+                                            rx.icon(rx.cond(_S.modo_edicion, "lock", "pencil"), size=14),
+                                            rx.cond(_S.modo_edicion, "Bloquear", "Modificar"),
+                                            on_click=_S.toggle_modo_edicion,
+                                            color_scheme=rx.cond(_S.modo_edicion, "amber", "blue"),
+                                            size="2",
+                                        ),
+                                    ),
+                                ),
+                                rx.cond(
+                                    ~_S.es_nuevo,
+                                    rx.button("Vista completa", on_click=_S.abrir_vista_completa,
+                                              variant="soft", size="2"),
+                                ),
+                                rx.button(rx.icon("x", size=15), on_click=_S.cerrar_editor,
+                                          variant="soft", size="2", color_scheme="gray"),
+                                gap="2", align="center", flex_shrink="0", wrap="wrap",
+                            ),
+                            justify="between", align="center", gap="3", width="100%", wrap="wrap",
                         ),
-                        rx.cond(~_S.es_nuevo, badge_estado(_S.edit_campos["ESTADO"])),
-                        spacing="2", align="center", wrap="wrap", flex_grow="1", min_width="0",
-                    ),
-                    rx.flex(
+                        _vista_completa(),
+                        rx.flex(
+                            rx.badge(
+                                rx.icon(
+                                    rx.cond(_S.edit_dirty, "circle-alert", rx.cond(_S.modo_edicion | _S.es_nuevo, "pencil", "lock")),
+                                    size=13,
+                                ),
+                                _S.estado_barra,
+                                color_scheme=rx.cond(
+                                    _S.edit_dirty, "amber", rx.cond(_S.modo_edicion | _S.es_nuevo, "blue", "gray")
+                                ),
+                                variant="soft",
+                                size="1",
+                            ),
+                            rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
+                            gap="3", align="center", wrap="wrap",
+                        ),
+                        rx.cond(_S.edit_error != "", rx.callout(_S.edit_error, color_scheme="red", size="1")),
+                        rx.cond(_S.edit_ok != "", rx.callout(_S.edit_ok, color_scheme="green", size="1")),
+                        rx.cond(~_S.es_nuevo, _foto_y_ficha()),
                         rx.cond(
                             _S.es_nuevo,
-                            rx.fragment(),
-                            rx.cond(
-                                AuthState.permisos_flat.contains("empleados:editar"),
-                                rx.button(
-                                    rx.icon(rx.cond(_S.modo_edicion, "lock", "pencil"), size=14),
-                                    rx.cond(_S.modo_edicion, "Bloquear", "Modificar"),
-                                    on_click=_S.toggle_modo_edicion,
-                                    color_scheme=rx.cond(_S.modo_edicion, "amber", "blue"),
-                                    size="2",
+                            rx.vstack(
+                                field_label("Código de empleado"),
+                                rx.input(
+                                    value=_S.edit_campos["EMPLEADO"],
+                                    on_change=lambda v: _S.set_campo("EMPLEADO", v),
+                                    width="200px",
                                 ),
+                                spacing="1",
                             ),
                         ),
-                        rx.cond(
-                            ~_S.es_nuevo,
-                            rx.button("Vista completa", on_click=_S.abrir_vista_completa,
-                                      variant="soft", size="2"),
-                        ),
-                        rx.button(rx.icon("x", size=15), on_click=_S.cerrar_editor,
-                                  variant="soft", size="2", color_scheme="gray"),
-                        gap="2", align="center", flex_shrink="0", wrap="wrap",
+                        spacing="3", width="100%",
                     ),
-                    justify="between", align="center", gap="3", width="100%", wrap="wrap",
+                    # Fijo arriba mientras se scrollea el resto (pestañas,
+                    # documentos, guardar/zona de peligro) -- pedido del
+                    # usuario: la foto + los datos primordiales siempre a la
+                    # vista, sin tener que subir para volver a verlos.
+                    position="sticky", top="0px", z_index="2",
+                    background="var(--color-panel-solid)",
+                    padding_bottom="10px",
+                    border_bottom="1px solid var(--gray-4)",
+                    width="100%",
                 ),
-                _vista_completa(),
-                rx.flex(
-                    rx.badge(
-                        rx.icon(
-                            rx.cond(_S.edit_dirty, "circle-alert", rx.cond(_S.modo_edicion | _S.es_nuevo, "pencil", "lock")),
-                            size=13,
-                        ),
-                        _S.estado_barra,
-                        color_scheme=rx.cond(
-                            _S.edit_dirty, "amber", rx.cond(_S.modo_edicion | _S.es_nuevo, "blue", "gray")
-                        ),
-                        variant="soft",
-                        size="1",
-                    ),
-                    rx.cond(_S.edit_audit != "", rx.text(_S.edit_audit, size="1", color_scheme="gray")),
-                    gap="3", align="center", wrap="wrap",
-                ),
-                rx.cond(_S.edit_error != "", rx.callout(_S.edit_error, color_scheme="red", size="1")),
-                rx.cond(_S.edit_ok != "", rx.callout(_S.edit_ok, color_scheme="green", size="1")),
-                rx.cond(~_S.es_nuevo, _foto_y_ficha()),
                 rx.cond(~_S.es_nuevo, _documentos()),
-                rx.cond(
-                    _S.es_nuevo,
-                    rx.vstack(
-                        field_label("Código de empleado"),
-                        rx.input(
-                            value=_S.edit_campos["EMPLEADO"],
-                            on_change=lambda v: _S.set_campo("EMPLEADO", v),
-                            width="200px",
-                        ),
-                        spacing="1",
-                    ),
-                ),
-                rx.divider(),
                 rx.tabs.root(
                     rx.tabs.list(
                         *[
@@ -541,6 +548,7 @@ def editor_panel() -> rx.Component:
                     on_change=_S.set_edit_tab,
                     default_value="0",
                     width="100%",
+                    padding_top="4px",
                 ),
                 rx.hstack(
                     rx.cond(

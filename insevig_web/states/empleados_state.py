@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import re
 
 import reflex as rx
 
@@ -29,8 +30,20 @@ def _linea_audit(e: repo_emp.Empleado) -> str:
     )
 
 
+_RE_FECHA_CON_HORA = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ]\d{2}:\d{2}:\d{2}")
+
+
 def _limpiar_valor(k: str, v: object) -> str:
-    """Muestra el valor sin ruido (cédula sin '.0', fechas sin hora)."""
+    """Muestra el valor sin ruido (cédula sin '.0', fechas sin hora).
+
+    Las fechas llegan con hora aunque el campo sea solo-fecha: Supabase las
+    serializa "AAAA-MM-DDT00:00:00" (siempre medianoche), pero SQL Server vía
+    pyodbc devuelve un `datetime` que al convertir a texto queda
+    "AAAA-MM-DD 00:00:00" (con espacio, no "T") -- BUG REAL: el strip viejo
+    solo reconocía el formato de Supabase, así que en el NAS (que usa SQL
+    Server como fuente por defecto) fecha de ingreso/nacimiento se veían con
+    hora/minutos/segundos. Se corta la hora sin importar el separador ni si
+    es exactamente medianoche (ningún campo de fecha de RPEMPLEA usa la hora)."""
     if v is None:
         return ""
     s = str(v).strip()
@@ -40,8 +53,9 @@ def _limpiar_valor(k: str, v: object) -> str:
         return normalizar_cedula(v) if s not in ("", "None") else ""
     if s.endswith(".0"):
         s = s[:-2]
-    if "T00:00:00" in s:
-        s = s.split("T")[0]
+    m = _RE_FECHA_CON_HORA.match(s)
+    if m:
+        s = m.group(1)
     return s
 
 
@@ -220,7 +234,12 @@ class EmpleadosState(rx.State):
     def set_grid_filtro_vivo(self, v: str):
         self.grid_filtro_vivo = v
 
-    _GRID_TOPE = 200  # filas renderizadas como máximo (evita saturar el DOM)
+    # Filas renderizadas como máximo (evita saturar el DOM con miles de filas
+    # sin virtualización). Cubre completo "Activos" (~2300 empleados reales,
+    # 2026-09) con margen; "Inactivos"/"Todos" (histórico, ~8000/~10000) sigue
+    # topándose acá -- pedido explícito del usuario: subir el tope real, no
+    # dejar el histórico completo sin virtualizar (perf del navegador).
+    _GRID_TOPE = 3000
 
     @rx.var
     def grid_filtrado(self) -> list[dict]:
