@@ -111,7 +111,7 @@ def test_procesar_empleado_nunca_autocalcula_indem_despido(monkeypatch):
         "FECHA_ING": "2015-01-01", "FECHA_SAL": "2026-06-01",
         "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
     }
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: emp)
 
     def _raise():
         raise RuntimeError("sin conexión")
@@ -139,7 +139,7 @@ def test_indemnizacion_manual_se_suma_al_total(monkeypatch):
         "FECHA_ING": "2015-01-01", "FECHA_SAL": "2026-06-01",
         "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
     }
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: emp)
 
     def _raise():
         raise RuntimeError("sin conexión")
@@ -171,7 +171,7 @@ def test_descuentos_pendientes_se_suman_y_quedan_marcados_para_aplicar(monkeypat
         "FECHA_ING": "2015-01-01", "FECHA_SAL": "2026-06-01",
         "ESTADO": "A", "HOR25": 0, "HOR50": 0, "HOR100": 0,
     }
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: emp)
     monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
     datos = {"descuentos_pendientes": [
         {"id": "d1", "monto": 50.0, "motivo": "Dotación no devuelta"},
@@ -211,7 +211,7 @@ def test_periodo_calc_no_configurado_no_cambia_nada(monkeypatch):
     comportamiento es idéntico al de antes de agregar estos parámetros --
     calcular_desde_dbtablas nunca es True."""
     emp = _emp_mes_actual()
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: emp)
 
     def _raise():
         raise RuntimeError("sin conexión")
@@ -247,7 +247,7 @@ def test_calcular_desde_dbtablas_prorratea_y_usa_cupo_de_seccion(monkeypatch):
     sobretiempo salen del cupo de sección (DBTABLAS), no del $ real de los
     movimientos."""
     emp = _emp_mes_actual()
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: emp)
 
     def _raise():
         raise RuntimeError("sin conexión")
@@ -284,7 +284,7 @@ def test_usar_valores_reales_mes_actual_ignora_cupo_de_seccion(monkeypatch):
     no el cupo de sección -- pero el prorrateo de Sueldo/Bonificación sigue
     aplicando igual (depende solo de periodo_calc_anio/mes)."""
     emp = _emp_mes_actual()
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: emp)
 
     def _raise():
         raise RuntimeError("sin conexión")
@@ -428,7 +428,7 @@ def test_incluir_sueldo_false_excluye_rol_del_mes_de_salida_no_el_sueldo_base(mo
     CAMPOS_ROL_MES): con incluir_sueldo=False se excluyen Sueldo,
     sobretiempos y los descuentos del MES DE SALIDA -- pero sueldo_base
     (RPEMPLEA, columna "Sueldo"/REMUNERACION) no se ve afectado."""
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: _emp_ejemplo())
     _sin_supabase(monkeypatch)
 
     def _movs(cod, anio, mes, fuente):
@@ -455,7 +455,7 @@ def test_incluir_sueldo_false_excluye_rol_del_mes_de_salida_no_el_sueldo_base(mo
 def test_default_multas_y_antic_otros_solo_si_el_real_da_cero(monkeypatch):
     """"4. Valores por Defecto" del .pyw: REEMPLAZA (no suma) si el rubro
     real del mes de salida da $0 -- si ya hay un valor real, no lo toca."""
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: _emp_ejemplo())
     _sin_supabase(monkeypatch)
 
     def _movs(cod, anio, mes, fuente):
@@ -481,7 +481,7 @@ def test_default_multas_y_antic_otros_solo_si_el_real_da_cero(monkeypatch):
 def test_default_multas_no_se_aplica_si_incluir_sueldo_false(monkeypatch):
     """El .pyw no deja que un default se cuele justo en el mes que se
     excluyó a propósito con incluir_sueldo=False."""
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: _emp_ejemplo())
     _sin_supabase(monkeypatch)
     monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
     cfg = lq.ConfigLiquidacion()
@@ -496,7 +496,7 @@ def test_default_multas_no_se_aplica_si_incluir_sueldo_false(monkeypatch):
 
 
 def test_procesar_lote_propaga_default_multas_y_antic_otros(monkeypatch):
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: _emp_ejemplo())
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: _emp_ejemplo())
     _sin_supabase(monkeypatch)
     monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
     cfg = lq.ConfigLiquidacion()
@@ -518,7 +518,7 @@ def test_usar_ingresos_reales_desahucio_usa_promedio_del_ultimo_periodo(monkeypa
     realmente abarca (no siempre 12)."""
     emp = _emp_ejemplo()
     emp["FECHA_ING"] = "2015-01-15"  # varios periodos completos de antigüedad
-    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente: emp)
+    monkeypatch.setattr(lq, "_empleado", lambda cedula, fuente, **kw: emp)
     _sin_supabase(monkeypatch)
     monkeypatch.setattr(lq, "movimientos_mes", lambda cod, anio, mes, fuente: ([], "RPINGDES"))
     # El último periodo de vacaciones (anclado en el ingreso, 15/01) para una
@@ -1200,6 +1200,7 @@ def test_recalcular_liquidacion_usa_datos_guardados_por_defecto(monkeypatch):
     registro = {
         "empleado_cedula": "0920116811", "fecha_salida": "2026-06-15",
         "motivo": "RENUNCIA VOLUNTARIA", "fecha_ingreso": "2020-03-15",
+        "empleado_codigo": "1012",
     }
     monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
     llamada = {}
@@ -1219,8 +1220,11 @@ def test_recalcular_liquidacion_usa_datos_guardados_por_defecto(monkeypatch):
     # `fecha_ingreso` por defecto es la YA GUARDADA (BUG REAL corregido
     # 2026-09-12: evita que un empleado reingresado después de esta
     # liquidación rompa el recálculo con la fecha de ingreso ACTUAL de RPEMPLEA).
+    # `empleado_codigo` por defecto es el YA GUARDADO (BUG REAL corregido
+    # 2026-09-12: evita que buscar solo por cédula traiga el período de un
+    # reingreso posterior con otro código).
     assert llamada["kw"] == {
-        "fecha_ingreso": "2020-03-15",
+        "fecha_ingreso": "2020-03-15", "empleado_codigo": "1012",
         "incluir_dec13_anterior": False, "incluir_dec14_anterior": False,
     }
     assert resultado.cedula == "0920116811"
@@ -1262,6 +1266,84 @@ def test_recalcular_liquidacion_fecha_ingreso_override_pisa_la_guardada(monkeypa
         "L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), fecha_ingreso="2015-01-10"
     )
     assert llamada["fecha_ingreso"] == "2015-01-10"
+
+
+def test_recalcular_liquidacion_pinnea_empleado_codigo_guardado(monkeypatch):
+    """BUG REAL confirmado con datos reales 2026-09-12 (NUÑEZ BARRAGAN
+    JHOFFRE IVAN, cédula 1712484086): sin código, `_empleado(cedula)` puede
+    traer el período de un REINGRESO posterior con otro `empleado_codigo`
+    -- pasar el código YA GUARDADO en el registro pinnea el período de
+    empleo correcto en vez de arriesgarse a la búsqueda por sola cédula."""
+    registro = {
+        "empleado_cedula": "1712484086", "fecha_salida": "2026-02-25",
+        "motivo": "RENUNCIA VOLUNTARIA", "fecha_ingreso": "2025-11-28",
+        "empleado_codigo": "10517",
+    }
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
+    llamada = {}
+    monkeypatch.setattr(
+        lq, "procesar_empleado",
+        lambda cedula, fecha_salida, motivo, fuente, cfg, **kw: (
+            llamada.update(kw) or lq.Liquidacion(
+                cedula, "", cedula, "", "", "", 0.0, "", fecha_salida, motivo, 0)
+        ),
+    )
+    lq.recalcular_liquidacion("L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion())
+    assert llamada["empleado_codigo"] == "10517"
+
+    # Un override explícito (código correcto pasado a mano) pisa el guardado.
+    lq.recalcular_liquidacion(
+        "L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), empleado_codigo="9999"
+    )
+    assert llamada["empleado_codigo"] == "9999"
+
+
+def test_empleado_pinnea_por_codigo_cuando_se_da(monkeypatch):
+    """`_empleado` con `empleado_codigo` busca por ese código PRIMERO --
+    nunca por la cédula sola, que podría traer el período de un reingreso
+    posterior con otro código."""
+    class _FakeTabla:
+        def __init__(self, filas_por_filtro):
+            self.filas_por_filtro = filas_por_filtro
+            self.filtro = None
+
+        def select(self, *_a, **_k):
+            return self
+
+        def eq(self, campo, valor):
+            self.filtro = (self.filtro or ()) + ((campo, valor),)
+            return self
+
+        def limit(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            class _R:
+                pass
+            r = _R()
+            r.data = self.filas_por_filtro.get(self.filtro, [])
+            return r
+
+    filas_por_filtro = {
+        (("codemp", "10"), ("empleado", "10517")): [
+            {"empleado": "10517", "cedula": 1712484086.0, "fecha_ing": "2025-11-28"}
+        ],
+        (("codemp", "10"), ("cedula", 1712484086)): [
+            {"empleado": "10305", "cedula": 1712484086.0, "fecha_ing": "2026-03-06"}
+        ],
+    }
+
+    class _FakeCliente:
+        def table(self, _n):
+            return _FakeTabla(filas_por_filtro)
+
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeCliente())
+
+    sin_codigo = lq._empleado("1712484086", lq.FUENTE_SUPABASE)
+    assert sin_codigo["EMPLEADO"] == "10305"  # sin pinnear, trae el "primero" que sea
+
+    con_codigo = lq._empleado("1712484086", lq.FUENTE_SUPABASE, empleado_codigo="10517")
+    assert con_codigo["EMPLEADO"] == "10517"  # pinneado, trae el período correcto
 
 
 def test_recalcular_liquidacion_reporta_liquidacion_inexistente(monkeypatch):

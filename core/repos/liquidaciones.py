@@ -571,10 +571,34 @@ def total_vacaciones_a_pagar(
 # ── Empleado ────────────────────────────────────────────────────────────────
 
 
-def _empleado(cedula: str, fuente: str) -> dict | None:
+def _empleado(cedula: str, fuente: str, *, empleado_codigo: str = "") -> dict | None:
+    """Busca al empleado en RPEMPLEA. Si se da `empleado_codigo` (el código
+    GUARDADO en una liquidación ya existente), se busca por ese código
+    primero -- pinnea el período de empleo EXACTO al que corresponde esa
+    liquidación histórica.
+
+    BUG REAL encontrado 2026-09-12 (investigando por qué el desglose
+    mensual recalculado no cuadraba con el décimo ya pagado, tras una
+    pregunta directa del usuario): buscar solo por cédula (sin código) trae
+    el registro que Supabase devuelva primero quien sabe con qué orden --
+    para alguien con VARIOS períodos de empleo (reingreso con un
+    `empleado_codigo` nuevo), eso puede ser el período MÁS RECIENTE, no el
+    que corresponde a la liquidación que se está recalculando. Confirmado
+    con datos reales: NUÑEZ BARRAGAN JHOFFRE IVAN (cédula 1712484086)
+    liquidado con código 10517 (28/11/2025→25/02/2026), pero
+    `_empleado(cedula)` sin código traía el período MÁS NUEVO, código 10305
+    (06/03/2026→10/05/2026) -- un reingreso posterior YA liquidado aparte
+    -- haciendo que el recálculo consultara los movimientos de nómina de la
+    persona/período equivocado por completo."""
     ced = normalizar_cedula(cedula)
+    cod = str(empleado_codigo or "").strip()
     if fuente == FUENTE_SUPABASE:
         sb = supabase_client.get_client()
+        if cod:
+            with contextlib.suppress(Exception):
+                r = sb.table("rpemplea").select("*").eq("codemp", "10").eq("empleado", cod).limit(1).execute()
+                if r.data:
+                    return {k.upper(): v for k, v in r.data[0].items()}
         for filtro in (("cedula", int(ced)), ("cedula", float(ced))):
             try:
                 r = sb.table("rpemplea").select("*").eq("codemp", "10").eq(*filtro).limit(1).execute()
@@ -584,6 +608,15 @@ def _empleado(cedula: str, fuente: str) -> dict | None:
                 continue
         return None
     flt = get_settings().sqlserver_filter
+    if cod:
+        filas_cod = sqlserver.filas(
+            f"""SELECT [EMPLEADO],[APELLIDOS],[NOMBRES],[CEDULA],[SUELDO],[CARGO],[DEPTO],
+                       [SECCION],[FECHA_ING],[FECHA_SAL],[ESTADO],[HOR25],[HOR50],[HOR100]
+                FROM [insevig].[dbo].[RPEMPLEA] WHERE {flt} AND [EMPLEADO] = ?""",
+            (cod,),
+        )
+        if filas_cod:
+            return filas_cod[0]
     filas = sqlserver.filas(
         f"""SELECT [EMPLEADO],[APELLIDOS],[NOMBRES],[CEDULA],[SUELDO],[CARGO],[DEPTO],
                    [SECCION],[FECHA_ING],[FECHA_SAL],[ESTADO],[HOR25],[HOR50],[HOR100]
@@ -742,6 +775,7 @@ def procesar_empleado(
     usar_valores_reales_mes_actual: bool = False,
     default_multas: float = 0.0,
     default_antic_otros: float = 0.0,
+    empleado_codigo: str = "",
 ) -> Liquidacion:
     """Procesa un empleado y arma su liquidación.
 
@@ -819,8 +853,14 @@ def procesar_empleado(
     el décimo anterior en cada liquidación de lote generada por el sistema
     web, cosa que el `.pyw` nunca permite. Corregido aquí para que
     `procesar_lote` sin overrides coincida con el comportamiento real.
+
+    `empleado_codigo` (default `""`, agregado 2026-09-12): pinnea el
+    período de empleo EXACTO en RPEMPLEA -- ver `_empleado`. Úsalo siempre
+    que se esté recalculando una liquidación YA GUARDADA (pasar el código
+    guardado en ese registro), para no arriesgarse a que la búsqueda por
+    sola cédula traiga el período de un reingreso posterior.
     """
-    emp = _empleado(cedula, fuente)
+    emp = _empleado(cedula, fuente, empleado_codigo=empleado_codigo)
     ced = normalizar_cedula(cedula)
     if emp is None:
         return Liquidacion(
@@ -2255,6 +2295,7 @@ def reconstruir_liquidacion(registro: dict, conceptos: list[dict]) -> Liquidacio
 def recalcular_liquidacion(
     liquidacion_id: str, fuente: str, cfg: ConfigLiquidacion, *,
     cedula: str = "", fecha_salida: str = "", motivo: str = "", fecha_ingreso: str = "",
+    empleado_codigo: str = "",
 ) -> Liquidacion:
     """Vuelve a correr TODO el cálculo desde cero contra los datos actuales
     de nómina -- paridad con "🔄 Recalcular Liquidación" del Editor de
@@ -2284,6 +2325,15 @@ def recalcular_liquidacion(
     seguridad) a producir un resultado. Pasar la fecha de ingreso ORIGINAL
     ya guardada en el registro evita ese falso conflicto.
 
+    `empleado_codigo` (BUG REAL encontrado 2026-09-12, investigando por qué
+    el desglose recalculado no cuadraba con el décimo ya pagado): si se
+    omite, cae al default de `_empleado`/`procesar_empleado` (buscar SOLO
+    por cédula) -- para alguien con VARIOS períodos de empleo (reingreso
+    con un código nuevo), eso puede traer el período MÁS RECIENTE en vez
+    del que corresponde a ESTA liquidación histórica, consultando los
+    movimientos de nómina equivocados por completo. Pasar el código
+    GUARDADO en el registro pinnea el período correcto.
+
     Mismos defaults fijos que usa el botón del `.pyw` (no hay control
     propio para esto en el Editor): `incluir_dec13_anterior=False`,
     `incluir_dec14_anterior=False`.
@@ -2296,8 +2346,9 @@ def recalcular_liquidacion(
     fsal = fecha_salida or str(registro.get("fecha_salida") or "")
     mot = motivo or str(registro.get("motivo") or "")
     fing = fecha_ingreso or str(registro.get("fecha_ingreso") or "")
+    cod = empleado_codigo or str(registro.get("empleado_codigo") or "")
     return procesar_empleado(
-        ced, fsal, mot, fuente, cfg, fecha_ingreso=fing,
+        ced, fsal, mot, fuente, cfg, fecha_ingreso=fing, empleado_codigo=cod,
         incluir_dec13_anterior=False, incluir_dec14_anterior=False,
     )
 
