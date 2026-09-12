@@ -125,17 +125,22 @@ class BitacoraState(rx.State):
     def set_filtro_periodo(self, v: str):
         self.filtro_periodo = "" if v == "(todos)" else v
 
-    @rx.event
-    async def cargar(self):
-        self.cargando = True
-        self.error = ""
-        yield
+    async def _recargar(self):
+        """Sin `yield` — awaitable directo desde otro handler (a diferencia
+        de `cargar`, que es un generador async y no se puede `await`)."""
         try:
             self.registros = await asyncio.to_thread(
                 bitacora.listar, self.filtro_estado, self.filtro_texto, self.filtro_periodo
             )
         except Exception as e:  # noqa: BLE001
             self.error = f"No se pudo cargar (¿hay conexión?): {e}"
+
+    @rx.event
+    async def cargar(self):
+        self.cargando = True
+        self.error = ""
+        yield
+        await self._recargar()
         self.cargando = False
 
     @rx.event
@@ -212,7 +217,7 @@ class BitacoraState(rx.State):
                 await asyncio.to_thread(bitacora.crear, datos, usuario=usuario, roles=roles)
             self.msg = "Guardado."
             self.mostrar_form = False
-            await self.cargar()
+            await self._recargar()
         except Exception as e:  # noqa: BLE001
             self.msg = f"Error: {e}"
 
@@ -224,7 +229,7 @@ class BitacoraState(rx.State):
         await asyncio.to_thread(
             bitacora.cambiar_estado, reg_id, estado, usuario=auth.username, roles=set(auth.roles)
         )
-        await self.cargar()
+        await self._recargar()
 
     @rx.event
     async def eliminar(self, reg_id: int):
@@ -235,7 +240,7 @@ class BitacoraState(rx.State):
         await asyncio.to_thread(
             bitacora.eliminar, reg_id, usuario=auth.username, roles=set(auth.roles)
         )
-        await self.cargar()
+        await self._recargar()
 
     # ── Bitácora de Atención Personal ──────────────────────────────────
     at_texto: str = ""
@@ -254,16 +259,22 @@ class BitacoraState(rx.State):
         self.mostrar_at_form = False
         self.emp_resultados = []
 
-    @rx.event
-    async def cargar_atenciones(self):
-        self.at_cargando = True
-        yield
+    async def _recargar_atenciones(self):
+        """Lógica de carga, sin `yield` — se puede `await`-ear directo desde
+        otro handler (a diferencia de `cargar_atenciones`, que es un generador
+        async por su `yield` de abajo y no se puede `await`)."""
         try:
             if not self.at_motivos:
                 self.at_motivos = await asyncio.to_thread(bitacora.motivos_activos)
             self.atenciones = await asyncio.to_thread(bitacora.atenciones, self.at_texto)
         except Exception as e:  # noqa: BLE001
             self.at_msg = f"No se pudo cargar: {e}"
+
+    @rx.event
+    async def cargar_atenciones(self):
+        self.at_cargando = True
+        yield
+        await self._recargar_atenciones()
         self.at_cargando = False
 
     @rx.event
@@ -312,7 +323,7 @@ class BitacoraState(rx.State):
             self.at_msg = "Atención registrada."
             self.at_form = {}
             self.mostrar_at_form = False
-            await self.cargar_atenciones()
+            await self._recargar_atenciones()
         except Exception as e:  # noqa: BLE001
             self.at_msg = f"Error: {e}"
 
@@ -325,7 +336,7 @@ class BitacoraState(rx.State):
         await asyncio.to_thread(
             bitacora.eliminar_atencion, aid, usuario=auth.username, roles=set(auth.roles)
         )
-        await self.cargar_atenciones()
+        await self._recargar_atenciones()
 
     # ── Reportes ──────────────────────────────────────────────────────
     rep_estado: str = ""

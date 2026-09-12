@@ -886,11 +886,9 @@ class RegistradorState(rx.State):
         self.cq_empleado = self.cq_clase = self.cq_desde = self.cq_hasta = self.cq_numero = ""
         self.cq_solo_pend = False
 
-    @rx.event
-    async def buscar_filas(self):
-        self.cq_cargando = True
-        self.error = ""
-        yield
+    async def _recargar_cq(self):
+        """Sin `yield` — awaitable directo desde otro handler (a diferencia
+        de `buscar_filas`, que es un generador async y no se puede `await`)."""
         fuente = await self._fuente()
         try:
             filas = await asyncio.to_thread(
@@ -902,6 +900,13 @@ class RegistradorState(rx.State):
             self.cq_filas = [asdict(f) for f in filas]
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
+
+    @rx.event
+    async def buscar_filas(self):
+        self.cq_cargando = True
+        self.error = ""
+        yield
+        await self._recargar_cq()
         self.cq_cargando = False
 
     @rx.event
@@ -929,7 +934,7 @@ class RegistradorState(rx.State):
             self.resultado = f"Valor actualizado ({n} fila)."
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
-        await self.buscar_filas()
+        await self._recargar_cq()
 
     @rx.event
     async def eliminar_fila(self, fila: dict):
@@ -951,7 +956,7 @@ class RegistradorState(rx.State):
         except Exception as e:  # noqa: BLE001
             self.error = str(e)
         yield
-        await self.buscar_filas()
+        await self._recargar_cq()
 
     @rx.event
     def exportar_cq_csv(self):

@@ -106,11 +106,9 @@ class LiquidacionesGuardadasState(rx.State):
     def limpiar_filtros(self):
         self.texto = self.estado_filtro = self.f_lote = self.f_desde = self.f_hasta = self.f_orden = ""
 
-    @rx.event
-    async def buscar(self):
-        self.cargando = True
-        self.msg = ""
-        yield
+    async def _recargar(self):
+        """Sin `yield` — awaitable directo desde otro handler (a diferencia
+        de `buscar`, que es un generador async y no se puede `await`)."""
         try:
             kw = {"texto": self.texto, "estado": self.estado_filtro, "lote": self.f_lote,
                   "desde": self.f_desde, "hasta": self.f_hasta}
@@ -123,6 +121,13 @@ class LiquidacionesGuardadasState(rx.State):
         self.filas = filas
         if not self.lotes:
             self.lotes = sorted({str(f.get("codigo_lote") or f.get("lote") or "") for f in filas} - {""})
+
+    @rx.event
+    async def buscar(self):
+        self.cargando = True
+        self.msg = ""
+        yield
+        await self._recargar()
         self.cargando = False
 
     @rx.var
@@ -236,7 +241,7 @@ class LiquidacionesGuardadasState(rx.State):
         )
         if n_ok:
             self.grid_orig = dict(self.grid_valores)
-            await self.buscar()
+            await self._recargar()
 
     # ── Cuadre masivo (MRL) ─────────────────────────────────────────
     cuadre_abierto: bool = False
@@ -271,7 +276,7 @@ class LiquidacionesGuardadasState(rx.State):
             f"  {len(errores)} error(es): {' · '.join(errores[:5])}" if errores else ""
         )
         if n:
-            await self.buscar()
+            await self._recargar()
 
     # ── Detalle ──────────────────────────────────────────────────────
     detalle_id: str = ""
@@ -284,15 +289,9 @@ class LiquidacionesGuardadasState(rx.State):
     seg: dict[str, str] = {}
     seg_msg: str = ""
 
-    @rx.event
-    async def ver_detalle(self, liquidacion_id: str):
-        self.detalle_id = liquidacion_id
-        self.detalle = {}
-        self.detalle_conceptos = []
-        self.detalle_msg = ""
-        self.historial = []
-        self.seg_msg = ""
-        yield
+    async def _cargar_detalle(self, liquidacion_id: str):
+        """Sin `yield` — awaitable directo desde otro handler (a diferencia
+        de `ver_detalle`, que es un generador async y no se puede `await`)."""
         registro, conceptos = await asyncio.to_thread(repo.obtener_liquidacion, liquidacion_id)
         if registro is None:
             self.detalle_msg = "No se encontró esa liquidación."
@@ -306,6 +305,17 @@ class LiquidacionesGuardadasState(rx.State):
         }
         with contextlib.suppress(Exception):
             self.historial = await asyncio.to_thread(repo.historial_estados, liquidacion_id)
+
+    @rx.event
+    async def ver_detalle(self, liquidacion_id: str):
+        self.detalle_id = liquidacion_id
+        self.detalle = {}
+        self.detalle_conceptos = []
+        self.detalle_msg = ""
+        self.historial = []
+        self.seg_msg = ""
+        yield
+        await self._cargar_detalle(liquidacion_id)
 
     @rx.event
     def set_seg(self, campo: str, v: str):
@@ -326,7 +336,7 @@ class LiquidacionesGuardadasState(rx.State):
         )
         self.seg_msg = "Guardado." if ok else f"No se pudo guardar: {error}"
         if ok:
-            await self.buscar()
+            await self._recargar()
 
     @rx.var
     def conceptos_ingreso(self) -> list[dict]:
@@ -414,8 +424,8 @@ class LiquidacionesGuardadasState(rx.State):
         self.editando = False
         self.edit_valores = {}
         self.msg = f"Liquidación corregida ({len(cambios)} concepto(s))."
-        await self.ver_detalle(self.detalle_id)
-        await self.buscar()
+        await self._cargar_detalle(self.detalle_id)
+        await self._recargar()
 
     # ── Flujo de estados (diálogos de acción por estado) ────────────
     accion_abierta: str = ""     # "" | autorizar | avance | cheque | pago
@@ -467,9 +477,9 @@ class LiquidacionesGuardadasState(rx.State):
             f" {err} con error: {'; '.join(detalles[:3])}" if err else ""
         )
         self.cerrar_accion()
-        await self.buscar()
+        await self._recargar()
         if self.detalle_id and self.detalle_id in self.accion_ids:
-            await self.ver_detalle(self.detalle_id)
+            await self._cargar_detalle(self.detalle_id)
 
     @rx.event
     async def confirmar_autorizar(self):
@@ -515,7 +525,7 @@ class LiquidacionesGuardadasState(rx.State):
         self.msg = "Liquidación eliminada." if ok else f"No se pudo eliminar: {error}"
         if ok and self.detalle_id == liquidacion_id:
             self.cerrar_detalle()
-        await self.buscar()
+        await self._recargar()
 
     # ── Bot MRL (selección múltiple) ────────────────────────────────
     seleccion: list[str] = []

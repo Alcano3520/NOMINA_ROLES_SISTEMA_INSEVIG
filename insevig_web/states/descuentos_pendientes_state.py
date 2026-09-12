@@ -36,19 +36,25 @@ class DescuentosPendientesState(rx.State):
     @rx.event
     async def set_filtro(self, v: str):
         self.filtro = "" if v == "todos" else v
-        await self.cargar()
+        await self._recargar()
 
-    @rx.event
-    async def cargar(self):
-        self.cargando = True
-        self.msg = ""
-        yield
+    async def _recargar(self):
+        """Lógica de carga sin `yield` — se puede `await`-ear directo desde
+        otro handler (a diferencia de `cargar`, que es un generador async por
+        el `yield` de abajo y no se puede `await`)."""
         try:
             self.filas = await asyncio.to_thread(repo.listar, self.filtro)
         except Exception as e:  # noqa: BLE001
             self.msg = f"No se pudo cargar: {e}"
             self.filas = []
         self.seleccion = []
+
+    @rx.event
+    async def cargar(self):
+        self.cargando = True
+        self.msg = ""
+        yield
+        await self._recargar()
         self.cargando = False
 
     @rx.event
@@ -89,7 +95,7 @@ class DescuentosPendientesState(rx.State):
             return
         self.f_cedula = self.f_nombre = self.f_motivo = self.f_monto = self.f_fecha = ""
         self.msg = "Descuento registrado."
-        await self.cargar()
+        await self._recargar()
 
     @rx.event
     async def crear_masivo(self):
@@ -107,7 +113,7 @@ class DescuentosPendientesState(rx.State):
             yield rx.toast.warning(e)
         if creados:
             self.bulk_texto = ""
-        await self.cargar()
+        await self._recargar()
 
     @rx.event
     async def eliminar_seleccionados(self):
@@ -119,4 +125,4 @@ class DescuentosPendientesState(rx.State):
         ids = list(self.seleccion)
         await asyncio.to_thread(repo.eliminar, ids, usuario=auth.username)
         self.msg = f"{len(ids)} descuento(s) eliminado(s)."
-        await self.cargar()
+        await self._recargar()

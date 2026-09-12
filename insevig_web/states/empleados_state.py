@@ -91,20 +91,23 @@ class EmpleadosState(rx.State):
     async def seleccionar(self, empleado: str, nombre: str):
         self.empleado_sel = empleado
         self.nombre_sel = nombre
+        self.cargando = True
         yield
         await self._cargar_periodo()
 
     @rx.event
     async def recargar(self):
         if self.empleado_sel:
+            self.cargando = True
+            yield
             await self._cargar_periodo()
 
     async def _cargar_periodo(self):
-        self.cargando = True
+        """Sin `yield` — se puede `await`-ear directo desde un handler (el
+        `cargando=True` + flush lo hace cada llamador antes de invocar esto)."""
         self.sin_datos = False
         self.conceptos = []
         self.fila = {}
-        yield
         fuente = await self._fuente()
         emp = await asyncio.to_thread(
             datos_empleado, self.periodo or _periodo_actual(), self.empleado_sel, fuente

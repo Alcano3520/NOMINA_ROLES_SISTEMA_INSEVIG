@@ -129,14 +129,19 @@ class LiquidacionesEditorState(rx.State):
                         "estado_color": ESTADO_COLOR.get(e, "gray")})
         return out
 
-    @rx.event
-    async def cargar_lista(self):
-        self.ed_cargando_lista = True
-        yield
+    async def _recargar_lista(self):
+        """Sin `yield` — awaitable directo desde otro handler (a diferencia
+        de `cargar_lista`, que es un generador async y no se puede `await`)."""
         with contextlib.suppress(Exception):
             self.ed_lista = await asyncio.to_thread(
                 repo.listar_liquidaciones, texto=self.ed_texto, estado=self.ed_estado, limite=300
             )
+
+    @rx.event
+    async def cargar_lista(self):
+        self.ed_cargando_lista = True
+        yield
+        await self._recargar_lista()
         self.ed_cargando_lista = False
 
     # ── Formulario (panel derecho) ───────────────────────────────────
@@ -442,7 +447,7 @@ class LiquidacionesEditorState(rx.State):
             return
         self.ed_orig = dict(self.ed_campos)
         self.ed_msg = f"Guardado ({len(cambios)} concepto(s) corregido(s))."
-        await self.cargar_lista()
+        await self._recargar_lista()
 
     @rx.event
     async def eliminar(self):
@@ -456,7 +461,7 @@ class LiquidacionesEditorState(rx.State):
         self.ed_msg = "Eliminada." if ok else f"No se pudo eliminar: {error}"
         if ok:
             self.cerrar()
-            await self.cargar_lista()
+            await self._recargar_lista()
 
     @rx.event
     async def generar_pdf(self):

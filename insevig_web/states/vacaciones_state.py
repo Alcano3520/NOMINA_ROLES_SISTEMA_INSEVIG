@@ -65,11 +65,10 @@ class VacacionesState(rx.State):
     dash_todos_cargando: bool = False
     dash_seleccionados: list[int] = []
 
-    @rx.event
-    async def cargar_dashboard(self):
-        self.dash_cargando = True
-        self.dash_error = ""
-        yield
+    async def _recargar_dashboard(self):
+        """Sin `yield` — awaitable directo desde otro handler (a diferencia
+        de `cargar_dashboard`, que es un generador async y no se puede
+        `await`)."""
         try:
             s = await asyncio.to_thread(V.dashboard_stats)
             self.dash_n_activos = s["n_activos"]
@@ -82,7 +81,23 @@ class VacacionesState(rx.State):
             self.dash_actualizado = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
         except Exception as e:  # noqa: BLE001
             self.dash_error = f"No se pudo cargar (¿hay conexión?): {e}"
+
+    @rx.event
+    async def cargar_dashboard(self):
+        self.dash_cargando = True
+        self.dash_error = ""
+        yield
+        await self._recargar_dashboard()
         self.dash_cargando = False
+
+    async def _recargar_todos_sf(self):
+        """Sin `yield` — awaitable directo desde otro handler (a diferencia
+        de `abrir_ver_todos_sf`, que es un generador async y no se puede
+        `await`)."""
+        try:
+            self.dash_todos_sf = await asyncio.to_thread(V.sin_firmar_activos)
+        except Exception as e:  # noqa: BLE001
+            self.dash_error = f"No se pudo cargar: {e}"
 
     @rx.event
     async def abrir_ver_todos_sf(self):
@@ -90,10 +105,7 @@ class VacacionesState(rx.State):
         self.dash_seleccionados = []
         self.dash_todos_cargando = True
         yield
-        try:
-            self.dash_todos_sf = await asyncio.to_thread(V.sin_firmar_activos)
-        except Exception as e:  # noqa: BLE001
-            self.dash_error = f"No se pudo cargar: {e}"
+        await self._recargar_todos_sf()
         self.dash_todos_cargando = False
 
     @rx.event
@@ -133,8 +145,8 @@ class VacacionesState(rx.State):
             if not errores else f"Algunos registros no pudieron marcarse: {errores[0]}"
         )
         self.dash_seleccionados = []
-        await self.abrir_ver_todos_sf()
-        await self.cargar_dashboard()
+        await self._recargar_todos_sf()
+        await self._recargar_dashboard()
 
     # ── Confirmación de "período anterior pendiente" ──────────────────────
     # Porta app.py::_confirmar_periodo_prioritario: al guardar una gozada o
