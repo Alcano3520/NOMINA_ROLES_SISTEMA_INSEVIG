@@ -1346,6 +1346,57 @@ def test_empleado_pinnea_por_codigo_cuando_se_da(monkeypatch):
     assert con_codigo["EMPLEADO"] == "10517"  # pinneado, trae el período correcto
 
 
+def test_empleado_ignora_codigo_si_la_cedula_no_coincide(monkeypatch):
+    """Resguardo de seguridad: si el `empleado_codigo` dado apunta a un
+    registro de RPEMPLEA cuya cédula NO coincide con la pedida (error de
+    datos, código reasignado/reutilizado), no se confía en ese pineo -- cae
+    a la búsqueda por cédula sola en vez de devolver a la persona
+    equivocada."""
+    class _FakeTabla:
+        def __init__(self, filas_por_filtro):
+            self.filas_por_filtro = filas_por_filtro
+            self.filtro = None
+
+        def select(self, *_a, **_k):
+            return self
+
+        def eq(self, campo, valor):
+            self.filtro = (self.filtro or ()) + ((campo, valor),)
+            return self
+
+        def limit(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            class _R:
+                pass
+            r = _R()
+            r.data = self.filas_por_filtro.get(self.filtro, [])
+            return r
+
+    filas_por_filtro = {
+        # "10517" en RPEMPLEA pertenece a OTRA persona (cédula distinta) --
+        # un error de datos, no el escenario esperado.
+        (("codemp", "10"), ("empleado", "10517")): [
+            {"empleado": "10517", "cedula": 999999999.0, "fecha_ing": "2020-01-01"}
+        ],
+        (("codemp", "10"), ("cedula", 1712484086)): [
+            {"empleado": "10305", "cedula": 1712484086.0, "fecha_ing": "2026-03-06"}
+        ],
+    }
+
+    class _FakeCliente:
+        def table(self, _n):
+            return _FakeTabla(filas_por_filtro)
+
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeCliente())
+
+    resultado = lq._empleado("1712484086", lq.FUENTE_SUPABASE, empleado_codigo="10517")
+    # NO devuelve el registro del código "10517" (es de otra persona) --
+    # cae a la búsqueda por cédula sola.
+    assert resultado["EMPLEADO"] == "10305"
+
+
 def test_recalcular_liquidacion_reporta_liquidacion_inexistente(monkeypatch):
     monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (None, []))
     resultado = lq.recalcular_liquidacion("L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion())

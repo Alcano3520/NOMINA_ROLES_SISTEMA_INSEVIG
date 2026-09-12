@@ -598,7 +598,16 @@ def _empleado(cedula: str, fuente: str, *, empleado_codigo: str = "") -> dict | 
             with contextlib.suppress(Exception):
                 r = sb.table("rpemplea").select("*").eq("codemp", "10").eq("empleado", cod).limit(1).execute()
                 if r.data:
-                    return {k.upper(): v for k, v in r.data[0].items()}
+                    fila = {k.upper(): v for k, v in r.data[0].items()}
+                    # Verificación de seguridad: el código guardado en una
+                    # liquidación vieja podría (por error de datos, no
+                    # confirmado que pase en la práctica) apuntar a un
+                    # registro de OTRA persona -- si la cédula no coincide,
+                    # no confiar en el pineo por código, caer a la búsqueda
+                    # por cédula sola en vez de devolver a la persona
+                    # equivocada.
+                    if normalizar_cedula(str(fila.get("CEDULA") or "")) == ced:
+                        return fila
         for filtro in (("cedula", int(ced)), ("cedula", float(ced))):
             try:
                 r = sb.table("rpemplea").select("*").eq("codemp", "10").eq(*filtro).limit(1).execute()
@@ -615,7 +624,7 @@ def _empleado(cedula: str, fuente: str, *, empleado_codigo: str = "") -> dict | 
                 FROM [insevig].[dbo].[RPEMPLEA] WHERE {flt} AND [EMPLEADO] = ?""",
             (cod,),
         )
-        if filas_cod:
+        if filas_cod and normalizar_cedula(str(filas_cod[0].get("CEDULA") or "")) == ced:
             return filas_cod[0]
     filas = sqlserver.filas(
         f"""SELECT [EMPLEADO],[APELLIDOS],[NOMBRES],[CEDULA],[SUELDO],[CARGO],[DEPTO],
