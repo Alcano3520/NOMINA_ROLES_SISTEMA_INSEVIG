@@ -30,6 +30,7 @@ from core.repos.liquidaciones import (
     DetalleMesDecimo,
     Liquidacion,
     periodos_decima_tercera,
+    periodos_vacaciones,
 )
 from core.utils import normalizar_cedula
 
@@ -103,6 +104,24 @@ def _partir_nombre(nombre_completo: str) -> tuple[str, str]:
     return " ".join(palabras[:mitad]), " ".join(palabras[mitad:])
 
 
+def _desglose_mensual(
+    inicio: dt.date, fin: dt.date, meses_col: dict[tuple[int, int], int], fila: tuple,
+) -> list[DetalleMesDecimo]:
+    """Recorta las columnas mensuales dinámicas del Excel al rango
+    [inicio, fin] (inclusive), un `DetalleMesDecimo` por mes -- mismo
+    criterio para Décima Tercera y Vacaciones (ver comentario de
+    `parse_excel_liquidaciones`): si una columna no existe para ese mes, se
+    deja fuera, nunca se inventa un valor."""
+    detalle: list[DetalleMesDecimo] = []
+    y, m = inicio.year, inicio.month
+    while dt.date(y, m, 1) <= fin:
+        idx = meses_col.get((y, m))
+        if idx is not None and idx < len(fila):
+            detalle.append(DetalleMesDecimo(label=f"{MESES_NOMBRE[m]} -{y}", valor=_num(fila[idx])))
+        m, y = (1, y + 1) if m == 12 else (m + 1, y)
+    return detalle
+
+
 def parse_excel_liquidaciones(datos: bytes) -> tuple[list[Liquidacion], list[str]]:
     """Parsea un Excel del formato LIQUIDACIONES_REG a una lista de
     `Liquidacion` con los montos YA CALCULADOS tal cual vienen en el
@@ -125,13 +144,13 @@ def parse_excel_liquidaciones(datos: bytes) -> tuple[list[Liquidacion], list[str
     - "DECIMA CUARTA REMUNERACION_ANTERIOR" viene con signo negativo en
       algunas filas del Excel de origen -- se pasa tal cual, sin
       "corregir" el signo (observado, no explicado).
-    - El desglose mensual de Décima Tercera ACTUAL (para
-      `liquidaciones_periodos_calculo`, que lee el bot MRL) se arma
-      recortando las columnas mensuales dinámicas del Excel al periodo
-      que calcula `periodos_decima_tercera(fecha_ingreso, fecha_salida)`
+    - El desglose mensual de Décima Tercera ACTUAL y de Vacaciones (últimos
+      2 periodos, para `liquidaciones_periodos_calculo`, que lee el bot
+      MRL) se arma recortando las columnas mensuales dinámicas del Excel al
+      periodo que calculan `periodos_decima_tercera`/`periodos_vacaciones`
       -- si esas columnas no cubren el rango completo, el desglose queda
-      incompleto para esos meses (no se inventa un valor). La ANTERIOR
-      nunca se detalla, igual que en `procesar_empleado`.
+      incompleto para esos meses (no se inventa un valor). El décimo
+      ANTERIOR nunca se detalla, igual que en `procesar_empleado`.
     """
     liquidaciones: list[Liquidacion] = []
     errores: list[str] = []
@@ -229,7 +248,15 @@ def parse_excel_liquidaciones(datos: bytes) -> tuple[list[Liquidacion], list[str
             # Desglose mensual de Décima Tercera ACTUAL (liquidaciones_
             # periodos_calculo, tipo='DEC_TERCERA') -- mismo criterio que
             # procesar_empleado: solo el periodo actual, nunca el anterior.
+            # Y de Vacaciones (VACACIONES_1/VACACIONES_2, últimos 2 periodos)
+            # -- BUG REAL corregido 2026-09-12: esta importación nunca
+            # calculaba el desglose de vacaciones (solo el de décimo
+            # tercero), a diferencia de `procesar_empleado` -- causa raíz de
+            # que ~1466 liquidaciones (cargadas 2026-08-04 vía
+            # `scripts/cargar_lote_liquidaciones.py`, que reutiliza
+            # `guardar_liquidacion`) quedaran sin ese detalle para el bot MRL.
             detalle_dec13: list[DetalleMesDecimo] = []
+            detalle_vac_meses: dict[str, list[DetalleMesDecimo]] = {}
             if fecha_ing:
                 try:
                     fing_d = dt.date.fromisoformat(fecha_ing)
@@ -237,13 +264,12 @@ def parse_excel_liquidaciones(datos: bytes) -> tuple[list[Liquidacion], list[str
                     p13 = periodos_decima_tercera(fing_d, fsal_d)
                     if p13:
                         i_act, f_act, _pagado = p13[-1]
-                        y, m = i_act.year, i_act.month
-                        while dt.date(y, m, 1) <= f_act:
-                            idx = meses_col.get((y, m))
-                            if idx is not None and idx < len(fila):
-                                detalle_dec13.append(DetalleMesDecimo(
-                                    label=f"{MESES_NOMBRE[m]} -{y}", valor=_num(fila[idx])))
-                            m, y = (1, y + 1) if m == 12 else (m + 1, y)
+                        detalle_dec13 = _desglose_mensual(i_act, f_act, meses_col, fila)
+                    pv = periodos_vacaciones(fing_d, fsal_d)
+                    if len(pv) >= 2:
+                        detalle_vac_meses["VACACIONES_1"] = _desglose_mensual(*pv[-2], meses_col, fila)
+                    if pv:
+                        detalle_vac_meses["VACACIONES_2"] = _desglose_mensual(*pv[-1], meses_col, fila)
                 except ValueError:
                     pass  # fechas raras -- se deja sin desglose mensual, no bloquea la fila
 
@@ -263,6 +289,7 @@ def parse_excel_liquidaciones(datos: bytes) -> tuple[list[Liquidacion], list[str
                 apellidos=apellidos,
                 nombres=nombres,
                 detalle_decimo_tercera=detalle_dec13,
+                detalle_vacaciones_meses=detalle_vac_meses,
             ))
         except Exception as e:  # noqa: BLE001 - una fila mala no debe tumbar el lote entero
             errores.append(f"Fila {n}: error inesperado parseando ({e}), se salta.")

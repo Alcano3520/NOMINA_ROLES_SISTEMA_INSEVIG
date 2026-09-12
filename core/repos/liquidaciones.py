@@ -2254,7 +2254,7 @@ def reconstruir_liquidacion(registro: dict, conceptos: list[dict]) -> Liquidacio
 
 def recalcular_liquidacion(
     liquidacion_id: str, fuente: str, cfg: ConfigLiquidacion, *,
-    cedula: str = "", fecha_salida: str = "", motivo: str = "",
+    cedula: str = "", fecha_salida: str = "", motivo: str = "", fecha_ingreso: str = "",
 ) -> Liquidacion:
     """Vuelve a correr TODO el cálculo desde cero contra los datos actuales
     de nómina -- paridad con "🔄 Recalcular Liquidación" del Editor de
@@ -2270,11 +2270,19 @@ def recalcular_liquidacion(
     el llamador la muestre y decida si guardarla (`guardar_liquidacion(...,
     liquidacion_id_existente=liquidacion_id)`) después de revisarla.
 
-    `cedula`/`fecha_salida`/`motivo`: si se omiten, se toman del registro
-    YA GUARDADO. El `.pyw` real recalcula contra lo que esté escrito en el
-    FORMULARIO en ese momento (que puede diferir de lo guardado si el
-    usuario editó la fecha de salida antes de recalcular) -- pasar estos
-    overrides explícitos para reproducir ese caso.
+    `cedula`/`fecha_salida`/`motivo`/`fecha_ingreso`: si se omiten, se toman
+    del registro YA GUARDADO. El `.pyw` real recalcula contra lo que esté
+    escrito en el FORMULARIO en ese momento (que puede diferir de lo
+    guardado si el usuario editó la fecha antes de recalcular) -- pasar
+    estos overrides explícitos para reproducir ese caso.
+
+    `fecha_ingreso` (BUG REAL encontrado 2026-09-12, auditoría masiva del
+    desglose de vacaciones): si se omite, cae al default de
+    `procesar_empleado` (la fecha de ingreso ACTUAL en RPEMPLEA) -- que
+    para un empleado REINGRESADO después de esta liquidación puede ser
+    posterior a la `fecha_salida` histórica, y el cálculo se niega (por
+    seguridad) a producir un resultado. Pasar la fecha de ingreso ORIGINAL
+    ya guardada en el registro evita ese falso conflicto.
 
     Mismos defaults fijos que usa el botón del `.pyw` (no hay control
     propio para esto en el Editor): `incluir_dec13_anterior=False`,
@@ -2287,8 +2295,9 @@ def recalcular_liquidacion(
     ced = cedula or str(registro.get("empleado_cedula") or "")
     fsal = fecha_salida or str(registro.get("fecha_salida") or "")
     mot = motivo or str(registro.get("motivo") or "")
+    fing = fecha_ingreso or str(registro.get("fecha_ingreso") or "")
     return procesar_empleado(
-        ced, fsal, mot, fuente, cfg,
+        ced, fsal, mot, fuente, cfg, fecha_ingreso=fing,
         incluir_dec13_anterior=False, incluir_dec14_anterior=False,
     )
 

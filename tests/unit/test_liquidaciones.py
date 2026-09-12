@@ -1197,7 +1197,10 @@ def test_cuadre_masivo_reporta_cedula_no_encontrada(monkeypatch):
 
 
 def test_recalcular_liquidacion_usa_datos_guardados_por_defecto(monkeypatch):
-    registro = {"empleado_cedula": "0920116811", "fecha_salida": "2026-06-15", "motivo": "RENUNCIA VOLUNTARIA"}
+    registro = {
+        "empleado_cedula": "0920116811", "fecha_salida": "2026-06-15",
+        "motivo": "RENUNCIA VOLUNTARIA", "fecha_ingreso": "2020-03-15",
+    }
     monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
     llamada = {}
 
@@ -1213,7 +1216,13 @@ def test_recalcular_liquidacion_usa_datos_guardados_por_defecto(monkeypatch):
     assert llamada["fecha_salida"] == "2026-06-15"
     assert llamada["motivo"] == "RENUNCIA VOLUNTARIA"
     # Mismos defaults fijos que el botón del .pyw -- sin control propio en el Editor.
-    assert llamada["kw"] == {"incluir_dec13_anterior": False, "incluir_dec14_anterior": False}
+    # `fecha_ingreso` por defecto es la YA GUARDADA (BUG REAL corregido
+    # 2026-09-12: evita que un empleado reingresado después de esta
+    # liquidación rompa el recálculo con la fecha de ingreso ACTUAL de RPEMPLEA).
+    assert llamada["kw"] == {
+        "fecha_ingreso": "2020-03-15",
+        "incluir_dec13_anterior": False, "incluir_dec14_anterior": False,
+    }
     assert resultado.cedula == "0920116811"
 
 
@@ -1230,6 +1239,29 @@ def test_recalcular_liquidacion_acepta_overrides_del_formulario(monkeypatch):
     )
     lq.recalcular_liquidacion("L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), fecha_salida="2026-07-01")
     assert llamada["fecha_salida"] == "2026-07-01"  # el override pisa lo guardado, no al revés
+
+
+def test_recalcular_liquidacion_fecha_ingreso_override_pisa_la_guardada(monkeypatch):
+    """Caso real (auditoría masiva 2026-09-12): un empleado REINGRESADO
+    después de esta liquidación -- pasar la fecha de ingreso correcta a
+    mano (override) debe pisar la ya guardada, igual que fecha_salida."""
+    registro = {
+        "empleado_cedula": "0920116811", "fecha_salida": "2026-06-15",
+        "motivo": "RENUNCIA VOLUNTARIA", "fecha_ingreso": "2020-03-15",
+    }
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: (registro, []))
+    llamada = {}
+    monkeypatch.setattr(
+        lq, "procesar_empleado",
+        lambda cedula, fecha_salida, motivo, fuente, cfg, **kw: (
+            llamada.update(kw) or lq.Liquidacion(
+                cedula, "", cedula, "", "", "", 0.0, "", fecha_salida, motivo, 0)
+        ),
+    )
+    lq.recalcular_liquidacion(
+        "L1", lq.FUENTE_SUPABASE, lq.ConfigLiquidacion(), fecha_ingreso="2015-01-10"
+    )
+    assert llamada["fecha_ingreso"] == "2015-01-10"
 
 
 def test_recalcular_liquidacion_reporta_liquidacion_inexistente(monkeypatch):
@@ -1479,3 +1511,73 @@ def test_liquidacion_pdf_con_error_no_revienta():
                          error="empleado no encontrado")
     data = liquidacion_pdf(liq)
     assert data[:4] == b"%PDF"
+
+
+def _fila_excel_import(sueldo_col_valores: dict) -> list:
+    """Arma una fila del formato LIQUIDACIONES_REG (ver COL de
+    liquidaciones_import.py) larga hasta la última columna mensual usada,
+    con 0 por defecto y los valores de `sueldo_col_valores` (idx -> valor)
+    sobrescritos encima."""
+    from core.excel.liquidaciones_import import COL, PRIMERA_COL_MENSUAL
+
+    largo = max([*sueldo_col_valores, PRIMERA_COL_MENSUAL + 20]) + 1
+    fila = [0] * largo
+    fila[COL["codigo"]] = "9091"
+    fila[COL["nombre_completo"]] = "GARCIA LOPEZ MARIA JOSE"
+    fila[COL["cargo"]] = "AGENTE"
+    fila[COL["sueldo_basico"]] = 460.0
+    fila[COL["puesto_servicio"]] = "PUESTO X"
+    fila[COL["cedula"]] = "1207158815"
+    fila[COL["motivo"]] = "RENUNCIA VOLUNTARIA"
+    fila[COL["seccion"]] = "SEC1"
+    fila[COL["fecha_ingreso"]] = dt.date(2024, 1, 1)
+    fila[COL["fecha_salida"]] = dt.date(2026, 2, 1)
+    fila[COL["dias"]] = 1
+    for idx, valor in sueldo_col_valores.items():
+        fila[idx] = valor
+    return fila
+
+
+def test_parse_excel_liquidaciones_arma_desglose_mensual_de_vacaciones():
+    """BUG REAL corregido 2026-09-12 (causa raíz de ~1466 liquidaciones sin
+    desglose de vacaciones, reportado por el usuario contra VARGAS CHICHANDE
+    CRISTOPHER JESUS "y muchos más"): la importación de Excel armaba el
+    desglose mensual de la Décima Tercera pero NUNCA el de Vacaciones --
+    ahora usa la misma lógica (`_desglose_mensual`) para ambos."""
+    import io
+
+    import openpyxl
+
+    from core.excel.liquidaciones_import import PRIMERA_COL_MENSUAL, parse_excel_liquidaciones
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append([None])  # fila 1: vacía (encabezado real empieza en fila 2)
+
+    # Columnas mensuales: 2025 completo (12 meses) + ene/feb-2026 -- cubre
+    # los periodos que `periodos_vacaciones(2024-01-01, 2026-02-01)` calcula:
+    # penúltimo = 2025-01-01..2025-12-31 (VACACIONES_1), último =
+    # 2026-01-01..2026-02-01 (VACACIONES_2).
+    meses = [dt.date(2025, m, 1) for m in range(1, 13)] + [dt.date(2026, 1, 1), dt.date(2026, 2, 1)]
+    encabezado = [None] * PRIMERA_COL_MENSUAL + meses
+    ws.append(encabezado)
+
+    valores_meses = {PRIMERA_COL_MENSUAL + i: 100.0 + i for i in range(len(meses))}
+    fila = _fila_excel_import(valores_meses)
+    ws.append(fila)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    liquidaciones, errores = parse_excel_liquidaciones(buf.getvalue())
+    assert errores == []
+    assert len(liquidaciones) == 1
+    liq = liquidaciones[0]
+
+    assert set(liq.detalle_vacaciones_meses) == {"VACACIONES_1", "VACACIONES_2"}
+    v1 = liq.detalle_vacaciones_meses["VACACIONES_1"]
+    v2 = liq.detalle_vacaciones_meses["VACACIONES_2"]
+    assert [d.label for d in v1] == [f"{lq.MESES_NOMBRE[m]} -2025" for m in range(1, 13)]
+    assert [d.valor for d in v1] == [100.0 + i for i in range(12)]
+    assert [d.label for d in v2] == ["enero -2026", "febrero -2026"]
+    assert [d.valor for d in v2] == [112.0, 113.0]
