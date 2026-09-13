@@ -159,7 +159,30 @@ def _grupo(titulo: str, ids: tuple[str, ...]) -> rx.Component:
     )
 
 
-def sidebar_contenido() -> rx.Component:
+# BUG REAL corregido 2026-09-13 (reportado: "cuando se selecciona algo del
+# sidebar, se mueve al principio y se pierde por dónde uno iba"): cada
+# `@rx.page` es una ruta Next.js distinta -- Reflex NO comparte layout entre
+# páginas, así que cada clic en el sidebar desmonta y vuelve a montar TODO
+# el árbol, sidebar incluido. El navegador nunca preserva el `scrollTop` de
+# un nodo del DOM que se recreó de cero. Fix 100% client-side (sin ida y
+# vuelta al servidor): guarda el scroll de la lista de secciones en
+# `localStorage` en cada scroll y lo restaura en `on_mount`, que corre de
+# nuevo en cada montaje/navegación.
+def _script_restaurar_scroll(id_: str) -> str:
+    return (
+        "(function(){"
+        f"var el=document.getElementById('{id_}');if(!el)return;"
+        "try{var s=localStorage.getItem('insevig_sidebar_scroll');"
+        "if(s)el.scrollTop=parseInt(s,10)||0;}catch(e){}"
+        "el.addEventListener('scroll',function(){"
+        "try{localStorage.setItem('insevig_sidebar_scroll',String(el.scrollTop));}catch(e){}"
+        "},{passive:true});"
+        "})();"
+    )
+
+
+def sidebar_contenido(variant: str) -> rx.Component:
+    scroll_id = f"sidebar-scroll-{variant}"
     return rx.vstack(
         rx.hstack(
             rx.heading("INSEVIG", size="5", color=theme.SECONDARY, weight="bold"),
@@ -174,6 +197,8 @@ def sidebar_contenido() -> rx.Component:
                margin="0.3rem 0 0.15rem"),
         rx.box(
             *[_grupo(t, ids) for t, ids in _SECCIONES],
+            id=scroll_id,
+            on_mount=rx.call_script(_script_restaurar_scroll(scroll_id)),
             width="100%", overflow_y="auto", flex_grow="1",
         ),
         rx.box(height="1px", background="rgba(255,255,255,.1)", width="100%",
@@ -209,7 +234,7 @@ def sidebar_contenido() -> rx.Component:
 def sidebar_fijo() -> rx.Component:
     """Visible en escritorio (>= lg)."""
     return rx.box(
-        sidebar_contenido(),
+        sidebar_contenido("fijo"),
         display=rx.breakpoints(initial="none", lg="block"),
         width="256px",
         min_width="256px",
@@ -226,7 +251,7 @@ def sidebar_drawer() -> rx.Component:
         rx.drawer.overlay(),
         rx.drawer.portal(
             rx.drawer.content(
-                sidebar_contenido(),
+                sidebar_contenido("drawer"),
                 width="256px",
                 height="100%",
                 background=_BG,
