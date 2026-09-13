@@ -82,6 +82,11 @@ def _movimientos(cur, flt: str, empleado: str, inicio: str, fin: str) -> list[di
             "valor": row.get("VALOR"),
             "asentado": bool(row.get("ASENTADO")),
             "dias": row.get("DIAS"),
+            # BUG REAL corregido 2026-09-13 (reportado: "el historial de nómina
+            # no muestra las observaciones reales, solo los tipos") -- el
+            # `SELECT *` ya traía OBSERV, pero acá se descartaba antes de
+            # llegar a `DatosCrudos`. Ver `postproceso.extraer_observaciones`.
+            "observ": (row.get("OBSERV") or "").strip(),
         }
         for row in filas
     ]

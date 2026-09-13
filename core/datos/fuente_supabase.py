@@ -55,6 +55,8 @@ def _movimientos(sb, empleado: str, inicio: str, fin: str) -> list[dict]:
             "valor": row.get("valor"),
             "asentado": bool(row.get("asentado")),
             "dias": row.get("dias"),
+            # Mismo fix que `fuente_sqlserver.py` -- ver ese comentario.
+            "observ": (row.get("observ") or "").strip(),
         }
         for row in filas
     ]

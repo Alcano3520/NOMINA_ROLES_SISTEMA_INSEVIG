@@ -23,7 +23,10 @@ class DatosCrudos:
     cedula: object
     cargo_codigo: str
     depto_codigo: str
-    # cada movimiento: {"clase": int, "valor": float, "asentado": bool, "dias": float | None}
+    # cada movimiento: {"clase": int, "valor": float, "asentado": bool,
+    # "dias": float | None, "observ": str} -- "observ" es el texto libre real
+    # del movimiento (columna OBSERV en RPINGDES/RPHISTOR), NO el nombre del
+    # concepto (ver `postproceso.extraer_observaciones`).
     movimientos: list[dict]
     catalogo_cargos: dict[str, str]  # código -> nombre (DBTABLAS TIPO='FNC')
     catalogo_deptos: dict[str, str]  # código -> nombre (DBTABLAS TIPO='DPT')
@@ -47,6 +50,10 @@ class EmpleadoNomina:
     total_egresos: float
     total_recibir: float
     conceptos: dict[str, float] = field(default_factory=dict)
+    # Observaciones REALES de texto libre por movimiento (no por concepto) --
+    # aditivo, fuera de `to_dict()`/`to_series()` a propósito: roles/reportes/
+    # consumen esa forma aplanada y no deben ver esto (no es un "concepto").
+    observaciones: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         base: dict[str, object] = {

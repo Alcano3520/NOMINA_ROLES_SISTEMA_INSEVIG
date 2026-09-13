@@ -35,6 +35,27 @@ def consolidar_conceptos(movimientos: list[dict]) -> dict[str, float]:
     return conceptos
 
 
+def extraer_observaciones(movimientos: list[dict]) -> list[dict]:
+    """Notas de texto libre (`OBSERV`) por movimiento -- reportado: el
+    "historial de nómina" solo mostraba `conceptos` (totales agrupados por
+    CLASE, ej. "MULTAS: $50"), nunca la observación real que explica ESE
+    movimiento puntual. A diferencia de `consolidar_conceptos` (que suma por
+    concepto y pierde el detalle de fila), esto preserva una fila por
+    movimiento con observación -- para mostrar aparte, no para sumar."""
+    out = []
+    for row in movimientos:
+        obs = str(row.get("observ") or "").strip()
+        if not obs:
+            continue
+        clase = a_int(row.get("clase"))
+        out.append({
+            "concepto": concepto_de_clase(clase),
+            "valor": round(a_float(row.get("valor")), 2),
+            "observacion": obs,
+        })
+    return out
+
+
 def dias_del_periodo(movimientos: list[dict], default: float = DIAS_DEFAULT) -> float:
     """DIAS tomados de la fila CLASE 101 del período (30 si no existe).
 
@@ -67,4 +88,5 @@ def construir_empleado_nomina(crudos: DatosCrudos) -> EmpleadoNomina:
         total_egresos=egresos,
         total_recibir=round(ingresos - egresos, 2),
         conceptos=conceptos,
+        observaciones=extraer_observaciones(crudos.movimientos),
     )

@@ -71,7 +71,11 @@ class EmpleadosState(rx.State):
 
     periodo: str = ""
     fila: dict = {}
-    conceptos: list[dict] = []  # [{'concepto','valor'}]
+    conceptos: list[dict] = []  # [{'concepto','valor'}] -- totales por tipo de concepto
+    # Observaciones REALES de texto libre por movimiento del período (distinto
+    # de `conceptos`, que son totales agrupados por tipo -- reportado: "no
+    # muestra las observaciones reales solo los tipos títulos").
+    obs_periodo: list[dict] = []  # [{'concepto','valor','observacion'}]
     cargando: bool = False
     sin_datos: bool = False
 
@@ -121,6 +125,7 @@ class EmpleadosState(rx.State):
         `cargando=True` + flush lo hace cada llamador antes de invocar esto)."""
         self.sin_datos = False
         self.conceptos = []
+        self.obs_periodo = []
         self.fila = {}
         fuente = await self._fuente()
         emp = await asyncio.to_thread(
@@ -141,6 +146,7 @@ class EmpleadosState(rx.State):
         self.conceptos = [
             {"concepto": k, "valor": round(v, 2)} for k, v in sorted(emp.conceptos.items())
         ]
+        self.obs_periodo = emp.observaciones
 
     # ── Historial de varios períodos ─────────────────────────────────────
     hist_periodos: list[dict] = []   # [{'periodo','ingresos','egresos','neto','dias'}]
@@ -148,6 +154,7 @@ class EmpleadosState(rx.State):
     hist_cargando: bool = False
     hist_detalle: list[dict] = []
     hist_detalle_periodo: str = ""
+    hist_obs: list[dict] = []  # observaciones reales del período elegido en "Conceptos"
 
     @rx.event
     def set_hist_n(self, v: str):
@@ -187,20 +194,26 @@ class EmpleadosState(rx.State):
                     "egresos": round(e.total_egresos, 2),
                     "neto": round(e.total_recibir, 2),
                     "conceptos": [{"concepto": k, "valor": round(v, 2)} for k, v in sorted(e.conceptos.items())],
+                    "obs": e.observaciones,
                 })
             return filas
 
         todo = await asyncio.to_thread(_run)
-        self.hist_periodos = [{k: v for k, v in f.items() if k != "conceptos"} for f in todo]
+        self.hist_periodos = [
+            {k: v for k, v in f.items() if k not in ("conceptos", "obs")} for f in todo
+        ]
         self._hist_conceptos = {f["periodo"]: f["conceptos"] for f in todo}
+        self._hist_obs = {f["periodo"]: f["obs"] for f in todo}
         self.hist_cargando = False
 
     _hist_conceptos: dict = {}
+    _hist_obs: dict = {}
 
     @rx.event
     def ver_detalle_periodo(self, periodo: str):
         self.hist_detalle_periodo = periodo
         self.hist_detalle = self._hist_conceptos.get(periodo, [])
+        self.hist_obs = self._hist_obs.get(periodo, [])
 
     @rx.event
     def exportar_historial(self):

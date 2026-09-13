@@ -54,6 +54,28 @@ def _historial_multi() -> rx.Component:
                             ),
                         ),
                     ),
+                    # "Conceptos" = totales agrupados por tipo (SUELDO, MULTAS…);
+                    # esto es lo OTRO -- la nota de texto libre real de cada
+                    # movimiento (reportado: "no muestra las observaciones
+                    # reales solo los tipos títulos").
+                    rx.cond(
+                        _S.hist_obs.length() > 0,
+                        rx.vstack(
+                            rx.heading("Observaciones de " + _S.hist_detalle_periodo, size="2"),
+                            data_table(
+                                ["Concepto", "Valor", "Observación"],
+                                rx.foreach(
+                                    _S.hist_obs,
+                                    lambda o: rx.table.row(
+                                        rx.table.cell(o["concepto"]),
+                                        rx.table.cell(o["valor"].to_string()),
+                                        rx.table.cell(o["observacion"]),
+                                    ),
+                                ),
+                            ),
+                            spacing="2", width="100%",
+                        ),
+                    ),
                     spacing="2",
                     width="100%",
                 ),
@@ -137,6 +159,29 @@ def historial() -> rx.Component:
                                                 rx.table.cell(c["concepto"]),
                                                 rx.table.cell(c["valor"].to_string()),
                                             ),
+                                        ),
+                                    ),
+                                    # Reportado: "no muestra las observaciones
+                                    # reales solo los tipos títulos" -- lo de
+                                    # arriba son totales por CONCEPTO (tipo);
+                                    # esto es la nota real de texto libre de
+                                    # cada movimiento del período.
+                                    rx.cond(
+                                        EmpleadosState.obs_periodo.length() > 0,
+                                        rx.vstack(
+                                            rx.heading("Observaciones del período", size="2"),
+                                            data_table(
+                                                ["Concepto", "Valor", "Observación"],
+                                                rx.foreach(
+                                                    EmpleadosState.obs_periodo,
+                                                    lambda o: rx.table.row(
+                                                        rx.table.cell(o["concepto"]),
+                                                        rx.table.cell(o["valor"].to_string()),
+                                                        rx.table.cell(o["observacion"]),
+                                                    ),
+                                                ),
+                                            ),
+                                            spacing="2", width="100%",
                                         ),
                                     ),
                                     spacing="3",
