@@ -56,9 +56,12 @@ MODULES: list[ModuleSpec] = [
         [NavItem("Consolidado de nómina", "/reportes/consolidado")],
     ),
     ModuleSpec(
+        # "Saldos" (2026-09-13, pedido): era una página aparte que solo hacía
+        # el export a Excel de saldos de TODOS los empleados -- se movió ese
+        # botón dentro de "Historial" (que ya tenía un panel "Empleados con
+        # Saldo" para navegar) para no tener dos pantallas de "saldos".
         "prestamos", "Préstamos", "hand-coins",
-        [NavItem("Historial", "/prestamos/historial"),
-         NavItem("Saldos", "/prestamos/saldos")],
+        [NavItem("Historial", "/prestamos/historial")],
     ),
     ModuleSpec(
         "observaciones", "Observaciones", "clipboard-list",
