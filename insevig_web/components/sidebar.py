@@ -29,16 +29,47 @@ _SECCIONES: list[tuple[str, tuple[str, ...]]] = [
     ("Sanciones · Maniobras · Faltas", ("sanciones", "maniobras", "faltas")),
     ("Sistema", ("admin", "carga_usuarios")),
 ]
+_TITULOS_SECCIONES = [t for t, _ in _SECCIONES]
+
+
+def _toggle_todo() -> rx.Component:
+    """Colapsa/expande TODAS las secciones de un golpe -- pedido del
+    usuario junto con el colapso por sección de arriba."""
+    todo_colapsado = AppState.secciones_colapsadas.length() >= len(_TITULOS_SECCIONES)
+    return rx.hstack(
+        rx.icon(
+            rx.cond(todo_colapsado, "chevrons-down-up", "chevrons-up-down"),
+            size=13, color="rgba(255,255,255,.55)", flex_shrink="0",
+        ),
+        rx.text(
+            rx.cond(todo_colapsado, "Expandir todo", "Colapsar todo"),
+            size="1", weight="bold", color="rgba(255,255,255,.55)",
+        ),
+        spacing="2", align="center", width="100%",
+        padding="0.4rem 0.85rem",
+        cursor="pointer",
+        on_click=lambda: AppState.alternar_todas_las_secciones(_TITULOS_SECCIONES),
+    )
 
 
 def _seccion_label(texto: str) -> rx.Component:
-    return rx.text(
-        texto.upper(),
-        size="1",
-        weight="bold",
-        letter_spacing="0.08em",
-        color="rgba(255,255,255,.38)",
+    """Título de sección, cliqueable para colapsar/expandir SOLO esa
+    sección (persistido en `localStorage`, sobrevive a un F5) -- con un
+    chevron que refleja el estado, igual que "Colapsar todo" de abajo."""
+    colapsada = AppState.secciones_colapsadas.contains(texto)
+    return rx.hstack(
+        rx.icon(
+            rx.cond(colapsada, "chevron-right", "chevron-down"),
+            size=11, color="rgba(255,255,255,.38)", flex_shrink="0",
+        ),
+        rx.text(
+            texto.upper(), size="1", weight="bold", letter_spacing="0.08em",
+            color="rgba(255,255,255,.38)",
+        ),
+        spacing="1", align="center", width="100%",
         padding="0.9rem 0.85rem 0.35rem",
+        cursor="pointer",
+        on_click=lambda: AppState.toggle_seccion(texto),
     )
 
 
@@ -119,7 +150,11 @@ def _grupo(titulo: str, ids: tuple[str, ...]) -> rx.Component:
         return rx.fragment()
     return rx.vstack(
         _seccion_label(titulo),
-        *[_modulo(s) for s in specs],
+        rx.cond(
+            AppState.secciones_colapsadas.contains(titulo),
+            rx.fragment(),
+            rx.vstack(*[_modulo(s) for s in specs], spacing="1", width="100%", align_items="start"),
+        ),
         spacing="1", width="100%", align_items="start",
     )
 
@@ -134,6 +169,9 @@ def sidebar_contenido() -> rx.Component:
             align="baseline",
             padding="1.1rem 0.85rem 0.6rem",
         ),
+        _toggle_todo(),
+        rx.box(height="1px", background="rgba(255,255,255,.08)", width="100%",
+               margin="0.3rem 0 0.15rem"),
         rx.box(
             *[_grupo(t, ids) for t, ids in _SECCIONES],
             width="100%", overflow_y="auto", flex_grow="1",

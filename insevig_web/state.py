@@ -27,3 +27,33 @@ class AppState(rx.State):
     @rx.event
     def set_sidebar(self, abierto: bool):
         self.sidebar_abierto = abierto
+
+    # ── Secciones del sidebar colapsadas por sección + un maestro arriba ──
+    # `rx.LocalStorage`, no `rx.State` normal: sobrevive a un F5/cierre de
+    # pestaña (persiste en el navegador, no en la sesión del server) --
+    # guardado como texto separado por "|" (mismo criterio de tipo simple
+    # que ya usa `AuthState.sesion` vía `rx.Cookie`, en vez de un
+    # `list[str]` directo cuya serialización con LocalStorage no está
+    # probada en este proyecto).
+    secciones_colapsadas_csv: str = rx.LocalStorage("", name="sidebar_colapsado")
+
+    @rx.var
+    def secciones_colapsadas(self) -> list[str]:
+        return [t for t in self.secciones_colapsadas_csv.split("|") if t]
+
+    @rx.event
+    def toggle_seccion(self, titulo: str):
+        actuales = self.secciones_colapsadas
+        nuevas = (
+            [t for t in actuales if t != titulo] if titulo in actuales else [*actuales, titulo]
+        )
+        self.secciones_colapsadas_csv = "|".join(nuevas)
+
+    @rx.event
+    def alternar_todas_las_secciones(self, titulos: list[str]):
+        """El botón maestro de arriba: si ya están todas colapsadas,
+        expande todas; si no, colapsa todas."""
+        if len(self.secciones_colapsadas) >= len(titulos):
+            self.secciones_colapsadas_csv = ""
+        else:
+            self.secciones_colapsadas_csv = "|".join(titulos)
