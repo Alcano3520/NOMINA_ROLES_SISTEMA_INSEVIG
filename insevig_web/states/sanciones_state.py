@@ -87,8 +87,30 @@ class SancionesState(rx.State):
 
     @rx.var
     def bandeja_actual(self) -> list[dict]:
+        # BUG REAL corregido 2026-09-13 (reportado: "sale todo mezclado no
+        # por separado"): en `main.py` (legado) F&P/H&F/RST eran botones
+        # de sidebar aparte -- SIEMPRE se veía una sola categoría a la vez,
+        # nunca mezcladas. Acá se colapsó a un selector (`categoria_selector`)
+        # con "TODOS" de default, que muestra las 3 categorías juntas
+        # intercaladas en el orden que devuelve el backend (por fecha) --
+        # se ve "mezclado" aunque cada fila sí tenga su columna "Tipo".
+        # Fix: con "TODOS", se agrupan por categoría (mismo orden que el
+        # legado: Faltas y Permisos / Horas y Franco / Resto) preservando
+        # el orden relativo dentro de cada grupo (sort estable).
         filas = self.aprob if self.tab == "aprobacion" else self.proceso
-        return [f for f in filas if _en_categoria(f, self.bandeja_categoria)]
+        filas = [f for f in filas if _en_categoria(f, self.bandeja_categoria)]
+        if self.bandeja_categoria == "TODOS":
+            orden = {cat: i for i, cat in enumerate(catalogos.CATEGORIAS)}
+            fuera = len(orden)
+
+            def _grupo(f: dict) -> int:
+                for cat, tipos in catalogos.CATEGORIAS.items():
+                    if f.get("tipo_sancion") in tipos:
+                        return orden[cat]
+                return fuera
+
+            filas = sorted(filas, key=_grupo)
+        return filas
 
     @rx.var
     def conteo_aprob(self) -> int:
