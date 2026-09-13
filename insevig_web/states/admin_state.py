@@ -7,6 +7,7 @@ import asyncio
 import reflex as rx
 import sqlmodel
 
+from core.audit.writer import registrar_evento
 from core.db import appdb
 from core.db.models import User, UserRole
 from insevig_web import auth
@@ -138,6 +139,10 @@ class AdminState(rx.State):
 
         await asyncio.to_thread(_save)
         self.sbu_msg = "Guardado."
+        registrar_evento(
+            "admin", "guardar_sbu", usuario=auth_st.username, roles=set(auth_st.roles),
+            target_table="app_config", target_key="sbu_por_anio",
+        )
 
     # ── Parámetros de negocio: IESS%/Fondo Reserva%/Región/Anticipo ────
     # "⚙ Configuración de Parámetros Anuales" del Generador_Liquidaciones_
@@ -193,6 +198,10 @@ class AdminState(rx.State):
 
         await asyncio.to_thread(_save)
         self.liq_params_msg = "Guardado."
+        registrar_evento(
+            "admin", "guardar_liq_params", usuario=auth_st.username, roles=set(auth_st.roles),
+            target_table="app_config", target_key="liquidaciones_params",
+        )
 
     # ── Proveedor de narrativa IA (préstamos) ──────────────────────────
     ia_provider: str = "none"
@@ -230,6 +239,10 @@ class AdminState(rx.State):
 
         await asyncio.to_thread(_save)
         self.ia_msg = "Guardado. La narrativa usará este proveedor."
+        registrar_evento(
+            "admin", "guardar_ia_config", usuario=auth_st.username, roles=set(auth_st.roles),
+            target_table="app_config", target_key="ia_config",
+        )
 
     @rx.event
     async def cargar_auditoria(self):
@@ -319,6 +332,11 @@ class AdminState(rx.State):
 
         r = await asyncio.to_thread(_crear)
         self.msg = "Usuario creado." if r == "ok" else "Ese usuario ya existe."
+        if r == "ok":
+            registrar_evento(
+                "admin", "crear_usuario", usuario=actual.username, roles=set(actual.roles),
+                target_table="users", target_key=u,
+            )
         self.nu_username = self.nu_nombre = self.nu_clave = ""
         await self.cargar_usuarios()
 
@@ -357,11 +375,21 @@ class AdminState(rx.State):
 
         r = await asyncio.to_thread(_r)
         self.msg = "Contraseña reseteada." if r == "ok" else "Usuario no encontrado."
+        if r == "ok":
+            registrar_evento(
+                "admin", "resetear_clave", usuario=actual.username, roles=set(actual.roles),
+                target_table="users", target_key=str(uid),
+            )
         self.reset_user_id = 0
         self.reset_clave = ""
 
     @rx.event
     async def toggle_activo(self, user_id: int):
+        actual = await self.get_state(AuthState)
+        if "admin" not in actual.roles:
+            self.msg = "Solo admin puede activar/desactivar usuarios."
+            return
+
         def _t():
             with appdb.session() as s:
                 u = s.get(User, user_id)
@@ -369,8 +397,16 @@ class AdminState(rx.State):
                     u.is_active = not u.is_active
                     s.add(u)
                     s.commit()
+                    return u.is_active
+                return None
 
-        await asyncio.to_thread(_t)
+        nuevo_estado = await asyncio.to_thread(_t)
+        if nuevo_estado is not None:
+            registrar_evento(
+                "admin", "activar_usuario" if nuevo_estado else "desactivar_usuario",
+                usuario=actual.username, roles=set(actual.roles),
+                target_table="users", target_key=str(user_id),
+            )
         await self.cargar_usuarios()
 
     @rx.var

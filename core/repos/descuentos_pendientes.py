@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from core.audit.writer import registrar_evento
 from core.db import supabase_client
 from core.utils import a_float, normalizar_cedula
 
@@ -81,7 +82,7 @@ def crear(
     if a_float(monto) <= 0:
         return False, "El monto debe ser mayor a 0."
     sb = supabase_client.get_client()
-    sb.table(TABLA).insert({
+    fila = sb.table(TABLA).insert({
         "empleado_cedula": ced,
         "empleado_nombre": nombre.strip() or None,
         "motivo": motivo.strip(),
@@ -91,6 +92,11 @@ def crear(
         "fecha_registro": _hoy_iso(),
         "created_by": usuario,
     }).execute()
+    nuevo_id = (fila.data or [{}])[0].get("id", "")
+    registrar_evento(
+        "liquidaciones", "crear_descuento_pendiente", usuario=usuario,
+        target_table=TABLA, target_key=str(nuevo_id),
+    )
     return True, ""
 
 
@@ -119,16 +125,21 @@ def crear_masivo(texto: str, *, usuario: str) -> tuple[int, list[str]]:
     return creados, errores
 
 
-def eliminar(ids: list[str], *, usuario: str) -> int:  # noqa: ARG001 - usuario para paridad de firma
-    """Borrado directo, sin historial (igual que el `.pyw`)."""
+def eliminar(ids: list[str], *, usuario: str) -> int:
+    """Borrado directo, sin historial de snapshot (igual que el `.pyw`) --
+    SÍ queda quién lo hizo en Auditoría (`registrar_evento`, 2026-09-12)."""
     if not ids:
         return 0
     sb = supabase_client.get_client()
     sb.table(TABLA).delete().in_("id", list(ids)).execute()
+    registrar_evento(
+        "liquidaciones", "eliminar_descuentos_pendientes", usuario=usuario,
+        target_table=TABLA, target_key=",".join(str(i) for i in ids),
+    )
     return len(ids)
 
 
-def marcar_aplicados(ids: list[str], *, usuario: str) -> None:  # noqa: ARG001
+def marcar_aplicados(ids: list[str], *, usuario: str) -> None:
     """Pasa a 'aplicado' los descuentos consumidos al guardar una liquidación."""
     if not ids:
         return
@@ -136,3 +147,7 @@ def marcar_aplicados(ids: list[str], *, usuario: str) -> None:  # noqa: ARG001
     sb.table(TABLA).update(
         {"estado": "aplicado", "fecha_aplicado": _hoy_iso()}
     ).in_("id", list(ids)).execute()
+    registrar_evento(
+        "liquidaciones", "aplicar_descuentos_pendientes", usuario=usuario,
+        target_table=TABLA, target_key=",".join(str(i) for i in ids),
+    )

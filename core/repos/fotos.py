@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.audit.writer import registrar_evento
 from core.config import get_settings
 
 _EXT_OK = {"jpg", "jpeg", "png", "webp"}
@@ -26,7 +27,7 @@ def _ruta(empleado: str) -> Path | None:
     return None
 
 
-def guardar_foto(empleado: str, datos: bytes, nombre_original: str = "") -> str:
+def guardar_foto(empleado: str, datos: bytes, nombre_original: str = "", *, usuario: str = "") -> str:
     empleado = str(empleado).strip()
     if not empleado:
         raise ValueError("Empleado vacío")
@@ -41,6 +42,9 @@ def guardar_foto(empleado: str, datos: bytes, nombre_original: str = "") -> str:
         prev.unlink(missing_ok=True)
     destino = _dir() / f"{empleado}.{ext}"
     destino.write_bytes(datos)
+    registrar_evento(
+        "empleados", "subir_foto", usuario=usuario, target_table="fotos", target_key=empleado,
+    )
     return str(destino)
 
 
@@ -52,9 +56,13 @@ def leer_foto(empleado: str) -> tuple[bytes, str] | None:
     return p.read_bytes(), f"image/{mime}"
 
 
-def borrar_foto(empleado: str) -> bool:
-    p = _ruta(str(empleado).strip())
+def borrar_foto(empleado: str, *, usuario: str = "") -> bool:
+    empleado = str(empleado).strip()
+    p = _ruta(empleado)
     if p:
         p.unlink(missing_ok=True)
+        registrar_evento(
+            "empleados", "quitar_foto", usuario=usuario, target_table="fotos", target_key=empleado,
+        )
         return True
     return False

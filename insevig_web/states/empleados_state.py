@@ -598,10 +598,12 @@ class EmpleadosState(rx.State):
 
         if not files or not self.edit_empleado or self.edit_empleado == "NUEVO":
             return
+        auth = await self.get_state(AuthState)
         datos = await files[0].read()
         try:
             await asyncio.to_thread(
-                fotos.guardar_foto, self.edit_empleado, datos, files[0].name or ""
+                fotos.guardar_foto, self.edit_empleado, datos, files[0].name or "",
+                usuario=auth.username,
             )
             self.foto_msg = "Foto guardada."
         except Exception as e:  # noqa: BLE001
@@ -612,7 +614,8 @@ class EmpleadosState(rx.State):
     async def quitar_foto(self):
         from core.repos import fotos
 
-        await asyncio.to_thread(fotos.borrar_foto, self.edit_empleado)
+        auth = await self.get_state(AuthState)
+        await asyncio.to_thread(fotos.borrar_foto, self.edit_empleado, usuario=auth.username)
         self.foto_uri = ""
         self.foto_msg = "Foto eliminada."
 
@@ -625,9 +628,12 @@ class EmpleadosState(rx.State):
 
         if not self.edit_empleado or self.edit_empleado == "NUEVO" or "," not in data_uri:
             return
+        auth = await self.get_state(AuthState)
         try:
             crudo = base64.b64decode(data_uri.split(",", 1)[1])
-            await asyncio.to_thread(fotos.guardar_foto, self.edit_empleado, crudo, "camara.jpg")
+            await asyncio.to_thread(
+                fotos.guardar_foto, self.edit_empleado, crudo, "camara.jpg", usuario=auth.username,
+            )
             self.foto_msg = "Foto guardada."
         except Exception as e:  # noqa: BLE001
             self.foto_msg = str(e)
