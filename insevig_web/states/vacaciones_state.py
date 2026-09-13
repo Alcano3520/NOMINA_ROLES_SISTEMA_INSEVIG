@@ -21,6 +21,16 @@ from insevig_web.states.auth_state import AuthState
 ESTADOS_DOC = list(V.ESTADOS_DOC)
 FORMAS_PAGO = ("TRANSFERENCIA", "CHEQUE", "EFECTIVO")
 
+# Lista de bancos + cuenta por defecto -- porta `app_config.py::_DEFAULTS["bancos"]`
+# del .pyw original (allí es editable desde "Configuración del sistema"; acá se
+# deja fijo por ahora, falta portar esa pantalla de config). Solo PRODUBANCO
+# tiene cuenta configurada en el original; el resto se llena a mano.
+BANCOS = (
+    "PRODUBANCO", "GUAYAQUIL", "BOLIVARIANO", "PICHINCHA", "PACIFICO",
+    "INTERNACIONAL", "AUSTRO", "LOJA", "DESARROLLO", "BIESS",
+)
+_CUENTAS_BANCO = {"PRODUBANCO": "1016529246"}
+
 _FORM_GOZADA_VACIO = {
     "periodo": "", "fecha_comprobante": "", "desde": "", "hasta": "",
     "dias_tomados": "15", "dias_adicionales": "0", "firmado": "",
@@ -29,7 +39,8 @@ _FORM_GOZADA_VACIO = {
 }
 
 _FORM_PAGO_VACIO = {
-    "forma_pago": "TRANSFERENCIA", "banco": "", "cta_cte_no": "",
+    "forma_pago": "TRANSFERENCIA", "banco": "PRODUBANCO",
+    "cta_cte_no": _CUENTAS_BANCO["PRODUBANCO"],
     "no_cheque": "", "fecha_pago": "", "anticipo": "0", "observaciones": "",
 }
 
@@ -597,8 +608,58 @@ class VacacionesState(rx.State):
         self.calc_cargando = False
 
     @rx.event
+    async def calcular_manual(self):
+        """'Ingresar Manual' -- porta `app.py::_llenar_manual`: cuando SQL
+        Server/Supabase no tiene movimientos para el período (empleado nuevo,
+        corte de conexión, etc.) arma igual la tabla de 12 meses -- en cero,
+        con las fechas correctas del período -- para que el usuario la llene
+        a mano; `set_calc_mes` (ya existente) recalcula el pago solo al editar
+        cada total."""
+        cedula = self.empleado.get("cedula", "")
+        fi = self.empleado.get("fecha_ingreso", "")
+        if not cedula or not self.calc_periodo or not fi:
+            self.msg = "Seleccione empleado y período."
+            return
+        self.calc_cargando = True
+        yield
+        try:
+            anio_base = int(self.calc_periodo.split("-")[0])
+            per = await asyncio.to_thread(V.calcular_periodo, fi, anio_base)
+            detalles_todos = await asyncio.to_thread(
+                V.calcular_meses_periodo, [], per["inicio"], per["fin"],
+            )
+            self.calc_detalles = [{**d, "es_manual": 1} for d in detalles_todos[:12]]
+            self.calc_total_periodo = 0.0
+            self.calc_dias_gozados = await asyncio.to_thread(V.get_dias_gozados_periodo, cedula, self.calc_periodo)
+            dias_adic, _ = V.calcular_dias_adicionales(fi, per["fin"].strftime("%Y-%m-%d"))
+            self.calc_dias_adicionales = dias_adic
+            self.calc_resultado = V.calcular_pago(
+                dias_gozados=self.calc_dias_gozados, dias_adicionales=dias_adic,
+                total_periodo_12m=0.0, anticipo=float(self.form_pago.get("anticipo") or 0),
+            )
+            self.msg = "Modo manual: edite el total de cada mes en la tabla."
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error: {e}"
+        self.calc_cargando = False
+
+    @rx.event
     def set_campo_pago(self, campo: str, v: str):
-        self.form_pago = {**self.form_pago, campo: v}
+        """`forma_pago` distinta de TRANSFERENCIA/CHEQUE deshabilita banco (lo
+        vacía); `banco` autocompleta la cuenta configurada -- igual que
+        `app.py::_toggle_pago_campos`/`_autofill_cuenta`."""
+        nuevo = {**self.form_pago, campo: v}
+        if campo == "forma_pago":
+            tiene_banco = v.strip().upper() in ("TRANSFERENCIA", "CHEQUE")
+            if not tiene_banco:
+                nuevo["banco"] = ""
+                nuevo["cta_cte_no"] = ""
+            if v.strip().upper() != "CHEQUE":
+                nuevo["no_cheque"] = ""
+        elif campo == "banco":
+            cuenta = _CUENTAS_BANCO.get(v.strip().upper(), "")
+            if cuenta:
+                nuevo["cta_cte_no"] = cuenta
+        self.form_pago = nuevo
 
     @rx.event
     async def registrar_pagada(self):

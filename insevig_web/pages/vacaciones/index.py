@@ -16,6 +16,7 @@ from insevig_web.components.ui import (
 )
 from insevig_web.states.auth_state import AuthState
 from insevig_web.states.vacaciones_state import (
+    BANCOS,
     ESTADOS_DOC,
     FORMAS_PAGO,
     VacacionesState,
@@ -501,6 +502,12 @@ def _tab_calculo() -> rx.Component:
             rx.select(_S.periodos_emp, value=_S.calc_periodo,
                      on_change=_S.set_calc_periodo, placeholder="Período a calcular"),
             primary_button("Calcular", on_click=_S.calcular, loading=_S.calc_cargando),
+            rx.button(
+                "Ingresar Manual", on_click=_S.calcular_manual, loading=_S.calc_cargando,
+                variant="soft", color_scheme="orange",
+                title="Cuando no hay datos en SQL Server/Supabase para el período "
+                      "(empleado nuevo, etc.) -- arma la tabla en cero para llenarla a mano.",
+            ),
             spacing="2",
         ),
         rx.cond(
@@ -557,11 +564,17 @@ def _tab_calculo() -> rx.Component:
                              rx.select(FORMAS_PAGO, value=_S.form_pago["forma_pago"],
                                       on_change=lambda v: _S.set_campo_pago("forma_pago", v))),
                     rx.vstack(rx.text("Banco", size="1", weight="bold", color_scheme="gray"),
-                             rx.input(value=_S.form_pago["banco"], on_change=lambda v: _S.set_campo_pago("banco", v))),
+                             rx.select(
+                                 BANCOS, value=_S.form_pago["banco"],
+                                 on_change=lambda v: _S.set_campo_pago("banco", v),
+                                 disabled=_S.form_pago["forma_pago"] == "EFECTIVO",
+                             )),
                     rx.vstack(rx.text("Cta. Cte. No.", size="1", weight="bold", color_scheme="gray"),
-                             rx.input(value=_S.form_pago["cta_cte_no"], on_change=lambda v: _S.set_campo_pago("cta_cte_no", v))),
+                             rx.input(value=_S.form_pago["cta_cte_no"], on_change=lambda v: _S.set_campo_pago("cta_cte_no", v),
+                                      disabled=_S.form_pago["forma_pago"] == "EFECTIVO")),
                     rx.vstack(rx.text("No. Cheque/Transferencia", size="1", weight="bold", color_scheme="gray"),
-                             rx.input(value=_S.form_pago["no_cheque"], on_change=lambda v: _S.set_campo_pago("no_cheque", v))),
+                             rx.input(value=_S.form_pago["no_cheque"], on_change=lambda v: _S.set_campo_pago("no_cheque", v),
+                                      disabled=_S.form_pago["forma_pago"] != "CHEQUE")),
                     rx.vstack(rx.text("Fecha de pago", size="1", weight="bold", color_scheme="gray"),
                              rx.input(value=_S.form_pago["fecha_pago"], type="date",
                                       on_change=lambda v: _S.set_campo_pago("fecha_pago", v))),
