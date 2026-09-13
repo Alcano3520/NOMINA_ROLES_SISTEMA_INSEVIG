@@ -1919,10 +1919,17 @@ def test_guardar_periodo_calculo_tipo_invalido():
     assert not ok and final == 0.0 and "inválido" in err
 
 
-def test_guardar_periodo_calculo_no_toca_pagada(monkeypatch):
-    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"estado": "pagado"}, []))
-    ok, final, err = lq.guardar_periodo_calculo("L1", "DEC_TERCERA", [], usuario="x", roles=set())
-    assert not ok and "pagada" in err
+def test_guardar_periodo_calculo_permite_pagada(monkeypatch, app_db):
+    """Decisión del usuario 2026-09-12: el desglose mensual (solo
+    informativo, nunca total_liquido/estado) SÍ se puede corregir en
+    liquidaciones 'pagado' -- a diferencia de `editar_valores_liquidacion`."""
+    monkeypatch.setattr(lq, "obtener_liquidacion", lambda _id: ({"id": "L1", "estado": "pagado"}, []))
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    meses = [{"label": f"mes{i}", "valor": 10.0} for i in range(12)]
+    ok, final, err = lq.guardar_periodo_calculo("L1", "DEC_TERCERA", meses, usuario="ana", roles={"admin"})
+    assert ok and err == "" and final == 10.0
 
 
 def test_recalcular_anticipo_liquidado_bajo_umbral():

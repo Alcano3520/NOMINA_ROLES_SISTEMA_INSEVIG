@@ -1889,14 +1889,21 @@ def guardar_periodo_calculo(
     `valor_final` es `bruto / divisor` (12 para décimo, 24 para vacaciones),
     ya redondeado; el llamador lo aplica al concepto correspondiente
     (DEC_TERCERA_ACT, o la suma de ambos periodos a VACACIONES) vía
-    `editar_valores_liquidacion`."""
+    `editar_valores_liquidacion` -- SALVO en liquidaciones 'pagado', donde
+    el llamador NO debe tocar el concepto/total (`editar_valores_liquidacion`
+    lo bloquea, y así debe seguir).
+
+    A diferencia de `editar_valores_liquidacion`/`eliminar_liquidacion`,
+    esto SÍ se permite en estado 'pagado' -- decisión del usuario
+    2026-09-12, tras la corrección masiva de `liquidaciones_periodos_
+    calculo` (LIQUIDACIONES): el desglose mensual es solo informativo/de
+    respaldo (lo usa el bot MRL), nunca `total_liquido` ni `estado`, así
+    que no hay riesgo de alterar un pago ya hecho."""
     if tipo not in PERIODO_DIVISOR:
         return False, 0.0, f"Tipo de período inválido: {tipo}"
     registro, _c = obtener_liquidacion(liquidacion_id)
     if registro is None:
         return False, 0.0, "No existe esa liquidación."
-    if registro.get("estado") == "pagado":
-        return False, 0.0, "No se puede editar una liquidación ya marcada como pagada."
     bruto = round(sum(a_float(m.get("valor")) for m in meses), 2)
     final = round(bruto / PERIODO_DIVISOR[tipo], 2)
     from core.audit.writer import audit_scope

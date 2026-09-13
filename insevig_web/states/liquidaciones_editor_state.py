@@ -331,6 +331,17 @@ class LiquidacionesEditorState(rx.State):
     @rx.event
     async def aplicar_decima_tercera(self):
         final = await self._guardar_periodo("DEC_TERCERA")
+        if self.ed_datos.get("estado") == "pagado":
+            # El desglose SÍ se guarda (decisión del usuario 2026-09-12 --
+            # solo informativo, no toca total/estado), pero el concepto
+            # DEC_TERCERA_ACT no se actualiza: `editar_valores_liquidacion`
+            # bloquea "Guardar cambios" en 'pagado', así que mostrarlo acá
+            # como si se fuera a aplicar sería engañoso.
+            self.periodo_msg = (
+                f"Décima Tercera: desglose guardado (${final:.2f}). Liquidación 'pagado' -- "
+                "el concepto no se actualiza (no se puede editar el total de una ya pagada)."
+            )
+            return
         self.ed_campos = {**self.ed_campos, "DEC_TERCERA_ACT": f"{final:.2f}"}
         self.periodo_msg = f"Décima Tercera: ${final:.2f} aplicado (guardá los cambios para confirmar el total)."
 
@@ -339,6 +350,12 @@ class LiquidacionesEditorState(rx.State):
         f1 = await self._guardar_periodo("VACACIONES_1")
         f2 = await self._guardar_periodo("VACACIONES_2")
         suma = round(f1 + f2, 2)
+        if self.ed_datos.get("estado") == "pagado":
+            self.periodo_msg = (
+                f"Vacaciones: desglose guardado (${suma:.2f}). Liquidación 'pagado' -- "
+                "el concepto no se actualiza (no se puede editar el total de una ya pagada)."
+            )
+            return
         self.ed_campos = {**self.ed_campos, "VACACIONES": f"{suma:.2f}"}
         self.periodo_msg = f"Vacaciones: ${suma:.2f} aplicado (guardá los cambios para confirmar el total)."
 
