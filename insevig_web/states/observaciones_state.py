@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
 from dataclasses import asdict
 
@@ -155,9 +156,16 @@ class ObservacionesState(rx.State):
 
     @rx.event
     async def descargar_reporte_varios(self):
+        # BUG REAL corregido 2026-09-13 (reportado: "no se puede descargar el
+        # dato al aplastar descargar reporte"): si nadie clickeó "Mostrar
+        # todos" antes (`self.todos` vacío) y no hay selección, esto
+        # retornaba sin avisar nada -- parecía que el botón no hacía nada.
         codigos = self.todos_sel or [x["empleado"] for x in self.todos]
         if not codigos:
-            return
+            return rx.toast.error(
+                "No hay datos para el reporte -- primero pulsá 'Mostrar todos' "
+                "o seleccioná empleados de la lista."
+            )
         fuente = await self._fuente()
         html = await asyncio.to_thread(
             observaciones.reporte_html_varios, fuente, codigos
@@ -238,13 +246,17 @@ class ObservacionesState(rx.State):
 
     @rx.event
     def descargar_reporte(self):
+        """'Reporte imprimible' -- pedido: debe ABRIR de una (como
+        `webbrowser.open()` del .pyw original, ver convención repo-wide de
+        "PDF handling"), no pedir dónde guardar. `rx.download` fuerza un
+        Save As pase lo que pase (es un `<a download>`) -- para abrir en una
+        pestaña nueva en vez de descargar, se abre un `data:` URI con
+        `window.open`."""
         if not self.empleado_sel:
             return
         html = observaciones.reporte_html(
             self.empleado_sel, self.nombre_sel,
             list(self.observaciones), list(self.multas), list(self.faltas),
         )
-        return rx.download(
-            data=html.encode("utf-8"),
-            filename=f"observaciones_{self.empleado_sel}.html",
-        )
+        b64 = base64.b64encode(html.encode("utf-8")).decode("ascii")
+        return rx.call_script(f"window.open('data:text/html;base64,{b64}', '_blank');")

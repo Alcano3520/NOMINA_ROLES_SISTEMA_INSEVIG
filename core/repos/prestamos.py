@@ -203,7 +203,14 @@ def _historial_sqlserver(codigo: str) -> list[MovimientoPrestamo]:
                 MovimientoPrestamo(
                     fecha=fecha,
                     valor=round(a_float(r.get("VALOR")), 2),
-                    concepto=(r.get("CONCEPTO") or r.get("OBSERV") or "").strip(),
+                    # BUG REAL corregido 2026-09-13 (reportado: "en Observaciones
+                    # no están las observaciones, ese es el dato tipo no
+                    # observaciones"): el orden estaba invertido -- OBSERV es el
+                    # texto libre real; CONCEPTO es más bien una clasificación
+                    # corta. El .pyw original prioriza OBSERV, CONCEPTO solo de
+                    # respaldo (ver `_limpiar(mov.get('OBSERV')) or
+                    # _limpiar(mov.get('CONCEPTO'))` en HISTORIAL_PRESTAMOS_10.pyw).
+                    concepto=(r.get("OBSERV") or r.get("CONCEPTO") or "").strip(),
                     numero=num,
                     origen=origen,
                     tipo="pendiente" if origen == "RPINGDES" else "pago",
@@ -232,7 +239,8 @@ def _historial_supabase(codigo: str) -> list[MovimientoPrestamo]:
                 MovimientoPrestamo(
                     fecha=str(row.get("fecha") or "")[:10],
                     valor=round(a_float(row.get("valor")), 2),
-                    concepto=(row.get("concepto") or row.get("observ") or "").strip(),
+                    # Mismo orden que `_historial_sqlserver` -- ver comentario ahí.
+                    concepto=(row.get("observ") or row.get("concepto") or "").strip(),
                     numero=num,
                     origen=origen,
                     tipo="pendiente" if origen == "RPINGDES" else "pago",
