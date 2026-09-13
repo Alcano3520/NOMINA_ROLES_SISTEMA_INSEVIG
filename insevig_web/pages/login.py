@@ -53,5 +53,7 @@ def login() -> rx.Component:
             padding="2rem",
         ),
         height="100vh",
-        background=theme.BG,
+        # Mismo bug/fix que `components/layout.py`: `theme.BG` es un hex fijo
+        # que gana por ser estilo inline a la regla dark de `theme.css`.
+        background="var(--gray-1)",
     )

@@ -123,7 +123,17 @@ def pagina(
                 flex="1",
                 min_width="0",
                 min_height="100vh",
-                background=theme.BG,
+                # BUG REAL corregido 2026-09-13 (reportado: "en vacaciones ni
+                # se ve la parte superior" en modo oscuro): `theme.BG` es un
+                # hex fijo (#f5f7fa) puesto como estilo INLINE -- gana por
+                # especificidad a la regla `:root.dark body,
+                # .radix-themes {background:#0d1117}` de `assets/theme.css`,
+                # así que esta caja se quedaba siempre clara aunque el resto
+                # del tema pasara a oscuro (texto claro sobre fondo claro =
+                # invisible). `var(--gray-1)` es el token de Radix que SÍ
+                # cambia con `.light`/`.dark` (confirmado en
+                # @radix-ui/colors: #fcfcfc claro / #111111 oscuro).
+                background="var(--gray-1)",
                 on_mount=DataSourceState.detectar,
             ),
             spacing="0",

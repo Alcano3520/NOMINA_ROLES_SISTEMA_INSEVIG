@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from insevig_web import theme
 from insevig_web.components.employee_search import employee_search
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, scroll_x
@@ -205,7 +204,9 @@ def _panel_saldos() -> rx.Component:
                                                       style={"textAlign": "right"}),
                                         on_click=lambda: _S.seleccionar(f["empleado"], f["nombre"]),
                                         style={"cursor": "pointer"},
-                                        _hover={"background": theme.BG},
+                                        # Mismo bug que `layout.py`: `theme.BG`
+                                        # es un hex fijo, no theme-aware.
+                                        _hover={"background": "var(--gray-3)"},
                                     ),
                                 )
                             ),

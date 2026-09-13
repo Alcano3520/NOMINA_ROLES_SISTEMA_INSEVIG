@@ -14,7 +14,11 @@ SECONDARY = "#ffd700"
 HOVER = "#2a5caa"
 OK = "#2ed573"
 DANGER = "#ff6b6b"
-BG = "#f5f7fa"
+BG = "#f5f7fa"  # NO usar como `background=` inline (ver nota abajo) -- solo
+# referencia histórica de la paleta / valor que ya replica `assets/theme.css`
+# para `body`/`.radix-themes`. Fondo de contenido: `var(--gray-1)` (Radix,
+# cambia con el modo); superficies tipo panel: `var(--color-panel-solid)`
+# (ya usado por `card()` en `components/ui`).
 
 # Breakpoint por debajo del cual el sidebar colapsa a drawer.
 SIDEBAR_BREAKPOINT = "1024px"
