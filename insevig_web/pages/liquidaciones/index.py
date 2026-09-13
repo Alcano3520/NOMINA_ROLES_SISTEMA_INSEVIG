@@ -284,7 +284,8 @@ def _panel_individual() -> rx.Component:
                 ),
             ),
             rx.hstack(
-                primary_button("Calcular / Generar Liquidación", on_click=_S.calcular_individual),
+                primary_button("Calcular / Generar Liquidación", on_click=_S.calcular_individual,
+                                loading=_S.ind_calculando),
                 rx.button(rx.icon("file-text", size=14), "PDF", on_click=_S.generar_pdf_individual,
                           variant="soft", size="2"),
                 rx.cond(

@@ -106,6 +106,7 @@ class LiquidacionesState(rx.State):
     ind_desahucio_ingresos_reales: bool = False
     ind_conceptos: list[dict] = []  # vista previa: concepto/tipo/valor
     ind_totales: dict[str, float] = {}
+    ind_calculando: bool = False
     _ind_liq: repo.Liquidacion | None = None
 
     @rx.event
@@ -280,7 +281,26 @@ class LiquidacionesState(rx.State):
                 default_multas=dm, default_antic_otros=da,
             )
 
-        liq = await asyncio.to_thread(_run)
+        # BUG REAL corregido 2026-09-13 (reportado: "liquidación individual no
+        # sirve, no genera liquidación, se queda atascada"): `procesar_empleado`
+        # no atrapa TODAS sus posibles excepciones (solo devuelve `liq.error`
+        # para los casos que anticipa) -- una excepción real (dato inesperado,
+        # timeout de SQL Server/Supabase, etc.) no atrapada acá tumbaba el
+        # evento entero sin avisar: el botón se quedaba "cargando" para
+        # siempre (sin `loading=` conectado, ni parecía que hiciera algo) y
+        # no aparecía ningún mensaje de error.
+        self.ind_calculando = True
+        yield
+        try:
+            liq = await asyncio.to_thread(_run)
+        except Exception as e:  # noqa: BLE001
+            self.ind_msg = f"Error al calcular la liquidación: {e}"
+            self.ind_conceptos = []
+            self.ind_totales = {}
+            self._ind_liq = None
+            return
+        finally:
+            self.ind_calculando = False
         self._ind_liq = liq
         if liq.error:
             self.ind_msg = liq.error
