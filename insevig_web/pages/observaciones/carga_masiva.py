@@ -25,6 +25,10 @@ def carga_masiva() -> rx.Component:
         ),
         rx.link("← Volver a Observaciones", href="/observaciones", size="2"),
         rx.vstack(
+            rx.button(
+                rx.icon("download", size=14), "Descargar plantilla",
+                on_click=_S.descargar_plantilla, variant="soft", size="1",
+            ),
             card(
                 rx.vstack(
                     rx.upload(

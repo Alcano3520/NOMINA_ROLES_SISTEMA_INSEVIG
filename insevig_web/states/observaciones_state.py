@@ -183,6 +183,16 @@ class ObservacionesState(rx.State):
     masiva_path: str = ""
 
     @rx.event
+    def descargar_plantilla(self):
+        """Pedido: las cargas masivas necesitan una plantilla descargable, no
+        solo el texto explicando las columnas."""
+        from core.excel.plantillas import plantilla_carga_observaciones
+
+        return rx.download(
+            data=plantilla_carga_observaciones(), filename="plantilla_carga_observaciones.xlsx"
+        )
+
+    @rx.event
     async def subir_masiva(self, files: list[rx.UploadFile]):
         from core.excel.parsers import parse_carga_masiva_observaciones
 

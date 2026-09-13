@@ -18,9 +18,15 @@ def carga_masiva() -> rx.Component:
     return pagina(
         page_heading(
             "Carga masiva de empleados",
-            "Sube un Excel con la columna EMPLEADO y las columnas a actualizar. Cada fila queda registrada.",
+            "Sube un Excel con la columna EMPLEADO y las columnas a actualizar "
+            "(cargo, sección, sueldo, etc. -- el nombre de columna debe calzar "
+            "con el campo del padrón). Cada fila queda registrada.",
         ),
         rx.vstack(
+            rx.button(
+                rx.icon("download", size=14), "Descargar plantilla",
+                on_click=EmpleadosState.descargar_plantilla, variant="soft", size="1",
+            ),
             card(
                 rx.vstack(
                     rx.upload(
