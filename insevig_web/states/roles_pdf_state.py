@@ -99,6 +99,15 @@ class RolesState(rx.State):
             self.lista_texto = (self.lista_texto + "\n" + empleado).strip()
         self.encontrados = []
 
+    @rx.event
+    def seleccionar_individual(self, empleado: str, _nombre: str):
+        """Buscador de personas para el rol INDIVIDUAL (pedido: "tiene que
+        tener un buscador de personas para acá poner buscar y generar el
+        rol") -- reusa `busca`/`encontrados`/`buscar_emp` (ya existían para
+        el lote), pero acá fija `identificador` en vez de agregar a la lista."""
+        self.identificador = empleado
+        self.encontrados = []
+
     lote_todos_status: str = ""
 
     @rx.event

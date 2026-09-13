@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import reflex as rx
 
+from insevig_web.components.employee_search import employee_search
 from insevig_web.components.layout import pagina
 from insevig_web.components.ui import card, page_heading, primary_button
 from insevig_web.states.auth_state import AuthState
@@ -26,6 +27,15 @@ def generar() -> rx.Component:
     return pagina(
         page_heading("Rol de pago individual", "Genera el PDF de un empleado para un período."),
         rx.vstack(
+            # Pedido: "tiene que tener un buscador de personas para acá poner
+            # buscar y generar el rol" -- antes solo había un input de texto
+            # libre sin lista de resultados. El campo "Empleado" de abajo
+            # sigue aceptando escribir directo (código conocido de memoria).
+            employee_search(
+                texto=_S.busca, resultados=_S.encontrados,
+                on_set_texto=_S.set_busca, on_buscar=_S.buscar_emp,
+                on_seleccionar=_S.seleccionar_individual,
+            ),
             card(
                 rx.vstack(
                     rx.grid(
