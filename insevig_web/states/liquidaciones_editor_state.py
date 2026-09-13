@@ -240,6 +240,21 @@ class LiquidacionesEditorState(rx.State):
     def set_ed_dato(self, k: str, v: str):
         self.ed_datos = {**self.ed_datos, k: v}
 
+    @rx.event
+    def set_horas(self, cod: str, es_valor_hora: bool, v: str):
+        """Editar la CANTIDAD de horas o el valor/hora de SOBT_25/50/100
+        (`_fila_horas`/`_recalc_horas` del Editor original) -- el total
+        (`ed_campos[cod]`) ya no se edita directo para estos 3 conceptos,
+        se AUTOCALCULA como `cantidad × valor_hora`, igual que el .pyw."""
+        prefijo = _HORAS_PREFIJO.get(cod)
+        if prefijo is None:
+            return
+        k_cant, k_vh = f"{prefijo}_cant", f"{prefijo}_vh"
+        self.ed_datos = {**self.ed_datos, (k_vh if es_valor_hora else k_cant): v}
+        cant = v if not es_valor_hora else self.ed_datos.get(k_cant, "0")
+        vh = v if es_valor_hora else self.ed_datos.get(k_vh, "0")
+        self.ed_campos = {**self.ed_campos, cod: f"{_f(cant) * _f(vh):.2f}"}
+
     # ── Desglose mes a mes (Décima Tercera / Vacaciones 1-2) ────────────
     # "Ver detalle mensual" + "↻ Generar meses" + "↳ Aplicar..." del
     # original. A diferencia del `.pyw` (que guarda el desglose junto con

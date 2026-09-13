@@ -181,10 +181,6 @@ def _indicador_ajustes(cod: str) -> rx.Component:
 
 
 def _campo_concepto(cod: str, label: str) -> rx.Component:
-    total = rx.input(
-        value=_S.ed_campos[cod], on_change=lambda v: _S.set_ed_campo(cod, v),
-        size="2", width="150px", type="number",
-    )
     mas = rx.button(
         rx.icon("plus", size=14), size="1", variant="ghost",
         on_click=lambda: _S.abrir_ajuste(cod),
@@ -192,17 +188,34 @@ def _campo_concepto(cod: str, label: str) -> rx.Component:
     )
 
     if cod in _HORAS_KEYS:
+        # Cantidad × valor/hora editables (igual que el Editor original) --
+        # el total se AUTOCALCULA y ya no se edita directo para estos 3
+        # conceptos (antes solo mostraba "X h × $Y/hora" como texto fijo,
+        # sin poder tocar la cantidad de horas).
         kc, kv = _HORAS_KEYS[cod]
         etiqueta = rx.vstack(
             rx.text(label, size="2"),
-            rx.text(
-                _S.ed_datos[kc] + " h  ×  $" + _S.ed_datos[kv] + " /hora",
-                size="1", color_scheme="gray",
+            rx.hstack(
+                rx.input(value=_S.ed_datos[kc], on_change=lambda v: _S.set_horas(cod, False, v),
+                         size="1", width="55px", type="number"),
+                rx.text("hrs. × $", size="1", color_scheme="gray"),
+                rx.input(value=_S.ed_datos[kv], on_change=lambda v: _S.set_horas(cod, True, v),
+                         size="1", width="75px", type="number"),
+                rx.text("/hora", size="1", color_scheme="gray"),
+                spacing="1", align="center", wrap="wrap",
             ),
-            spacing="0", align="start", flex_grow="1", min_width="0",
+            spacing="1", align="start", flex_grow="1", min_width="0",
+        )
+        total = rx.input(
+            value=_S.ed_campos[cod], size="2", width="120px", type="number",
+            disabled=True, color_scheme="gray", title="Se calcula solo (cantidad × valor/hora)",
         )
     else:
         etiqueta = rx.text(label, size="2", flex_grow="1", min_width="0")
+        total = rx.input(
+            value=_S.ed_campos[cod], on_change=lambda v: _S.set_ed_campo(cod, v),
+            size="2", width="150px", type="number",
+        )
 
     return rx.vstack(
         rx.flex(
