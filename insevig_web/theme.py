@@ -20,9 +20,22 @@ BG = "#f5f7fa"
 SIDEBAR_BREAKPOINT = "1024px"
 
 theme = rx.theme(
-    # Claro por defecto (el sistema anterior era claro); el usuario cambia a
-    # oscuro con el botón del encabezado.
-    color_mode="light",
+    # BUG REAL corregido 2026-09-12 (reportado por el usuario: "cuando un
+    # usuario pone oscuro no se pone bien, queda negro pero el fondo
+    # blanco"): `color_mode="light"` acá NO es solo "el default inicial" --
+    # `Theme.appearance` (a lo que mapea `color_mode`) es un OVERRIDE fijo
+    # del modo visual de Radix ("Defaults to 'inherit'", ver el propio
+    # docstring de Radix); con un valor explícito distinto de "inherit",
+    # el botón de modo oscuro del encabezado sigue alternando la clase
+    # `.dark`/`.light` de <html> (por eso `assets/theme.css` sí cambiaba
+    # ALGO), pero el propio tema de Radix (los `--gray-*`/`--accent-*` que
+    # usan los componentes internos) quedaba clavado en claro -- de ahí la
+    # mezcla rota. `color_mode="inherit"` deja que el botón controle el
+    # tema de Radix también. "Claro por defecto" para quien entra sin
+    # preferencia guardada se resuelve aparte, en `rxconfig.py`
+    # (`default_color_mode="light"`), que no fija nada en tiempo de
+    # ejecución -- el toggle queda libre.
+    color_mode="inherit",
     accent_color="blue",
     gray_color="slate",
     radius="large",
