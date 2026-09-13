@@ -81,6 +81,7 @@ class LiquidacionesState(rx.State):
     resumen: dict[str, int] = {}
 
     previsualizacion: list[dict] = []  # resumen por empleado (modo masivo)
+    previsualizando: bool = False
     _liqs: list[repo.Liquidacion] = []  # objetos completos, en el mismo orden (uso interno)
     fila_msg: dict[str, str] = {}  # índice (str) -> mensaje ("Guardada", error…)
     job: int = 0
@@ -336,10 +337,15 @@ class LiquidacionesState(rx.State):
     async def guardar_individual(self):
         auth = await self.get_state(AuthState)
         if "liquidaciones:editar" not in auth.permisos_flat:
-            return rx.toast.error("Sin permiso.")
+            # `yield` (no `return <valor>`) -- esta función ya tiene un
+            # `yield` más abajo para mostrar `loading`, lo que la vuelve un
+            # generador async: `return` con valor ahí sería un SyntaxError.
+            yield rx.toast.error("Sin permiso.")
+            return
         liq = self._ind_liq
         if liq is None or liq.error:
-            return rx.toast.error("Calcule la liquidación primero.")
+            yield rx.toast.error("Calcule la liquidación primero.")
+            return
         from core.parametros import config_liquidacion
 
         cfg = config_liquidacion(self.region)
@@ -354,7 +360,15 @@ class LiquidacionesState(rx.State):
                 liquidacion_id_existente=existente or "",
             )
 
-        ok, resultado = await asyncio.to_thread(_guardar)
+        self.ind_calculando = True
+        yield
+        try:
+            ok, resultado = await asyncio.to_thread(_guardar)
+        except Exception as e:  # noqa: BLE001
+            self.ind_msg = f"Error al guardar: {e}"
+            self.ind_calculando = False
+            return
+        self.ind_calculando = False
         self.ind_msg = "Guardada en el sistema." if ok else f"Error al guardar: {resultado}"
         if ok:
             await asyncio.to_thread(_marcar_descuentos_aplicados, liq, usuario)
@@ -367,6 +381,10 @@ class LiquidacionesState(rx.State):
 
     @rx.event
     async def previsualizar(self):
+        # BUG REAL corregido 2026-09-13 (reportado: "liquidaciones cuando
+        # carga y se demora debería salir algo cargando"): `procesar_lote`
+        # sobre varios empleados a la vez puede tardar bastante y el botón
+        # no tenía ningún `loading=` -- se sentía "colgado".
         if not self.entrada.strip():
             return
         fuente = await self._fuente()
@@ -374,11 +392,19 @@ class LiquidacionesState(rx.State):
         cfg = config_liquidacion(self.region)
         texto = self.entrada
         dm, da = self._defaults()
+        self.previsualizando = True
+        yield
 
         def _run():
             return repo.procesar_lote(texto, fuente, cfg, default_multas=dm, default_antic_otros=da)
 
-        liqs = await asyncio.to_thread(_run)
+        try:
+            liqs = await asyncio.to_thread(_run)
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error al previsualizar: {e}"
+            self.previsualizando = False
+            return
+        self.previsualizando = False
         self._liqs = liqs
         self.fila_msg = {}
         self.previsualizacion = [

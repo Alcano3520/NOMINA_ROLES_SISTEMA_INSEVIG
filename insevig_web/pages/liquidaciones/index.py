@@ -102,7 +102,8 @@ def _panel_masivo() -> rx.Component:
                 rows="6", width="100%",
             ),
             rx.hstack(
-                rx.button("Previsualizar", on_click=_S.previsualizar, variant="soft"),
+                rx.button("Previsualizar", on_click=_S.previsualizar, variant="soft",
+                          loading=_S.previsualizando),
                 primary_button("Generar Excel", on_click=_S.generar_excel),
                 spacing="2",
             ),
@@ -290,7 +291,8 @@ def _panel_individual() -> rx.Component:
                           variant="soft", size="2"),
                 rx.cond(
                     AuthState.permisos_flat.contains("liquidaciones:editar"),
-                    rx.button("💾 Guardar Liquidación", on_click=_S.guardar_individual, size="2", color_scheme="blue"),
+                    rx.button("💾 Guardar Liquidación", on_click=_S.guardar_individual, size="2",
+                              color_scheme="blue", loading=_S.ind_calculando),
                 ),
                 spacing="2", wrap="wrap",
             ),
