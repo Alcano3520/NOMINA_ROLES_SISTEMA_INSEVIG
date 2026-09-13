@@ -109,11 +109,37 @@ class FaltasState(rx.State):
 
     @rx.event(background=True)
     async def masivo_validar(self):
-        """Resuelve nombres por código y marca filas válidas (botón VALIDAR)."""
+        """Resuelve nombres por código/cédula y marca filas válidas (botón
+        VALIDAR).
+
+        BUG REAL corregido (reportado 2026-09-12): siempre buscaba por
+        `codigo=`, nunca por `cedula=` -- el legado (gestion_faltas.py::
+        _validar_async) separa lo pegado: 7+ dígitos numéricos se buscan
+        como CÉDULA, el resto como CÓDIGO (`core/repos/faltas.py::
+        buscar_empleado` ya acepta ambos, el gap era acá). Sin esto,
+        cualquiera que pegue cédulas en vez del código interno obtenía
+        "código no existe en la nómina" en todas las filas.
+
+        Además, a diferencia del legado (donde la resolución de cédula es
+        solo COSMÉTICA -- el registro real sigue usando el valor pegado
+        tal cual contra `RPHORTOT`/`RPEMPLEA`, que se indexan por código,
+        no por cédula -- así que pegar una cédula ahí tampoco registra
+        bien en el original), acá se REEMPLAZA `f["codigo"]` por el código
+        real del empleado encontrado, para que `masivo_registrar` (que
+        reusa `f["codigo"]`) registre contra el empleado correcto."""
         async with self:
             filas = list(self.masivo_filas)
         for f in filas:
-            emp = await asyncio.to_thread(repo.buscar_empleado, codigo=f["codigo"]) if f["codigo"] else None
+            codigo_pegado = f["codigo"]
+            emp = None
+            if codigo_pegado:
+                es_cedula = codigo_pegado.isdigit() and len(codigo_pegado) >= 7
+                emp = await asyncio.to_thread(
+                    repo.buscar_empleado,
+                    **({"cedula": codigo_pegado} if es_cedula else {"codigo": codigo_pegado}),
+                )
+            if emp is not None:
+                f["codigo"] = emp.empleado
             f["nombre"] = emp.nombre if emp else "(no encontrado)"
             ok, err = fc.validar_fila_grid_masivo(f["codigo"], f["tipo"], f["cant"], f["fecha"])
             if ok and emp is None:

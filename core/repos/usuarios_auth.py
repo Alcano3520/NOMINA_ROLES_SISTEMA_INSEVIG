@@ -234,33 +234,89 @@ def probar_conexion(*, cliente: Any | None = None) -> bool:
 # ── carga masiva ───────────────────────────────────────────────────────────
 
 
-def parsear_pegado(texto: str, sep: str | None = None) -> list[dict]:
-    """Texto pegado → filas {email, nombre, rol, departamento, password}.
-    Autodetecta TAB/`;`/`|`/`,`. Filas sin `@` en la 1ª columna se descartan.
-    Puerto de `parsear_usuarios_pegado`.
+# Roles válidos de `profiles` (tabla del proyecto SANCIONES) -- distinta de
+# `ROLES_USUARIOS`/`usuarios_rrhh` del escritorio RRHH; "admin" NO es un rol
+# válido acá.
+ROLES_VALIDOS = ("supervisor", "gerencia", "rrhh", "aprobador")
+
+
+def parsear_pegado(texto: str) -> tuple[list[dict], list[str]]:
+    """Texto pegado → `(filas_validas, errores)`, filas
+    `{email, nombre, rol, departamento, password}`.
+
+    Puerto EXACTO de `parsear_usuarios_pegado` (`nucleo_modular/carga_
+    usuarios.py`, a su vez puerto de `procesar_datos`,
+    `carga maciva usuarios6.0.py:1310`) -- BUG REAL corregido 2026-09-12
+    (reportado por el otro chat, tras verificar contra el original línea
+    por línea): la versión anterior de esta función era una aproximación
+    nunca verificada, con separador `;`/`|` que el legado NUNCA usa (partía
+    mal cualquier Nombre/Departamento con esos caracteres), sin ninguna
+    validación (email/nombre/rol) ni reporte de error por línea, sin
+    mínimo de columnas, y sin autogenerar contraseña cuando falta o es
+    inválida.
+
+    Reglas idénticas al original:
+    - Separador: TAB si está en la línea, si no **coma** (nunca `;` ni `|`).
+    - Mínimo 3 columnas (Email, Nombre, Rol) -- si no, error de línea, no
+      se descarta en silencio.
+    - Email debe contener `@`; Nombre no vacío; Rol en `ROLES_VALIDOS`.
+    - Password: si viene y es válida (`validar_password`) se usa tal cual;
+      si viene pero es inválida, o no viene, se autogenera
+      (`generar_password_segura(8)`).
+
+    Formato esperado por columna: `Email, Nombre Completo, Rol,
+    Departamento, Password` (Departamento y Password opcionales).
+    `errores`: strings `"Línea N: <motivo>"`, igual que el log del original.
     """
     filas: list[dict] = []
-    for linea in (texto or "").splitlines():
+    errores: list[str] = []
+    for i, linea in enumerate((texto or "").splitlines(), 1):
         linea = linea.strip()
         if not linea:
             continue
-        s = sep
-        if s is None:
-            for cand in ("\t", ";", "|", ","):
-                if cand in linea:
-                    s = cand
-                    break
-        partes = [p.strip() for p in linea.split(s or "\t")]
-        if not partes or "@" not in partes[0]:
+
+        partes = linea.split("\t") if "\t" in linea else linea.split(",")
+        partes = [p.strip() for p in partes]
+
+        if len(partes) < 3:
+            errores.append(f"Línea {i}: Faltan datos (mínimo Email, Nombre, Rol)")
             continue
+
+        email = partes[0]
+        nombre = partes[1]
+        rol = partes[2]
+        departamento = partes[3] if len(partes) > 3 else ""
+
+        password_generada = False
+        if len(partes) > 4 and partes[4]:
+            password = partes[4]
+            valido, _msg = validar_password(password)
+            if not valido:
+                password = generar_password_segura(8)
+                password_generada = True
+        else:
+            password = generar_password_segura(8)
+            password_generada = True
+
+        if not email or "@" not in email:
+            errores.append(f"Línea {i}: Email inválido: {email}")
+            continue
+        if not nombre:
+            errores.append(f"Línea {i}: Nombre vacío")
+            continue
+        if rol not in ROLES_VALIDOS:
+            errores.append(f"Línea {i}: Rol inválido: {rol}")
+            continue
+
         filas.append({
-            "email": partes[0],
-            "nombre": partes[1] if len(partes) > 1 else "",
-            "rol": partes[2] if len(partes) > 2 else "",
-            "departamento": partes[3] if len(partes) > 3 else "",
-            "password": partes[4] if len(partes) > 4 else "",
+            "email": email, "nombre": nombre, "rol": rol,
+            "departamento": departamento, "password": password,
+            # para que `cargar_masivo` sepa mostrarla en el preview de
+            # "dry run" aunque no la haya generado él mismo (ya llega
+            # resuelta desde acá) -- ver su uso de `generada` más abajo.
+            "_password_generada": password_generada,
         })
-    return filas
+    return filas, errores
 
 
 @dataclass
@@ -284,7 +340,11 @@ def cargar_masivo(
     for i, fila in enumerate(filas, 1):
         email = (fila.get("email") or "").strip()
         pwd = fila.get("password") or ""
-        generada = False
+        # `parsear_pegado` ya autogenera password cuando falta/es inválida
+        # (2026-09-12) -- si esa fila viene marcada así, seguí mostrándola
+        # en el preview de "dry run" aunque acá no haya sido necesario
+        # generar nada de nuevo.
+        generada = bool(fila.get("_password_generada"))
         if not pwd and generar_passwords:
             pwd = generar_password_segura()
             generada = True

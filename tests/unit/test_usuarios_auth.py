@@ -25,16 +25,85 @@ def test_validar_password():
 
 
 # ── parseo de pegado ──────────────────────────────────────────────────────
+# BUG REAL corregido 2026-09-12 (reportado por el otro chat, verificado
+# línea por línea contra `carga maciva usuarios6.0.py::procesar_datos`):
+# la versión anterior separaba por `;`/`|` además de tab/coma (el original
+# NUNCA usa `;`/`|`), no validaba nada, no exigía mínimo de columnas, y no
+# autogeneraba contraseña. Ver docstring de `parsear_pegado`.
 
-def test_parsear_pegado_autodetecta_sep():
-    filas = repo.parsear_pegado(
+def test_parsear_pegado_tab():
+    filas, errores = repo.parsear_pegado("ana@x.com\tAna\tsupervisor\tOps")
+    assert not errores
+    assert filas[0]["email"] == "ana@x.com"
+    assert filas[0]["rol"] == "supervisor"
+    assert filas[0]["departamento"] == "Ops"
+
+
+def test_parsear_pegado_coma():
+    filas, errores = repo.parsear_pegado("beto@x.com, Beto, rrhh")
+    assert not errores
+    assert filas[0]["email"] == "beto@x.com"
+    assert filas[0]["nombre"] == "Beto"
+    assert filas[0]["rol"] == "rrhh"
+
+
+def test_parsear_pegado_no_separa_por_punto_y_coma_ni_pipe():
+    """El original NUNCA usa `;` ni `|` como separador -- a diferencia de
+    los pegados de faltas/maniobras. Una línea con `;`/`|` (y sin tab/coma)
+    es UNA sola columna -> error por faltar datos, no un split silencioso
+    y mal armado."""
+    filas, errores = repo.parsear_pegado("beto@x.com;Beto;rrhh")
+    assert not filas
+    assert len(errores) == 1 and "Línea 1" in errores[0]
+
+
+def test_parsear_pegado_minimo_3_columnas():
+    filas, errores = repo.parsear_pegado("ana@x.com\tAna")
+    assert not filas
+    assert "Faltan datos" in errores[0]
+
+
+def test_parsear_pegado_email_invalido():
+    filas, errores = repo.parsear_pegado("no-es-email\tAna\tsupervisor")
+    assert not filas
+    assert "Email inválido" in errores[0]
+
+
+def test_parsear_pegado_nombre_vacio():
+    filas, errores = repo.parsear_pegado("ana@x.com\t\tsupervisor")
+    assert not filas
+    assert "Nombre vacío" in errores[0]
+
+
+def test_parsear_pegado_rol_invalido():
+    filas, errores = repo.parsear_pegado("ana@x.com\tAna\tadmin")  # "admin" no es rol válido acá
+    assert not filas
+    assert "Rol inválido" in errores[0]
+
+
+def test_parsear_pegado_password_valida_se_respeta():
+    filas, errores = repo.parsear_pegado("ana@x.com\tAna\tsupervisor\tOps\tClaveOk123")
+    assert not errores
+    assert filas[0]["password"] == "ClaveOk123"
+
+
+def test_parsear_pegado_password_invalida_o_ausente_se_autogenera():
+    filas, _ = repo.parsear_pegado("ana@x.com\tAna\tsupervisor\tOps\tx")  # muy corta
+    assert filas[0]["password"] != "x"
+    assert repo.validar_password(filas[0]["password"])[0]
+
+    filas2, _ = repo.parsear_pegado("beto@x.com\tBeto\trrhh")  # sin password
+    assert repo.validar_password(filas2[0]["password"])[0]
+
+
+def test_parsear_pegado_varias_lineas_mixtas():
+    filas, errores = repo.parsear_pegado(
         "ana@x.com\tAna\tsupervisor\tOps\n"
         "no-email-linea\n"
-        "beto@x.com;Beto;rrhh"
+        "beto@x.com\tBeto\trrhh"
     )
     assert [f["email"] for f in filas] == ["ana@x.com", "beto@x.com"]
-    assert filas[0]["rol"] == "supervisor"
-    assert filas[1]["nombre"] == "Beto"
+    assert len(errores) == 1 and "Línea 2" in errores[0]
 
 
 # ── cliente falso ─────────────────────────────────────────────────────────
@@ -129,7 +198,7 @@ def test_resetear_password():
 
 
 def test_cargar_masivo_dry_run():
-    filas = repo.parsear_pegado("ana@x.com\tAna\tsupervisor\nmal\nbeto@x.com\tBeto\trrhh")
+    filas, _errores = repo.parsear_pegado("ana@x.com\tAna\tsupervisor\nmal\nbeto@x.com\tBeto\trrhh")
     res = repo.cargar_masivo(filas, generar_passwords=True, dry_run=True)
     assert res.creados == 2
     assert all(r.accion == "CREARÍA" for r in res.resultados)

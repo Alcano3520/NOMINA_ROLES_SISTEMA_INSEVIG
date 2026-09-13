@@ -164,6 +164,7 @@ class CargaUsuariosState(rx.State):
     mas_generar: bool = True
     mas_actualizar: bool = False
     mas_filas: list[dict] = []
+    mas_errores: list[str] = []
     mas_resultados: list[dict] = []
     mas_resumen: dict = {}
     mas_procesando: bool = False
@@ -182,7 +183,7 @@ class CargaUsuariosState(rx.State):
 
     @rx.event
     def mas_parsear(self):
-        self.mas_filas = repo.parsear_pegado(self.mas_pegado)
+        self.mas_filas, self.mas_errores = repo.parsear_pegado(self.mas_pegado)
         self.mas_resultados = []
         self.mas_resumen = {}
 
@@ -218,5 +219,6 @@ class CargaUsuariosState(rx.State):
     def mas_limpiar(self):
         self.mas_pegado = ""
         self.mas_filas = []
+        self.mas_errores = []
         self.mas_resultados = []
         self.mas_resumen = {}

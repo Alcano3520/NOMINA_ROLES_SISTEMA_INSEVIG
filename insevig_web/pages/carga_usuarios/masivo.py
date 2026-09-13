@@ -86,6 +86,18 @@ def masivo() -> rx.Component:
                         gap="2", align="center", wrap="wrap", width="100%",
                     ),
                     rx.cond(
+                        _S.mas_errores.length() > 0,
+                        rx.callout(
+                            rx.vstack(
+                                rx.text(_S.mas_errores.length().to_string()
+                                        + " línea(s) con error (no se cargaron):", weight="bold"),
+                                rx.foreach(_S.mas_errores, lambda e: rx.text(e, size="1")),
+                                spacing="1",
+                            ),
+                            color_scheme="red", size="1",
+                        ),
+                    ),
+                    rx.cond(
                         _S.mas_resumen.contains("creados"),
                         rx.callout(
                             rx.cond(_S.mas_resumen["dry_run"], "Simulación — ", "")
