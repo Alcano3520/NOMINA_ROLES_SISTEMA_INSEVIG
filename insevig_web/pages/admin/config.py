@@ -27,26 +27,45 @@ def config() -> rx.Component:
 
     return pagina(
         page_heading("Configuración", "Valores efectivos (desde .env). Los secretos van enmascarados."),
-        card(
-            rx.vstack(
-                _fila("SQL Server", f"{s.sqlserver_host} / {s.sqlserver_db}"),
-                _fila("Filtro SQL", s.sqlserver_filter),
-                _fila("Drivers ODBC", ", ".join(s.driver_list)),
-                _fila("SQL Server user RO", s.sqlserver_user_ro),
-                _fila("SQL Server pwd RO", mask(s.sqlserver_pwd_ro)),
-                _fila("SQL Server user RW", s.sqlserver_user_rw or "(no configurado)"),
-                _fila("Supabase URL", s.supabase_url or "(no configurado)"),
-                _fila("Supabase key", mask(s.supabase_key)),
-                _fila("BD de la app", s.app_db_url.split("://")[0] + "://…"),
-                _fila("Email backend", s.email_backend),
-                _fila("IA proveedor", s.ia_provider),
-                _fila("Feature flags", ", ".join(sorted(s.flags)) or "(ninguno)"),
-                _fila("STORAGE_DIR", str(s.storage_dir)),
-                spacing="0",
-                align="start",
+        # BUG REAL corregido 2026-09-13 (reportado: "la parte de configuración
+        # está de más, son datos que deben verse para el técnico"): esta
+        # tarjeta muestra host/BD de SQL Server, drivers ODBC, usuario de solo
+        # lectura, URL de Supabase, backend de email, etc. -- información de
+        # infraestructura, no de negocio. Solo estaba gateada por `admin:ver`
+        # (permiso de módulo, que puede tenerlo un rol de gerencia/RRHH para
+        # administrar usuarios), NO por ser específicamente el rol "admin"
+        # (técnico) -- mismo criterio que ya usa el botón "Actualizar
+        # sistema" de más abajo en esta misma página.
+        rx.cond(
+            AuthState.es_admin,
+            card(
+                rx.vstack(
+                    _fila("SQL Server", f"{s.sqlserver_host} / {s.sqlserver_db}"),
+                    _fila("Filtro SQL", s.sqlserver_filter),
+                    _fila("Drivers ODBC", ", ".join(s.driver_list)),
+                    _fila("SQL Server user RO", s.sqlserver_user_ro),
+                    _fila("SQL Server pwd RO", mask(s.sqlserver_pwd_ro)),
+                    _fila("SQL Server user RW", s.sqlserver_user_rw or "(no configurado)"),
+                    _fila("Supabase URL", s.supabase_url or "(no configurado)"),
+                    _fila("Supabase key", mask(s.supabase_key)),
+                    _fila("BD de la app", s.app_db_url.split("://")[0] + "://…"),
+                    _fila("Email backend", s.email_backend),
+                    _fila("IA proveedor", s.ia_provider),
+                    _fila("Feature flags", ", ".join(sorted(s.flags)) or "(ninguno)"),
+                    _fila("STORAGE_DIR", str(s.storage_dir)),
+                    spacing="0",
+                    align="start",
+                    width="100%",
+                ),
                 width="100%",
             ),
-            width="100%",
+            card(
+                rx.text(
+                    "Esta sección es solo para el equipo técnico.",
+                    size="2", color_scheme="gray",
+                ),
+                width="100%",
+            ),
         ),
         card(
             rx.vstack(
