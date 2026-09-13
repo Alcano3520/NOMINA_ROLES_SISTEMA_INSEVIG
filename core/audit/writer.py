@@ -66,7 +66,16 @@ def audit_scope(
     target_key: str = "",
     antes: object = None,
     after: object = None,
+    ip: str = "",
 ) -> Iterator[AuditWriter]:
+    """`ip`: IP del cliente (`self.router.session.client_ip` desde un
+    `rx.State`) -- el modelo `AuditLog.ip` existe desde siempre pero ningún
+    llamador la pasaba (2026-09, hallazgo del audit). No hay forma de
+    capturarla "centralizada" con un solo `ContextVar`: cada evento de
+    Reflex corre en su propio contexto async, así que `usuario_var`/
+    `request_id_var` (más abajo) nunca se poblaban tampoco en la práctica
+    -- `ip`, igual que `usuario`/`roles`, se pasa explícito en cada
+    llamador que la tenga a mano."""
     with appdb.session() as s:
         row = AuditLog(
             username=usuario or usuario_var.get(),
@@ -80,6 +89,7 @@ def audit_scope(
             after_json=_json(after),
             status="pending",
             request_id=request_id_var.get(),
+            ip=ip,
         )
         s.add(row)
         s.commit()
@@ -120,6 +130,7 @@ def registrar_evento(
                 target_table=extra.get("target_table", ""),
                 target_key=str(extra.get("target_key", "")),
                 fuente=extra.get("fuente", ""),
+                ip=extra.get("ip", ""),
             )
         )
         s.commit()

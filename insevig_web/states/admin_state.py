@@ -141,7 +141,7 @@ class AdminState(rx.State):
         self.sbu_msg = "Guardado."
         registrar_evento(
             "admin", "guardar_sbu", usuario=auth_st.username, roles=set(auth_st.roles),
-            target_table="app_config", target_key="sbu_por_anio",
+            target_table="app_config", target_key="sbu_por_anio", ip=self.router.session.client_ip,
         )
 
     # ── Parámetros de negocio: IESS%/Fondo Reserva%/Región/Anticipo ────
@@ -201,6 +201,7 @@ class AdminState(rx.State):
         registrar_evento(
             "admin", "guardar_liq_params", usuario=auth_st.username, roles=set(auth_st.roles),
             target_table="app_config", target_key="liquidaciones_params",
+            ip=self.router.session.client_ip,
         )
 
     # ── Proveedor de narrativa IA (préstamos) ──────────────────────────
@@ -241,7 +242,7 @@ class AdminState(rx.State):
         self.ia_msg = "Guardado. La narrativa usará este proveedor."
         registrar_evento(
             "admin", "guardar_ia_config", usuario=auth_st.username, roles=set(auth_st.roles),
-            target_table="app_config", target_key="ia_config",
+            target_table="app_config", target_key="ia_config", ip=self.router.session.client_ip,
         )
 
     @rx.event
@@ -335,7 +336,7 @@ class AdminState(rx.State):
         if r == "ok":
             registrar_evento(
                 "admin", "crear_usuario", usuario=actual.username, roles=set(actual.roles),
-                target_table="users", target_key=u,
+                target_table="users", target_key=u, ip=self.router.session.client_ip,
             )
         self.nu_username = self.nu_nombre = self.nu_clave = ""
         await self.cargar_usuarios()
@@ -378,7 +379,7 @@ class AdminState(rx.State):
         if r == "ok":
             registrar_evento(
                 "admin", "resetear_clave", usuario=actual.username, roles=set(actual.roles),
-                target_table="users", target_key=str(uid),
+                target_table="users", target_key=str(uid), ip=self.router.session.client_ip,
             )
         self.reset_user_id = 0
         self.reset_clave = ""
@@ -405,7 +406,7 @@ class AdminState(rx.State):
             registrar_evento(
                 "admin", "activar_usuario" if nuevo_estado else "desactivar_usuario",
                 usuario=actual.username, roles=set(actual.roles),
-                target_table="users", target_key=str(user_id),
+                target_table="users", target_key=str(user_id), ip=self.router.session.client_ip,
             )
         await self.cargar_usuarios()
 

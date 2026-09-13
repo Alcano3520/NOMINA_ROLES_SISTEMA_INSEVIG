@@ -108,3 +108,48 @@ def test_registry_coherente():
         assert m.items, f"{m.nombre} sin items de navegación"
         for it in m.items:
             assert it.ruta.startswith("/")
+
+
+def test_states_no_awaitean_su_propio_handler_generador():
+    """Ningún `@rx.event async def` con `yield` (un async-generator function)
+    se invoca con `await self.metodo()` desde OTRO handler del mismo state --
+    es inválido en Python (`TypeError: object async_generator can't be used
+    in 'await' expression`) y solo falla en producción, cuando ese código se
+    ejecuta de verdad (no lo agarra ni ruff ni mypy).
+
+    Bug real (2026-09): encontrado repetido en 8 métodos de 7 state files
+    (bitacora, descuentos_pendientes, empleados, liquidaciones_editor,
+    liquidaciones_guardadas, registrador, vacaciones) -- el patrón correcto es
+    extraer la lógica a un helper privado `async def` SIN `yield` (awaitable
+    directo) y que el handler público, con `yield`, llame a ESE helper.
+    `return OtroState.handler_generador` (sin `await`, encadenando el evento)
+    sigue siendo válido y no lo marca este test."""
+    fallos: list[str] = []
+    for archivo in sorted(WEB.glob("states/*_state.py")):
+        arbol = ast.parse(archivo.read_text(encoding="utf-8"), filename=str(archivo))
+        for clase in ast.walk(arbol):
+            if not isinstance(clase, ast.ClassDef):
+                continue
+            generadores: set[str] = set()
+            metodos: dict[str, ast.AsyncFunctionDef] = {}
+            for nodo in clase.body:
+                if isinstance(nodo, ast.AsyncFunctionDef):
+                    metodos[nodo.name] = nodo
+                    if any(isinstance(n, (ast.Yield, ast.YieldFrom)) for n in ast.walk(nodo)):
+                        generadores.add(nodo.name)
+            for nombre, nodo in metodos.items():
+                for sub in ast.walk(nodo):
+                    if (
+                        isinstance(sub, ast.Await)
+                        and isinstance(sub.value, ast.Call)
+                        and isinstance(sub.value.func, ast.Attribute)
+                        and isinstance(sub.value.func.value, ast.Name)
+                        and sub.value.func.value.id == "self"
+                        and sub.value.func.attr in generadores
+                    ):
+                        fallos.append(
+                            f"{archivo.relative_to(RAIZ)}:{sub.lineno} en {clase.name}.{nombre}(): "
+                            f"'await self.{sub.value.func.attr}()' -- ese método tiene `yield` "
+                            "(es un async generator, no se puede awaitear)"
+                        )
+    assert not fallos, "await inválido sobre handler generador:\n" + "\n".join(fallos)
