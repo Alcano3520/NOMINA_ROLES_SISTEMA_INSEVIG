@@ -52,15 +52,36 @@ def _toggle_todo() -> rx.Component:
     )
 
 
+# BUG REAL corregido 2026-09-14 (reportado: "al poner préstamos en buscador
+# no sale"): "Préstamos" (la etiqueta real, con tilde) no contiene la
+# cadena "prestamos" (sin tilde, como la tipeó el usuario) -- `.lower()`
+# NO saca tildes, "préstamos".lower() sigue siendo "préstamos". Se
+# normalizan tildes de los dos lados (etiqueta estática en Python, texto
+# tipeado con `.replace()` encadenado en el Var -- confirmado que compila
+# a `.replaceAll()` en JS) antes de comparar.
+_TRANS_ACENTOS = str.maketrans("áéíóúñü", "aeiounu")
+
+
+def _sin_acentos(s: str) -> str:
+    return s.lower().translate(_TRANS_ACENTOS)
+
+
+def _sin_acentos_var(v: rx.Var) -> rx.Var:
+    v = v.lower()
+    for a, b in zip("áéíóúñü", "aeiounu", strict=True):
+        v = v.replace(a, b)
+    return v
+
+
 def _coincide(*etiquetas: str) -> rx.Var:
     """True si no hay búsqueda activa, o si CUALQUIERA de las etiquetas
     (texto estático, conocido en Python al armar el componente) contiene el
     texto tipeado -- pedido: "abajo de colapsar todo poner un buscador...
     ponga 'egreso' y salga lo relacionado con eso"."""
     cond = AppState.sidebar_busqueda == ""
-    q = AppState.sidebar_busqueda.lower()
+    q = _sin_acentos_var(AppState.sidebar_busqueda)
     for et in etiquetas:
-        cond = cond | rx.Var.create(et.lower()).contains(q)
+        cond = cond | rx.Var.create(_sin_acentos(et)).contains(q)
     return cond
 
 
