@@ -513,10 +513,17 @@ def _tab_consulta() -> rx.Component:
 
 def _consulta_detallada() -> rx.Component:
     def _cell_valor(f):
-        clave = (
-            f["numero"].to_string() + "-" + f["empleado"].to_string() + "-"
-            + f["clase"].to_string() + "-" + f["secuencia"].to_string()
-        )
+        # BUG REAL corregido 2026-09-14 (reportado: "no me dejó editar, salía
+        # valor no válido" -- SIEMPRE, sin importar lo que se tipeara):
+        # `.to_string()` sobre un valor de dict sin tipo estático conocido
+        # compila a `JSON.stringify(...)`, no a texto plano -- para un
+        # string como "1234" da literalmente `"1234"` (con las comillas
+        # adentro). La `clave` de acá (con comillas de más) nunca coincidía
+        # con la que arma `guardar_valor_fila` en el state (f-string Python
+        # normal, sin comillas) -- `cq_edit_val.get(clave, "")` nunca
+        # encontraba nada, `float("")` fallaba siempre. Un f-string con Vars
+        # adentro SÍ arma un template literal de JS normal, sin JSON.stringify.
+        clave = f"{f['numero']}-{f['empleado']}-{f['clase']}-{f['secuencia']}"
         return rx.cond(
             f["asentado"],
             rx.text("$" + f["valor"].to_string()),
