@@ -328,11 +328,20 @@ class VacacionesState(rx.State):
 
     @rx.event
     async def firmar_gozada(self, vac_id: int):
+        # BUG REAL corregido 2026-09-14 (pedido: "testeá muchas más secciones
+        # que editan o escriben en la base de datos"): sin try/except acá,
+        # un error real (permiso denegado, timeout, etc.) tumbaba el evento
+        # en silencio, sin avisar nada -- mismo patrón ya arreglado en
+        # liquidaciones y faltas.
         auth = await self.get_state(AuthState)
         if "vacaciones:editar" not in auth.permisos_flat:
             self.msg = "Sin permiso."
             return
-        await asyncio.to_thread(V.marcar_firmada, vac_id, usuario=auth.username, roles=set(auth.roles))
+        try:
+            await asyncio.to_thread(V.marcar_firmada, vac_id, usuario=auth.username, roles=set(auth.roles))
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error al firmar: {e}"
+            return
         await self._cargar_empleado()
 
     @rx.event
@@ -341,7 +350,11 @@ class VacacionesState(rx.State):
         if "vacaciones:eliminar" not in auth.permisos_flat:
             self.msg = "Sin permiso."
             return
-        await asyncio.to_thread(V.eliminar, vac_id, usuario=auth.username, roles=set(auth.roles))
+        try:
+            await asyncio.to_thread(V.eliminar, vac_id, usuario=auth.username, roles=set(auth.roles))
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error al eliminar: {e}"
+            return
         await self._cargar_empleado()
 
     @rx.event

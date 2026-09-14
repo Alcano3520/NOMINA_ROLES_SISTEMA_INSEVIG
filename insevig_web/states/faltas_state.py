@@ -409,6 +409,14 @@ class FaltasState(rx.State):
 
     @rx.event
     async def guardar_edicion(self):
+        # BUG REAL corregido 2026-09-14 (pedido: "testeá muchas más secciones
+        # que editan o escriben en la base de datos" -- tras encontrar un
+        # permiso de SQL Server denegado en un DELETE de otro módulo):
+        # `repo.editar_registro` NO atrapa sus propias excepciones (a
+        # diferencia de otros repos que devuelven `Vista(False, error=...)`
+        # para todo) -- un error real de SQL Server (permiso denegado,
+        # timeout, etc.) no atrapado acá tumbaba el evento en silencio, sin
+        # avisar nada, igual que el bug ya arreglado en liquidaciones.
         emp, fv = self.edit_empleado, self.edit_fecha_ven
         try:
             totaus = float(self.edit_totaus or "0")
@@ -417,10 +425,14 @@ class FaltasState(rx.State):
             return
         observ = self.edit_observ
         auth = await self.get_state(AuthState)
-        v = await asyncio.to_thread(
-            repo.editar_registro, emp, fv, totaus, observ,
-            usuario=auth.username, roles=_roles(auth), dry_run=False,
-        )
+        try:
+            v = await asyncio.to_thread(
+                repo.editar_registro, emp, fv, totaus, observ,
+                usuario=auth.username, roles=_roles(auth), dry_run=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.per_msg = f"Error al guardar: {e}"
+            return
         self.edit_abierto = False
         self.per_msg = v.detalle if v.ok else (v.error or "error")
         await self._recargar_periodo()
@@ -428,10 +440,14 @@ class FaltasState(rx.State):
     @rx.event
     async def eliminar_fila_periodo(self, fila: dict):
         auth = await self.get_state(AuthState)
-        v = await asyncio.to_thread(
-            repo.eliminar_registro, fila["empleado"], fila["fecha_ven"],
-            usuario=auth.username, roles=_roles(auth), dry_run=False,
-        )
+        try:
+            v = await asyncio.to_thread(
+                repo.eliminar_registro, fila["empleado"], fila["fecha_ven"],
+                usuario=auth.username, roles=_roles(auth), dry_run=False,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.per_msg = f"Error al eliminar: {e}"
+            return
         self.per_msg = v.detalle if v.ok else (v.error or "error")
         await self._recargar_periodo()
 

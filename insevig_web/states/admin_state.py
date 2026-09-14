@@ -137,7 +137,11 @@ class AdminState(rx.State):
 
             set_sbu({k: float(v) for k, v in data.items() if str(v).replace(".", "", 1).isdigit()})
 
-        await asyncio.to_thread(_save)
+        try:
+            await asyncio.to_thread(_save)
+        except Exception as e:  # noqa: BLE001
+            self.sbu_msg = f"Error al guardar: {e}"
+            return
         self.sbu_msg = "Guardado."
         registrar_evento(
             "admin", "guardar_sbu", usuario=auth_st.username, roles=set(auth_st.roles),
@@ -196,7 +200,11 @@ class AdminState(rx.State):
                 anticipo_dias_umbral=umbral, anticipo_divisor=divisor,
             )
 
-        await asyncio.to_thread(_save)
+        try:
+            await asyncio.to_thread(_save)
+        except Exception as e:  # noqa: BLE001
+            self.liq_params_msg = f"Error al guardar: {e}"
+            return
         self.liq_params_msg = "Guardado."
         registrar_evento(
             "admin", "guardar_liq_params", usuario=auth_st.username, roles=set(auth_st.roles),
@@ -238,7 +246,11 @@ class AdminState(rx.State):
 
             set_ia_config(prov, base, model)
 
-        await asyncio.to_thread(_save)
+        try:
+            await asyncio.to_thread(_save)
+        except Exception as e:  # noqa: BLE001
+            self.ia_msg = f"Error al guardar: {e}"
+            return
         self.ia_msg = "Guardado. La narrativa usará este proveedor."
         registrar_evento(
             "admin", "guardar_ia_config", usuario=auth_st.username, roles=set(auth_st.roles),
@@ -331,7 +343,11 @@ class AdminState(rx.State):
                 s.commit()
                 return "ok"
 
-        r = await asyncio.to_thread(_crear)
+        try:
+            r = await asyncio.to_thread(_crear)
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error al crear: {e}"
+            return
         self.msg = "Usuario creado." if r == "ok" else "Ese usuario ya existe."
         if r == "ok":
             registrar_evento(
@@ -374,7 +390,11 @@ class AdminState(rx.State):
                 s.commit()
                 return "ok"
 
-        r = await asyncio.to_thread(_r)
+        try:
+            r = await asyncio.to_thread(_r)
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error al resetear: {e}"
+            return
         self.msg = "Contraseña reseteada." if r == "ok" else "Usuario no encontrado."
         if r == "ok":
             registrar_evento(
@@ -401,7 +421,11 @@ class AdminState(rx.State):
                     return u.is_active
                 return None
 
-        nuevo_estado = await asyncio.to_thread(_t)
+        try:
+            nuevo_estado = await asyncio.to_thread(_t)
+        except Exception as e:  # noqa: BLE001
+            self.msg = f"Error: {e}"
+            return
         if nuevo_estado is not None:
             registrar_evento(
                 "admin", "activar_usuario" if nuevo_estado else "desactivar_usuario",

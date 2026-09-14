@@ -334,10 +334,13 @@ class LiquidacionesEditorState(rx.State):
             self.periodo_msg = "Sin permiso."
             return 0.0
         filas = self.periodo_meses.get(tipo) or []
-        ok, final, err = await asyncio.to_thread(
-            repo.guardar_periodo_calculo, self.ed_id, tipo, filas,
-            usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, final, err = await asyncio.to_thread(
+                repo.guardar_periodo_calculo, self.ed_id, tipo, filas,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, final, err = False, 0.0, str(e)
         if not ok:
             self.periodo_msg = err
             return 0.0
@@ -439,10 +442,13 @@ class LiquidacionesEditorState(rx.State):
         if delta == 0:
             self.ed_msg = "El monto a agregar no puede ser 0."
             return
-        ok, error = await asyncio.to_thread(
-            repo.ajustar_concepto, self.ed_id, self.aj_abierto, delta,
-            motivo=self.aj_motivo.strip(), usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, error = await asyncio.to_thread(
+                repo.ajustar_concepto, self.ed_id, self.aj_abierto, delta,
+                motivo=self.aj_motivo.strip(), usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)
         if not ok:
             self.ed_msg = error
             return
@@ -518,11 +524,14 @@ class LiquidacionesEditorState(rx.State):
         auth = await self.get_state(AuthState)
         if "liquidaciones:editar" not in auth.permisos_flat:
             return rx.toast.error("Sin permiso.")
-        ok, error = await asyncio.to_thread(
-            repo.editar_ajuste, self.hist_edit_id,
-            nuevo_monto=_f(self.hist_edit_monto), motivo=self.hist_edit_motivo.strip(),
-            usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, error = await asyncio.to_thread(
+                repo.editar_ajuste, self.hist_edit_id,
+                nuevo_monto=_f(self.hist_edit_monto), motivo=self.hist_edit_motivo.strip(),
+                usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)
         if not ok:
             self.ed_msg = error
             return
@@ -535,9 +544,12 @@ class LiquidacionesEditorState(rx.State):
         auth = await self.get_state(AuthState)
         if "liquidaciones:editar" not in auth.permisos_flat:
             return rx.toast.error("Sin permiso.")
-        ok, error = await asyncio.to_thread(
-            repo.eliminar_ajuste, ajuste_id, usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, error = await asyncio.to_thread(
+                repo.eliminar_ajuste, ajuste_id, usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)
         if not ok:
             self.ed_msg = error
             return
@@ -602,10 +614,13 @@ class LiquidacionesEditorState(rx.State):
         if not cambios:
             self.ed_msg = "No cambiaste ningún valor."
             return
-        ok, error = await asyncio.to_thread(
-            repo.editar_valores_liquidacion, self.ed_id, cambios,
-            usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, error = await asyncio.to_thread(
+                repo.editar_valores_liquidacion, self.ed_id, cambios,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)
         if not ok:
             self.ed_msg = error
             return
@@ -618,10 +633,13 @@ class LiquidacionesEditorState(rx.State):
         auth = await self.get_state(AuthState)
         if "admin" not in auth.roles:
             return rx.toast.error("Solo un administrador puede eliminar una liquidación.")
-        ok, error = await asyncio.to_thread(
-            repo.eliminar_liquidacion, self.ed_id, "Eliminada desde el Editor de Liquidaciones",
-            usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, error = await asyncio.to_thread(
+                repo.eliminar_liquidacion, self.ed_id, "Eliminada desde el Editor de Liquidaciones",
+                usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)
         self.ed_msg = "Eliminada." if ok else f"No se pudo eliminar: {error}"
         if ok:
             self.cerrar()

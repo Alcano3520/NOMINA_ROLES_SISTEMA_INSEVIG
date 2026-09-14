@@ -81,14 +81,19 @@ class CargaUsuariosState(rx.State):
             pwd = repo.generar_password_segura()
             generada = True
         auth = await self.get_state(AuthState)
-        r = await asyncio.to_thread(
-            repo.crear_usuario,
-            {"email": self.ind_email, "nombre": self.ind_nombre, "rol": self.ind_rol,
-             "departamento": self.ind_departamento, "password": pwd,
-             "_password_generada": generada},
-            actualizar_si_existe=self.ind_actualizar,
-            usuario_operador=auth.username,
-        )
+        try:
+            r = await asyncio.to_thread(
+                repo.crear_usuario,
+                {"email": self.ind_email, "nombre": self.ind_nombre, "rol": self.ind_rol,
+                 "departamento": self.ind_departamento, "password": pwd,
+                 "_password_generada": generada},
+                actualizar_si_existe=self.ind_actualizar,
+                usuario_operador=auth.username,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.ind_resultado = {}
+            self.ind_msg = f"Error: {e}"
+            return
         self.ind_resultado = dataclasses.asdict(r)
         self.ind_msg = r.detalle or ("OK" if r.ok else "Error")
 
@@ -154,9 +159,12 @@ class CargaUsuariosState(rx.State):
         pwd = self.rst_password or repo.generar_password_segura()
         self.rst_password = pwd
         auth = await self.get_state(AuthState)
-        ok, msg = await asyncio.to_thread(
-            repo.resetear_password, self.rst_user["id"], pwd, usuario_operador=auth.username,
-        )
+        try:
+            _ok, msg = await asyncio.to_thread(
+                repo.resetear_password, self.rst_user["id"], pwd, usuario_operador=auth.username,
+            )
+        except Exception as e:  # noqa: BLE001
+            msg = f"Error: {e}"
         self.rst_msg = msg
 
     # ── masivo ───────────────────────────────────────────────────────
@@ -189,11 +197,15 @@ class CargaUsuariosState(rx.State):
 
     @rx.event
     async def mas_dry_run(self):
-        r = await asyncio.to_thread(
-            repo.cargar_masivo, self.mas_filas,
-            generar_passwords=self.mas_generar, actualizar_si_existe=self.mas_actualizar,
-            dry_run=True,
-        )
+        try:
+            r = await asyncio.to_thread(
+                repo.cargar_masivo, self.mas_filas,
+                generar_passwords=self.mas_generar, actualizar_si_existe=self.mas_actualizar,
+                dry_run=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            self.mas_errores = [*self.mas_errores, f"Error: {e}"]
+            return
         self.mas_resultados = [dataclasses.asdict(x) for x in r.resultados]
         self.mas_resumen = {"creados": r.creados, "actualizados": r.actualizados,
                             "errores": r.errores, "dry_run": True}
@@ -212,6 +224,8 @@ class CargaUsuariosState(rx.State):
             self.mas_resultados = [dataclasses.asdict(x) for x in r.resultados]
             self.mas_resumen = {"creados": r.creados, "actualizados": r.actualizados,
                                 "errores": r.errores, "dry_run": False}
+        except Exception as e:  # noqa: BLE001
+            self.mas_errores = [*self.mas_errores, f"Error: {e}"]
         finally:
             self.mas_procesando = False
 

@@ -228,10 +228,13 @@ class LiquidacionesGuardadasState(rx.State):
             if abs(nuevo - viejo) < 0.005:
                 continue
             lid, cod = clave.split("|", 1)
-            ok, error = await asyncio.to_thread(
-                repo.ajustar_concepto, lid, cod, round(nuevo - viejo, 2),
-                motivo=motivo, usuario=auth.username, roles=set(auth.roles),
-            )
+            try:
+                ok, error = await asyncio.to_thread(
+                    repo.ajustar_concepto, lid, cod, round(nuevo - viejo, 2),
+                    motivo=motivo, usuario=auth.username, roles=set(auth.roles),
+                )
+            except Exception as e:  # noqa: BLE001
+                ok, error = False, str(e)
             if ok:
                 n_ok += 1
             else:
@@ -270,9 +273,13 @@ class LiquidacionesGuardadasState(rx.State):
         if not self.cuadre_texto.strip():
             self.cuadre_msg = "Pegá al menos una línea (cédula, fecha de salida, monto)."
             return
-        n, errores = await asyncio.to_thread(
-            repo.cuadre_masivo, self.cuadre_texto, usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            n, errores = await asyncio.to_thread(
+                repo.cuadre_masivo, self.cuadre_texto, usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            self.cuadre_msg = f"Error: {e}"
+            return
         self.cuadre_msg = f"{n} liquidación(es) ajustada(s)." + (
             f"  {len(errores)} error(es): {' · '.join(errores[:5])}" if errores else ""
         )
@@ -415,10 +422,13 @@ class LiquidacionesGuardadasState(rx.State):
         if not cambios:
             self.edit_msg = "No cambiaste ningún valor."
             return
-        ok, error = await asyncio.to_thread(
-            repo.editar_valores_liquidacion, self.detalle_id, cambios,
-            usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, error = await asyncio.to_thread(
+                repo.editar_valores_liquidacion, self.detalle_id, cambios,
+                usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)
         if not ok:
             self.edit_msg = error
             return
@@ -526,13 +536,20 @@ class LiquidacionesGuardadasState(rx.State):
 
     @rx.event
     async def eliminar(self, liquidacion_id: str):
+        # Pedido: "testeá muchas más secciones que editan o escriben en la
+        # base de datos" -- sin try/except acá, una excepción real (no solo
+        # el `(False, error)` que `repo.eliminar_liquidacion` devuelve para
+        # los casos que anticipa) tumbaba el evento en silencio.
         auth = await self.get_state(AuthState)
         if "admin" not in auth.roles:
             return rx.toast.error("Solo un administrador puede eliminar una liquidación guardada.")
-        ok, error = await asyncio.to_thread(
-            repo.eliminar_liquidacion, liquidacion_id, "Eliminada desde Liquidaciones guardadas",
-            usuario=auth.username, roles=set(auth.roles),
-        )
+        try:
+            ok, error = await asyncio.to_thread(
+                repo.eliminar_liquidacion, liquidacion_id, "Eliminada desde Liquidaciones guardadas",
+                usuario=auth.username, roles=set(auth.roles),
+            )
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)
         self.msg = "Liquidación eliminada." if ok else f"No se pudo eliminar: {error}"
         if ok and self.detalle_id == liquidacion_id:
             self.cerrar_detalle()
@@ -561,10 +578,13 @@ class LiquidacionesGuardadasState(rx.State):
             )
         ok_n = err = 0
         for lid in ids:
-            ok, _error = await asyncio.to_thread(
-                repo.eliminar_liquidacion, lid, "Eliminada en lote desde Liquidaciones guardadas",
-                usuario=auth.username, roles=set(auth.roles),
-            )
+            try:
+                ok, _error = await asyncio.to_thread(
+                    repo.eliminar_liquidacion, lid, "Eliminada en lote desde Liquidaciones guardadas",
+                    usuario=auth.username, roles=set(auth.roles),
+                )
+            except Exception:  # noqa: BLE001
+                ok = False
             ok_n += int(ok)
             err += int(not ok)
         self.msg = f"{ok_n} liquidación(es) eliminada(s)." + (f" {err} con error." if err else "")
