@@ -617,7 +617,6 @@ def _tab_individual() -> rx.Component:
             ),
             width="100%",
         ),
-        _bulk_egr_ing(),
         spacing="4", width="100%",
     )
 
@@ -914,6 +913,7 @@ def index() -> rx.Component:
                 rx.tabs.trigger("Préstamo individual", value="prestamo"),
                 rx.tabs.trigger("Carga masiva préstamos", value="masiva"),
                 rx.tabs.trigger("Egresos / Ingresos", value="individual"),
+                rx.tabs.trigger("Carga masiva egresos/ingresos", value="masiva_egr"),
                 rx.tabs.trigger("BIESS quirografarios", value="biess"),
                 rx.tabs.trigger("Consulta / edición", value="consulta"),
                 wrap="wrap",
@@ -921,6 +921,7 @@ def index() -> rx.Component:
             rx.tabs.content(rx.cond(_S.tab == "prestamo", _tab_prestamo(), rx.box()), value="prestamo"),
             rx.tabs.content(rx.cond(_S.tab == "masiva", _tab_masiva(), rx.box()), value="masiva"),
             rx.tabs.content(rx.cond(_S.tab == "individual", _tab_individual(), rx.box()), value="individual"),
+            rx.tabs.content(rx.cond(_S.tab == "masiva_egr", _bulk_egr_ing(), rx.box()), value="masiva_egr"),
             rx.tabs.content(rx.cond(_S.tab == "biess", _tab_biess(), rx.box()), value="biess"),
             rx.tabs.content(rx.cond(_S.tab == "consulta", _tab_consulta(), rx.box()), value="consulta"),
             value=_S.tab,
