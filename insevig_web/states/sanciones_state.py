@@ -32,10 +32,22 @@ def _roles(auth: AuthState) -> set[str]:
 CATEGORIA_OPCIONES: tuple[str, ...] = ("TODOS", *catalogos.CATEGORIAS)
 
 
-def _en_categoria(fila: dict, categoria: str) -> bool:
+def _tipos_para_categoria(categoria: str) -> list[str] | None:
+    """`None` = sin filtro (TODOS). Si `categoria` es uno de los 3 grupos
+    amplios, sus tipos; si es un `tipo_sancion` INDIVIDUAL (ej. "FALTA"),
+    solo ese -- pedido 2026-09-14: "no tiene para seleccionar aprobar solo
+    un tipo, ejemplo solo falta o solo permiso" (antes FALTA/PERMISO solo se
+    podían filtrar juntos, como el grupo "Faltas y Permisos")."""
     if categoria == "TODOS":
-        return True
-    return fila.get("tipo_sancion") in catalogos.CATEGORIAS.get(categoria, [])
+        return None
+    if categoria in catalogos.CATEGORIAS:
+        return catalogos.CATEGORIAS[categoria]
+    return [categoria]
+
+
+def _en_categoria(fila: dict, categoria: str) -> bool:
+    tipos = _tipos_para_categoria(categoria)
+    return tipos is None or fila.get("tipo_sancion") in tipos
 
 
 class SancionesState(rx.State):
@@ -197,7 +209,7 @@ class SancionesState(rx.State):
         self.hist_page = max(1, page)
         yield
         try:
-            tipos = catalogos.CATEGORIAS.get(self.hist_categoria)
+            tipos = _tipos_para_categoria(self.hist_categoria)
             res = await asyncio.to_thread(
                 repo.obtener_procesadas_completas, self.hist_page, tipos=tipos,
             )

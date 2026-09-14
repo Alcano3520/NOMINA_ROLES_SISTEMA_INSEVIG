@@ -28,3 +28,12 @@ def test_en_categoria_resto():
 
 def test_en_categoria_sin_tipo_sancion():
     assert _en_categoria({}, "Resto") is False
+
+
+def test_en_categoria_tipo_individual():
+    """Pedido 2026-09-14: poder filtrar/aprobar SOLO un tipo puntual (ej.
+    solo FALTA, sin PERMISO) -- antes FALTA y PERMISO solo se filtraban
+    juntos como el grupo "Faltas y Permisos"."""
+    assert _en_categoria({"tipo_sancion": "FALTA"}, "FALTA") is True
+    assert _en_categoria({"tipo_sancion": "PERMISO"}, "FALTA") is False
+    assert _en_categoria({"tipo_sancion": "PERMISO"}, "PERMISO") is True

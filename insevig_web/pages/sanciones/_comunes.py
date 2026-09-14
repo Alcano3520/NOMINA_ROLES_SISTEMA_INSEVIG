@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import reflex as rx
 
+from core.sanciones import catalogos
 from insevig_web.components.ui import native_select
-from insevig_web.states.sanciones_state import CATEGORIA_OPCIONES, SancionesState
+from insevig_web.states.sanciones_state import SancionesState
 
 _S = SancionesState
 
@@ -39,11 +40,24 @@ def tabs_nav(activo: str) -> rx.Component:
 
 
 def categoria_selector(value: rx.Var, on_change, **props) -> rx.Component:
-    """Filtro por categoría de tipo_sancion -- los mismos 3 botones
-    F&P/H&F/RST del sidebar de `main.py` (Faltas y Permisos / Horas y Franco
-    / Resto), acá como selector en vez de botones aparte."""
+    """Filtro por categoría de tipo_sancion, o por un tipo INDIVIDUAL --
+    pedido 2026-09-14: "no tiene para seleccionar aprobar solo un tipo,
+    ejemplo solo falta o solo permiso" (antes solo se podía elegir entre
+    "TODOS" o uno de los 3 grupos amplios F&P/H&F/RST del sidebar de
+    `main.py`; FALTA y PERMISO no se podían filtrar por separado). Cada
+    grupo es un `<optgroup>` con su opción "todo el grupo" arriba y cada
+    tipo suyo individual debajo -- `_tipos_para_categoria` en
+    `sanciones_state.py` interpreta cualquiera de los dos igual de bien."""
     return native_select(
-        *[rx.el.option(c, value=c) for c in CATEGORIA_OPCIONES],
+        rx.el.option("TODOS", value="TODOS"),
+        *[
+            rx.el.optgroup(
+                rx.el.option(f"{cat} (todo el grupo)", value=cat),
+                *[rx.el.option(t, value=t) for t in tipos],
+                label=cat,
+            )
+            for cat, tipos in catalogos.CATEGORIAS.items()
+        ],
         value=value, on_change=on_change, size="1",
         **props,
     )
