@@ -1074,13 +1074,40 @@ class RegistradorState(rx.State):
                 observacion=self.biess_obs, usuario="", roles=set(), dry_run=True,
             )
             return (
+                # "valor" como string (no float) -- mismo criterio que
+                # `pm_grid`/`bulk_grid`, cuyas celdas son todas texto para
+                # poder editarlas con `rx.input` (`_celda` no hace
+                # `.to_string()`, espera que el dict ya venga en texto).
                 [{"empleado": m.empleado, "cedula": m.cedula, "nombre": m.nombre,
-                  "valor": m.valor, "estado_biess": m.estado_biess} for m in movs],
+                  "valor": str(m.valor), "estado_biess": m.estado_biess} for m in movs],
                 avisos, dry,
             )
 
         self.movs, avisos, self.dry = await asyncio.to_thread(_prep)
         self.avisos = avisos[:50]
+
+    @rx.event
+    def biess_set_celda(self, idx: int, campo: str, v: str):
+        """Grilla editable de la previsualización BIESS -- pedido: "todas las
+        secciones de carga masiva del original tenían columnas parecidas a
+        un Excel, acá no" (antes `movs` se mostraba con `_tabla` de solo
+        lectura, sin poder corregir un valor mal leído del Excel a mano).
+        Recalcula el resumen (`dry`) al toque, igual que hace el .pyw al
+        editar una celda -- sin esto el usuario vería un total viejo hasta
+        volver a apretar "Previsualizar/emparejar"."""
+        m = list(self.movs)
+        if not (0 <= idx < len(m)):
+            return
+        m[idx] = {**m[idx], campo: v}
+        self.movs = m
+        activos = [x for x in m if x.get("estado_biess") == "activo" and x.get("empleado")]
+        self.dry = {
+            "a_insertar": len(activos),
+            "liquidados": sum(1 for x in m if x.get("estado_biess") == "liquidado"),
+            "no_encontrados": sum(1 for x in m if x.get("estado_biess") == "no_encontrado"),
+            "total": round(sum(float(x.get("valor") or 0) for x in activos), 2),
+            "insertados": 0, "numero": 0,
+        }
 
     @rx.event
     async def postear_biess(self):
@@ -1091,16 +1118,32 @@ class RegistradorState(rx.State):
         if not self.biess_obs.strip():
             self.error = "La observación es obligatoria."
             return
+        if not self.movs:
+            self.error = "Previsualice/empareje primero."
+            return
+        # Se registra lo que está en `movs` -- incluye cualquier corrección
+        # que la persona haya hecho a mano en la grilla (`biess_set_celda`),
+        # no se re-deriva de cero desde el Excel original.
         periodo = self.periodo or _periodo()
-        filas = list(self.filas_biess)
+        movs_editados = list(self.movs)
         clase, fecha, obs = self.biess_tipo, (self.biess_fecha or _hoy()), self.biess_obs
         usuario, roles = auth.username, set(auth.roles)
         self.error = ""
 
         def _post():
-            movs, _ = registrador.preparar_biess(filas, periodo, clase=clase)
+            from core.repos.registrador import Movimiento
+
+            movimientos = [
+                Movimiento(
+                    empleado=str(m.get("empleado", "")), clase=int(clase),
+                    valor=float(m.get("valor") or 0), concepto="", periodo=periodo,
+                    estado_biess=str(m.get("estado_biess", "")),
+                    cedula=str(m.get("cedula", "")), nombre=str(m.get("nombre", "")),
+                )
+                for m in movs_editados
+            ]
             return registrador.postear_biess(
-                movs, clase=clase, fecha=fecha, observacion=obs,
+                movimientos, clase=clase, fecha=fecha, observacion=obs,
                 usuario=usuario, roles=roles, dry_run=False,
             )
 

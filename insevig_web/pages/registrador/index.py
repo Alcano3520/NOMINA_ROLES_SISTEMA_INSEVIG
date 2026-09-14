@@ -838,19 +838,26 @@ def _tab_biess() -> rx.Component:
                         ),
                         rx.cond(
                             _S.movs.length() > 0,
-                            _tabla(
+                            # Grilla editable (no `_tabla` de solo lectura) --
+                            # pedido: "todas las secciones de carga masiva del
+                            # original tenían columnas parecidas a un Excel,
+                            # acá no". El Valor se puede corregir a mano si el
+                            # Excel se leyó mal; `postear_biess` registra lo
+                            # que quede acá, no lo que se leyó originalmente.
+                            _grilla(
                                 ["Cédula", "Código", "Nombre", "Valor", "Estado"],
                                 _S.movs,
-                                lambda m: rx.table.row(
+                                lambda m, i: rx.table.row(
                                     rx.table.cell(m["cedula"]),
                                     rx.table.cell(m["empleado"]),
                                     rx.table.cell(m["nombre"]),
-                                    rx.table.cell("$" + m["valor"].to_string()),
+                                    _celda(m, i, "valor", _S.biess_set_celda, tipo="number", w="110px"),
                                     rx.table.cell(
                                         rx.badge(m["estado_biess"], color_scheme=rx.match(
                                             m["estado_biess"], ("activo", "green"),
                                             ("liquidado", "amber"), "red"))
                                     ),
+                                    rx.table.cell(),  # `_grilla` agrega una cabecera "" para acciones
                                 ),
                             ),
                         ),
