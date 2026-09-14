@@ -52,6 +52,32 @@ def _toggle_todo() -> rx.Component:
     )
 
 
+def _coincide(*etiquetas: str) -> rx.Var:
+    """True si no hay búsqueda activa, o si CUALQUIERA de las etiquetas
+    (texto estático, conocido en Python al armar el componente) contiene el
+    texto tipeado -- pedido: "abajo de colapsar todo poner un buscador...
+    ponga 'egreso' y salga lo relacionado con eso"."""
+    cond = AppState.sidebar_busqueda == ""
+    q = AppState.sidebar_busqueda.lower()
+    for et in etiquetas:
+        cond = cond | rx.Var.create(et.lower()).contains(q)
+    return cond
+
+
+def _buscador() -> rx.Component:
+    return rx.el.input(
+        placeholder="Buscar… (ej. egreso)",
+        value=AppState.sidebar_busqueda,
+        on_change=AppState.set_sidebar_busqueda,
+        style={
+            "width": "100%", "padding": "6px 10px", "borderRadius": "6px",
+            "border": "1px solid rgba(255,255,255,.15)",
+            "background": "rgba(255,255,255,.06)", "color": "#fff",
+            "fontSize": "13px",
+        },
+    )
+
+
 def _seccion_label(texto: str) -> rx.Component:
     """Título de sección, cliqueable para colapsar/expandir SOLO esa
     sección (persistido en `localStorage`, sobrevive a un F5) -- con un
@@ -74,7 +100,8 @@ def _seccion_label(texto: str) -> rx.Component:
 
 
 def _entrada(icono: str, etiqueta: str, ruta: str, permiso: str,
-            *, indentado: bool = False, disponible: bool = True) -> rx.Component:
+            *, indentado: bool = False, disponible: bool = True,
+            forzar_visible: rx.Var | None = None) -> rx.Component:
     """Una fila cliqueable del sidebar (un `NavItem` puntual, no todo el módulo
     -- BUG REAL corregido 2026-09-12: antes se renderizaba solo UNA fila por
     módulo, usando `spec.ruta_principal` (el primer `NavItem`); el resto de
@@ -114,7 +141,8 @@ def _entrada(icono: str, etiqueta: str, ruta: str, permiso: str,
         _hover={"text_decoration": "none"},
         on_click=AppState.cerrar_sidebar,
     )
-    return rx.cond(AuthState.permisos_flat.contains(permiso), enlace)
+    coincide = _coincide(etiqueta) if forzar_visible is None else (_coincide(etiqueta) | forzar_visible)
+    return rx.cond(AuthState.permisos_flat.contains(permiso) & coincide, enlace)
 
 
 def _modulo(spec: ModuleSpec) -> rx.Component:
@@ -127,19 +155,27 @@ def _modulo(spec: ModuleSpec) -> rx.Component:
             spec.icono, spec.titulo, item.ruta, f"{spec.nombre}:{item.permiso}",
             disponible=spec.disponible,
         )
-    return rx.vstack(
-        rx.text(
-            spec.titulo, size="1", weight="bold", letter_spacing="0.02em",
-            color="rgba(255,255,255,.5)", padding="0.5rem 0.7rem 0.1rem 0.35rem",
+    # Si el texto buscado matchea el TÍTULO del módulo (ej. "sanciones"),
+    # se muestran todas sus páginas aunque ninguna se llame así -- si no,
+    # cada página se filtra por su propia etiqueta.
+    titulo_coincide = _coincide(spec.titulo)
+    return rx.cond(
+        titulo_coincide | _coincide(*[i.label for i in spec.items]),
+        rx.vstack(
+            rx.text(
+                spec.titulo, size="1", weight="bold", letter_spacing="0.02em",
+                color="rgba(255,255,255,.5)", padding="0.5rem 0.7rem 0.1rem 0.35rem",
+            ),
+            *[
+                _entrada(
+                    spec.icono, item.label, item.ruta, f"{spec.nombre}:{item.permiso}",
+                    indentado=True, disponible=spec.disponible, forzar_visible=titulo_coincide,
+                )
+                for item in spec.items
+            ],
+            spacing="0", width="100%", align_items="start",
         ),
-        *[
-            _entrada(
-                spec.icono, item.label, item.ruta, f"{spec.nombre}:{item.permiso}",
-                indentado=True, disponible=spec.disponible,
-            )
-            for item in spec.items
-        ],
-        spacing="0", width="100%", align_items="start",
+        rx.fragment(),
     )
 
 
@@ -148,14 +184,23 @@ def _grupo(titulo: str, ids: tuple[str, ...]) -> rx.Component:
     specs = [por_id[i] for i in ids if i in por_id]
     if not specs:
         return rx.fragment()
-    return rx.vstack(
-        _seccion_label(titulo),
-        rx.cond(
-            AppState.secciones_colapsadas.contains(titulo),
-            rx.fragment(),
-            rx.vstack(*[_modulo(s) for s in specs], spacing="1", width="100%", align_items="start"),
+    # Con búsqueda activa: la sección entera se oculta si nada suyo matchea
+    # (título de sección, de módulo, o de página), y se fuerza expandida
+    # (ignora `secciones_colapsadas`) para no esconder un resultado detrás
+    # de una sección que la persona había colapsado a mano.
+    etiquetas_todas = [titulo, *[s.titulo for s in specs], *[i.label for s in specs for i in s.items]]
+    return rx.cond(
+        _coincide(*etiquetas_todas),
+        rx.vstack(
+            _seccion_label(titulo),
+            rx.cond(
+                AppState.secciones_colapsadas.contains(titulo) & (AppState.sidebar_busqueda == ""),
+                rx.fragment(),
+                rx.vstack(*[_modulo(s) for s in specs], spacing="1", width="100%", align_items="start"),
+            ),
+            spacing="1", width="100%", align_items="start",
         ),
-        spacing="1", width="100%", align_items="start",
+        rx.fragment(),
     )
 
 
@@ -193,6 +238,7 @@ def sidebar_contenido(variant: str) -> rx.Component:
             padding="1.1rem 0.85rem 0.6rem",
         ),
         _toggle_todo(),
+        rx.box(_buscador(), width="100%", padding="0 0.85rem 0.5rem"),
         rx.box(height="1px", background="rgba(255,255,255,.08)", width="100%",
                margin="0.3rem 0 0.15rem"),
         rx.box(

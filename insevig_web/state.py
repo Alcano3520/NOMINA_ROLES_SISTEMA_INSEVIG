@@ -57,3 +57,13 @@ class AppState(rx.State):
             self.secciones_colapsadas_csv = ""
         else:
             self.secciones_colapsadas_csv = "|".join(titulos)
+
+    # ── Buscador del sidebar (debajo de "Colapsar todo") ──────────────────
+    # Pedido: "para cuando alguien no quiera navegar, solo ponga 'egreso' y
+    # salga lo relacionado" -- filtra módulos/páginas por texto, sin pegarle
+    # al server (el filtrado es puramente client-side, ver `sidebar.py`).
+    sidebar_busqueda: str = ""
+
+    @rx.event
+    def set_sidebar_busqueda(self, v: str):
+        self.sidebar_busqueda = v
