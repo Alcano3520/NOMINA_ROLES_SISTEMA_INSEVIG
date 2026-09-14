@@ -311,6 +311,18 @@ class RegistradorState(rx.State):
     masiva_msg: str = ""
     masiva_path: str = ""
 
+    # Pegado POR COLUMNA -- pedido explícito 2026-09-14 ("lo que tenía en
+    # anterior es que cada cosa se ponía en una columna, se ponía la cédula,
+    # cargaban los nombres, se pega cada cosa por columna"): una caja por
+    # columna de Excel, tal como se copian de a una desde la hoja original,
+    # en vez de tener que armar un bloque tabulado a mano. Alternativa al
+    # pegado combinado de arriba (`pm_pegar`), no lo reemplaza.
+    pm_col_codigo: str = ""
+    pm_col_valor_total: str = ""
+    pm_col_cuotas_valor: str = ""
+    pm_col_fecha: str = ""
+    pm_col_observacion: str = ""
+
     @rx.event
     def set_pm_modo(self, v: str):
         self.pm_modo = v
@@ -318,6 +330,32 @@ class RegistradorState(rx.State):
     @rx.event
     def set_pm_pegar(self, v: str):
         self.pm_pegar = v
+
+    @rx.event
+    def set_pm_col(self, campo: str, v: str):
+        setattr(self, f"pm_col_{campo}", v)
+
+    @rx.event
+    async def pm_cargar_columnas(self):
+        columnas = {
+            "codigo": self.pm_col_codigo, "valor_total": self.pm_col_valor_total,
+            "cuotas_valor": self.pm_col_cuotas_valor, "fecha": self.pm_col_fecha,
+            "observacion": self.pm_col_observacion,
+        }
+        listas = {c: [ln.strip() for ln in t.splitlines() if ln.strip()] for c, t in columnas.items()}
+        n = max((len(v) for v in listas.values()), default=0)
+        if n == 0:
+            return
+        g = list(self.pm_grid)
+        while len(g) < n:
+            g.append(_fila_pm())
+        for campo, valores in listas.items():
+            for i, val in enumerate(valores):
+                g[i] = {**g[i], campo: val}
+        self.pm_grid = g
+        self.pm_col_codigo = self.pm_col_valor_total = self.pm_col_cuotas_valor = ""
+        self.pm_col_fecha = self.pm_col_observacion = ""
+        await self.pm_validar()  # "cargaban los nombres" -- automático al pegar la columna
 
     @rx.event
     def pm_nueva_fila(self):
@@ -656,6 +694,40 @@ class RegistradorState(rx.State):
     # para todo el lote, misma clase, observación común).
     bulk_modo: str = "individual"
     bulk_obs_comun: str = ""
+
+    # Pegado POR COLUMNA -- ver comentario largo en `pm_col_*` (préstamos),
+    # mismo pedido/criterio acá.
+    bulk_col_codigo: str = ""
+    bulk_col_clase: str = ""
+    bulk_col_valor: str = ""
+    bulk_col_fecha: str = ""
+    bulk_col_observacion: str = ""
+
+    @rx.event
+    def set_bulk_col(self, campo: str, v: str):
+        setattr(self, f"bulk_col_{campo}", v)
+
+    @rx.event
+    async def bulk_cargar_columnas(self):
+        columnas = {
+            "codigo": self.bulk_col_codigo, "clase": self.bulk_col_clase,
+            "valor": self.bulk_col_valor, "fecha": self.bulk_col_fecha,
+            "observacion": self.bulk_col_observacion,
+        }
+        listas = {c: [ln.strip() for ln in t.splitlines() if ln.strip()] for c, t in columnas.items()}
+        n = max((len(v) for v in listas.values()), default=0)
+        if n == 0:
+            return
+        g = list(self.bulk_grid)
+        while len(g) < n:
+            g.append(_fila_bi())
+        for campo, valores in listas.items():
+            for i, val in enumerate(valores):
+                g[i] = {**g[i], campo: val}
+        self.bulk_grid = g
+        self.bulk_col_codigo = self.bulk_col_clase = self.bulk_col_valor = ""
+        self.bulk_col_fecha = self.bulk_col_observacion = ""
+        await self.bulk_validar()  # "cargaban los nombres" -- automático al pegar la columna
 
     @rx.event
     def set_bulk_pegar(self, v: str):

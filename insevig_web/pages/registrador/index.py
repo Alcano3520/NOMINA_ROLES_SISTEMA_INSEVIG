@@ -29,6 +29,42 @@ def _msg() -> rx.Component:
     )
 
 
+def _pegado_columnas(columnas: list[tuple[str, rx.Var, object]], on_cargar) -> rx.Component:
+    """Pegado POR COLUMNA -- pedido explícito: "lo que tenía en anterior es
+    que cada cosa se ponía en una columna, se ponía la cédula, cargaban los
+    nombres, se pega cada cosa por columna" (como el sistema anterior). Una
+    caja de texto por columna de Excel -- se copia esa columna sola (Ctrl+C
+    en la hoja) y se pega tal cual, sin armar un bloque tabulado a mano.
+    Alternativa al pegado combinado que ya existía, no lo reemplaza."""
+    return card(
+        rx.vstack(
+            rx.text("Pegar por columna (como el sistema anterior)", size="2", weight="bold"),
+            rx.text(
+                "Copiá una columna entera de Excel (los valores, uno debajo del otro) y "
+                "pegala en el cuadro correspondiente -- las filas se arman por posición "
+                "(línea 1 de cada columna = fila 1, etc.).",
+                size="1", color_scheme="gray",
+            ),
+            rx.grid(
+                *[
+                    rx.vstack(
+                        rx.text(label, size="1", weight="bold", color_scheme="gray"),
+                        rx.text_area(value=val, on_change=on_change, rows="5", width="100%",
+                                     font_family="monospace"),
+                        spacing="1", width="100%",
+                    )
+                    for label, val, on_change in columnas
+                ],
+                columns=rx.breakpoints(initial="2", sm="3", lg=str(len(columnas))),
+                spacing="2", width="100%",
+            ),
+            rx.button("Cargar columnas", on_click=on_cargar, size="1", variant="soft"),
+            spacing="2", width="100%",
+        ),
+        width="100%", variant="surface",
+    )
+
+
 def _buscador_empleado() -> rx.Component:
     return card(
         rx.vstack(
@@ -314,9 +350,20 @@ def _tab_masiva() -> rx.Component:
                     ),
                     spacing="2", align="center",
                 ),
+                _pegado_columnas(
+                    [
+                        ("Código / cédula", _S.pm_col_codigo, lambda v: _S.set_pm_col("codigo", v)),
+                        ("Valor total", _S.pm_col_valor_total, lambda v: _S.set_pm_col("valor_total", v)),
+                        ("Cuotas / $ mensual", _S.pm_col_cuotas_valor,
+                         lambda v: _S.set_pm_col("cuotas_valor", v)),
+                        ("Fecha", _S.pm_col_fecha, lambda v: _S.set_pm_col("fecha", v)),
+                        ("Observación", _S.pm_col_observacion, lambda v: _S.set_pm_col("observacion", v)),
+                    ],
+                    _S.pm_cargar_columnas,
+                ),
                 rx.text(
-                    "Pega aquí desde Excel (una fila por préstamo): código o cédula · valor total · "
-                    "nº de cuotas (o cuota mensual) · fecha (AAAA-MM-DD) · observación.",
+                    "...o pegá todo junto (tabulado, una fila por préstamo): código o cédula · "
+                    "valor total · nº de cuotas (o cuota mensual) · fecha (AAAA-MM-DD) · observación.",
                     size="1", color_scheme="gray",
                 ),
                 rx.text_area(
@@ -644,8 +691,18 @@ def _bulk_egr_ing() -> rx.Component:
     return card(
         rx.vstack(
             rx.heading("Carga masiva de egresos / ingresos", size="3"),
+            _pegado_columnas(
+                [
+                    ("Código / cédula", _S.bulk_col_codigo, lambda v: _S.set_bulk_col("codigo", v)),
+                    ("Clase", _S.bulk_col_clase, lambda v: _S.set_bulk_col("clase", v)),
+                    ("Valor", _S.bulk_col_valor, lambda v: _S.set_bulk_col("valor", v)),
+                    ("Fecha", _S.bulk_col_fecha, lambda v: _S.set_bulk_col("fecha", v)),
+                    ("Observación", _S.bulk_col_observacion, lambda v: _S.set_bulk_col("observacion", v)),
+                ],
+                _S.bulk_cargar_columnas,
+            ),
             rx.text(
-                "Pega aquí desde Excel (una fila por movimiento): código o cédula · clase "
+                "...o pegá todo junto (tabulado, una fila por movimiento): código o cédula · clase "
                 "(203 multa, 202 anticipo, 102 bonificación…) · valor · fecha · observación.",
                 size="1", color_scheme="gray",
             ),
