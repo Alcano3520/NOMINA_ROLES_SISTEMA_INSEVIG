@@ -337,6 +337,41 @@ def test_vacaciones_pagadas_gozadas_degradan_sin_supabase(monkeypatch):
     assert lq.vacaciones_gozadas("0920116811") is None
 
 
+def test_vacaciones_gozadas_cuenta_sin_importar_estado_doc(monkeypatch):
+    """BUG REAL corregido 2026-09-15 (el usuario preguntó si el programa
+    "en verdad paga bien las vacaciones" -- confirmado con un caso real:
+    MORENO ANGULO ANA KAREN, cédula 0952863355, período 2024-2025, 15 días
+    tomados en marzo-2025, `estado_doc=None` porque RRHH nunca lo marcó
+    'completado'): antes, `vacaciones_gozadas` exigía
+    `estado_doc == 'completado'` y ese período quedaba invisible para el
+    motor, calculando ~$393 pendientes por algo ya disfrutado por
+    completo. Decisión del usuario: "solo con que esté registrado vale...
+    el problema es que RRHH no está haciendo bien el trabajo" -- no
+    filtrar por `estado_doc` en absoluto."""
+    datos = {"vac_registros": [
+        {"periodo": "2022-2023", "dias_tomados": 15, "estado_doc": "completado"},
+        {"periodo": "2024-2025", "dias_tomados": 15, "estado_doc": None},  # el caso real
+    ]}
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClientPorTabla(datos))
+    assert lq.vacaciones_gozadas("0952863355") == {"2022-2023": 15.0, "2024-2025": 15.0}
+
+
+def test_vacaciones_pagadas_cuenta_sin_importar_estado_doc(monkeypatch):
+    """BUG REAL corregido 2026-09-15 (mismo caso que vacaciones_gozadas):
+    20 registros reales con cheque YA girado (fecha_pago/no_cheque/banco/
+    valor_vacaciones reales) tenían `estado_doc='pendiente'` -- el trámite/
+    acta seguía abierto, pero la plata YA salió. Antes quedaban invisibles
+    para el motor (solo contaba 'completado' o nulo-con-valor). Decisión
+    del usuario: "si el cheque ya se giró ya está pagado" -- no filtrar por
+    `estado_doc`, solo mirar que haya un monto real."""
+    datos = {"vac_registros": [
+        {"periodo": "2025-2026", "valor_vacaciones": 312.56, "estado_doc": "pendiente"},  # caso real
+        {"periodo": "2024-2025", "valor_vacaciones": 0.0, "estado_doc": "pendiente"},  # sin monto real -- no cuenta
+    ]}
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: _FakeClientPorTabla(datos))
+    assert lq.vacaciones_pagadas("1206139022") == {"2025-2026": True, "2024-2025": False}
+
+
 def test_total_vacaciones_sin_verificacion_solo_calcula_el_ultimo(monkeypatch):
     """Sin poder verificar contra vac_registros, solo se autocalcula el
     periodo MÁS RECIENTE -- cualquier periodo más antiguo con saldo se deja

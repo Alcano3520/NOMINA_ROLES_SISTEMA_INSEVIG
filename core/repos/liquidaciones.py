@@ -413,15 +413,31 @@ def _etiqueta_periodo(inicio: dt.date) -> str:
 
 
 def vacaciones_pagadas(cedula: str) -> dict[str, bool] | None:
-    """{periodo: True/False} -- True si ese periodo ya se pagó de verdad
-    (estado_doc='completado', o estado_doc nulo con valor_vacaciones>0,
-    caso de importaciones históricas). `None` si no se pudo verificar."""
+    """{periodo: True/False} -- True si hay un registro 'pagada' con
+    `valor_vacaciones > 0` para ese periodo, SIN filtrar por `estado_doc`.
+
+    BUG REAL corregido 2026-09-15 (el usuario preguntó explícitamente si el
+    programa "en verdad paga bien las vacaciones" -- confirmado con un
+    caso real, dinero real: verificar antes solo contaba `estado_doc`
+    'completado' o nulo -- 20 registros reales con cheque YA girado
+    (`fecha_pago`/`no_cheque`/`banco`/`valor_vacaciones` reales) tenían
+    `estado_doc='pendiente'` y quedaban invisibles para el motor, con
+    riesgo real de pagar de nuevo una vacación ya pagada.
+
+    Decisión del usuario: "solo con que esté registrado vale... el
+    problema es que RRHH no está haciendo bien el trabajo y muchas que
+    gozan o pagan no está poniendo eso [estado_doc] como completado" -- no
+    hay que exigir NINGÚN valor de `estado_doc` en particular, un cheque
+    con monto real ya significa que se pagó, sin importar si el trámite/
+    acta sigue abierto.
+
+    `None` si no se pudo verificar."""
     ced = normalizar_cedula(cedula)
     try:
         sb = supabase_client.get_client()
         r = (
             sb.table("vac_registros")
-            .select("periodo,estado_doc,valor_vacaciones")
+            .select("periodo,valor_vacaciones")
             .eq("cedula", ced)
             .eq("tipo", "pagada")
             .execute()
@@ -433,15 +449,22 @@ def vacaciones_pagadas(cedula: str) -> dict[str, bool] | None:
         periodo = fila.get("periodo")
         if not periodo:
             continue
-        estado = fila.get("estado_doc")
-        valor = a_float(fila.get("valor_vacaciones"))
-        ya_pagado = (estado == "completado") or (not estado and valor > 0)
+        ya_pagado = a_float(fila.get("valor_vacaciones")) > 0
         registros[periodo] = registros.get(periodo, False) or ya_pagado
     return registros
 
 
 def vacaciones_gozadas(cedula: str) -> dict[str, float] | None:
-    """{periodo: dias_tomados_total} (tipo='gozada', estado_doc='completado').
+    """{periodo: dias_tomados_total} (tipo='gozada'), SIN filtrar por
+    `estado_doc` -- ver BUG REAL corregido en `vacaciones_pagadas` (mismo
+    caso, mismo motivo): un registro real de 15 días tomados en marzo-2025,
+    firmado positivo, con `estado_doc=None` (nunca se marcó 'completado'
+    por un descuido de RRHH -- caso real confirmado: MORENO ANGULO ANA
+    KAREN, cédula 0952863355) quedaba invisible para el motor, que
+    calculaba ~$393 pendientes por un período que la persona YA se había
+    tomado completo. Decisión del usuario: si el registro existe con días
+    reales, ya se tomó, sin importar `estado_doc`.
+
     `None` si no se pudo verificar."""
     ced = normalizar_cedula(cedula)
     try:
@@ -451,7 +474,6 @@ def vacaciones_gozadas(cedula: str) -> dict[str, float] | None:
             .select("periodo,dias_tomados")
             .eq("cedula", ced)
             .eq("tipo", "gozada")
-            .eq("estado_doc", "completado")
             .execute()
         )
     except Exception:  # noqa: BLE001
