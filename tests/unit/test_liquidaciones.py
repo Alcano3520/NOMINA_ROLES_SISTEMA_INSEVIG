@@ -1954,6 +1954,31 @@ def test_guardar_periodo_calculo_tipo_invalido():
     assert not ok and final == 0.0 and "inválido" in err
 
 
+def test_guardar_periodo_calculo_rechaza_desglose_vacio(monkeypatch, app_db):
+    """BUG REAL corregido 2026-09-16 (caso real: TOMALA MEDINA EDWIN
+    STALIN, cédula 927666149, liquidación generada el mismo día que se
+    reportó): el panel del Editor puede llegar con labels vacíos y
+    valores en 0 (placeholder sin llenar, `_periodo_vacio` del lado del
+    estado) si se pulsa "Aplicar" sin antes "↻ Generar meses" -- guardar
+    eso a ciegas BORRABA el desglose bueno que `guardar_liquidacion` ya
+    había escrito al generar. Ahora se rechaza sin tocar la tabla."""
+    cliente = _FakeRecClient({})
+    monkeypatch.setattr(lq.supabase_client, "get_client", lambda: cliente)
+
+    vacio_por_completo = [{"label": "", "valor": "0.00"} for _ in range(12)]
+    ok, final, err = lq.guardar_periodo_calculo("L1", "DEC_TERCERA", vacio_por_completo, usuario="ana", roles={"editor"})
+    assert not ok and final == 0.0 and "vacío" in err
+    assert cliente.log == []  # no se tocó la tabla ni se consultó obtener_liquidacion
+
+    labels_sin_valores = [{"label": f"mes{i}", "valor": 0.0} for i in range(12)]
+    ok2, _final2, err2 = lq.guardar_periodo_calculo("L1", "DEC_TERCERA", labels_sin_valores, usuario="ana", roles={"editor"})
+    assert not ok2 and "vacío" in err2
+
+    lista_vacia = []
+    ok3, _final3, err3 = lq.guardar_periodo_calculo("L1", "DEC_TERCERA", lista_vacia, usuario="ana", roles={"editor"})
+    assert not ok3 and "vacío" in err3
+
+
 def test_guardar_periodo_calculo_permite_pagada(monkeypatch, app_db):
     """Decisión del usuario 2026-09-12: el desglose mensual (solo
     informativo, nunca total_liquido/estado) SÍ se puede corregir en

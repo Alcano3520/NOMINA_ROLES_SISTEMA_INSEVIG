@@ -1920,9 +1920,33 @@ def guardar_periodo_calculo(
     2026-09-12, tras la corrección masiva de `liquidaciones_periodos_
     calculo` (LIQUIDACIONES): el desglose mensual es solo informativo/de
     respaldo (lo usa el bot MRL), nunca `total_liquido` ni `estado`, así
-    que no hay riesgo de alterar un pago ya hecho."""
+    que no hay riesgo de alterar un pago ya hecho.
+
+    BUG REAL corregido 2026-09-16 (reportado por el usuario: "se generó
+    una liquidación individual... y no salen los detalles de décimos/
+    vacaciones" -- caso real TOMALA MEDINA EDWIN STALIN, cédula 927666149,
+    liquidación generada el mismo día): esta función no validaba `meses`
+    antes de reemplazar lo existente -- si el panel del Editor se abre
+    (`abrir_periodo`) y se pulsa "Aplicar" SIN haber pulsado antes
+    "↻ Generar meses" ni cargado un desglose previo, `meses` llega con
+    labels vacíos y valores en 0 (`_periodo_vacio` del lado de
+    `liquidaciones_editor_state.py`) -- y esto BORRABA el desglose bueno
+    que `guardar_liquidacion` ya había guardado al generar la liquidación,
+    reemplazándolo por filas en blanco. Ahora se rechaza guardar un
+    desglose completamente vacío (ningún mes con label real Y valor
+    distinto de 0) -- un vaciado deliberado (labels reales, valores puestos
+    en 0 a propósito) sigue permitido."""
     if tipo not in PERIODO_DIVISOR:
         return False, 0.0, f"Tipo de período inválido: {tipo}"
+    tiene_contenido_real = any(
+        str(m.get("label") or "").strip() and a_float(m.get("valor")) != 0 for m in meses
+    )
+    if not tiene_contenido_real:
+        return False, 0.0, (
+            "El desglose está vacío (sin meses con datos) -- pulsá "
+            "'↻ Generar meses' y completá los valores antes de aplicar, "
+            "para no borrar un desglose ya guardado."
+        )
     registro, _c = obtener_liquidacion(liquidacion_id)
     if registro is None:
         return False, 0.0, "No existe esa liquidación."
