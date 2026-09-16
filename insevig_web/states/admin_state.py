@@ -354,6 +354,15 @@ class AdminState(rx.State):
                 "admin", "crear_usuario", usuario=actual.username, roles=set(actual.roles),
                 target_table="users", target_key=u, ip=self.router.session.client_ip,
             )
+            # Sincronización hacia usuarios_rrhh (sistema RRHH compartido) --
+            # ver `core/repos/usuarios_rrhh_sync.py`. Nunca frena esto: si
+            # falla, solo se anexa el motivo al mensaje.
+            from core.repos import usuarios_rrhh_sync
+
+            _ok, detalle = await asyncio.to_thread(
+                usuarios_rrhh_sync.sincronizar_creacion, u, clave, nombre or u, {rol}
+            )
+            self.msg = f"{self.msg} {detalle}"
         self.nu_username = self.nu_nombre = self.nu_clave = ""
         await self.cargar_usuarios()
 
@@ -384,14 +393,14 @@ class AdminState(rx.State):
             with appdb.session() as s:
                 u = s.get(User, uid)
                 if not u:
-                    return "no existe"
+                    return "no existe", ""
                 u.password_hash = auth.hash_password(clave)
                 s.add(u)
                 s.commit()
-                return "ok"
+                return "ok", u.username
 
         try:
-            r = await asyncio.to_thread(_r)
+            r, username = await asyncio.to_thread(_r)
         except Exception as e:  # noqa: BLE001
             self.msg = f"Error al resetear: {e}"
             return
@@ -401,6 +410,12 @@ class AdminState(rx.State):
                 "admin", "resetear_clave", usuario=actual.username, roles=set(actual.roles),
                 target_table="users", target_key=str(uid), ip=self.router.session.client_ip,
             )
+            from core.repos import usuarios_rrhh_sync
+
+            _ok, detalle = await asyncio.to_thread(
+                usuarios_rrhh_sync.sincronizar_clave, username, clave
+            )
+            self.msg = f"{self.msg} {detalle}"
         self.reset_user_id = 0
         self.reset_clave = ""
 
@@ -418,11 +433,11 @@ class AdminState(rx.State):
                     u.is_active = not u.is_active
                     s.add(u)
                     s.commit()
-                    return u.is_active
-                return None
+                    return u.is_active, u.username
+                return None, ""
 
         try:
-            nuevo_estado = await asyncio.to_thread(_t)
+            nuevo_estado, username = await asyncio.to_thread(_t)
         except Exception as e:  # noqa: BLE001
             self.msg = f"Error: {e}"
             return
@@ -432,6 +447,9 @@ class AdminState(rx.State):
                 usuario=actual.username, roles=set(actual.roles),
                 target_table="users", target_key=str(user_id), ip=self.router.session.client_ip,
             )
+            from core.repos import usuarios_rrhh_sync
+
+            await asyncio.to_thread(usuarios_rrhh_sync.sincronizar_activo, username, nuevo_estado)
         await self.cargar_usuarios()
 
     @rx.var
